@@ -51,8 +51,8 @@ public sealed class AttributeDefenceSourceTests
                 EnergyShieldPctPerTenStrength: 1, EvasionPctPerTenIntelligence: 2));
 
         Assert.Equal((20, 0, 20), (pools.Strength, pools.Dexterity, pools.Intelligence));
-        Assert.Equal(6, pools.EnergyShieldPct); // Existing Int20/5 + two completed Strength groups.
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(4, pools.EnergyShieldPct); // Int20/10 plus two completed Strength groups.
+        Assert.Equal(104u, pools.EnergyShield);
         Assert.Equal(4, pools.EvasionPct);
         Assert.Equal(104, pools.Evasion);
     }
@@ -69,20 +69,20 @@ public sealed class AttributeDefenceSourceTests
             EvasionPctPerTenIntelligence = 2,
         });
 
-        // Preserve the current Intelligence/5 ES baseline; its pinned-reference discrepancy is a separate question.
-        Assert.Equal((120u, 120, 20, 20),
+        // Native IntelligenceDescription and pinned PoB give one ES INC per ten Intelligence.
+        Assert.Equal((110u, 120, 10, 20),
             (baseline.EnergyShield, baseline.Evasion, baseline.EnergyShieldPct, baseline.EvasionPct));
-        Assert.Equal((130u, 140, 30, 40),
+        Assert.Equal((120u, 140, 20, 40),
             (added.EnergyShield, added.Evasion, added.EnergyShieldPct, added.EvasionPct));
         Assert.Equal((baseline.Life, baseline.Mana, baseline.Accuracy, baseline.Armour),
             (added.Life, added.Mana, added.Accuracy, added.Armour));
     }
 
     [Theory]
-    [InlineData(0, 0, 120u, 100, 20, 0)]
-    [InlineData(-1, -2, 110u, 80, 10, -20)]
-    [InlineData(-12, -10, 0u, 0, -100, -100)]
-    [InlineData(-13, -11, 0u, 0, -110, -110)]
+    [InlineData(0, 0, 110u, 100, 10, 0)]
+    [InlineData(-1, -2, 100u, 80, 0, -20)]
+    [InlineData(-12, -10, 0u, 0, -110, -100)]
+    [InlineData(-13, -11, 0u, 0, -120, -110)]
     public void Attribute_defence_signed_coefficients_are_INC_and_only_completed_rating_factors_floor_at_zero(
         int energyShieldCoefficient, int evasionCoefficient, uint expectedEnergyShield, int expectedEvasion,
         int expectedEnergyShieldIncrease, int expectedEvasionIncrease)
@@ -124,12 +124,12 @@ public sealed class AttributeDefenceSourceTests
         EnergyShieldPctPerTenStrength: 1, EvasionPctPerTenIntelligence: 2);
 
     [Theory]
-    [InlineData(false, false, false, false, 310, 530, 570u, 50)]
-    [InlineData(true, false, false, false, 830, 0, 570u, 40)]
-    [InlineData(false, true, false, false, 120, 300, 330u, 50)]
-    [InlineData(true, true, false, false, 400, 0, 330u, 40)]
-    [InlineData(true, false, true, false, 1090, 0, 570u, 40)]
-    [InlineData(true, false, false, true, 570, 0, 570u, 40)]
+    [InlineData(false, false, false, false, 310, 530, 540u, 50)]
+    [InlineData(true, false, false, false, 830, 0, 540u, 40)]
+    [InlineData(false, true, false, false, 120, 300, 310u, 50)]
+    [InlineData(true, true, false, false, 400, 0, 310u, 40)]
+    [InlineData(true, false, true, false, 1090, 0, 540u, 40)]
+    [InlineData(true, false, false, true, 570, 0, 540u, 40)]
     public void Attribute_defence_slot_and_Iron_Reflexes_matrix_retains_each_global_and_slot_term_once(
         bool ironReflexes, bool noShield, bool doubleBody, bool noBody,
         int expectedArmour, int expectedEvasion, uint expectedEnergyShield, int expectedEvasionIncrease)
@@ -143,14 +143,14 @@ public sealed class AttributeDefenceSourceTests
         };
         var pools = CharacterStats.For(Attributes(100, 50, 100), 1, bonus);
 
-        // Normal EV530 = independent150 + body150 + shield230; ES570 = 150 + 180 + 240.
+        // Normal EV530 = independent150 + body150 + shield230; ES540 = 140 + 170 + 230.
         // IR converted EV520 = independent140 + body140 + shield240; Armour310 is then added.
         // Only inherent Dexterity's10% is excluded; the Intelligence-derived20% remains in converted EV.
         Assert.Equal(expectedArmour, pools.Armour);
         Assert.Equal(expectedEvasion, pools.Evasion);
         Assert.Equal(expectedEnergyShield, pools.EnergyShield);
         Assert.Equal(expectedEvasionIncrease, pools.EvasionPct);
-        Assert.Equal(50, pools.EnergyShieldPct);
+        Assert.Equal(40, pools.EnergyShieldPct);
     }
 
     [Theory]
@@ -171,7 +171,7 @@ public sealed class AttributeDefenceSourceTests
         Assert.Equal(expectedArmour, pools.Armour);
         Assert.Equal(expectedEvasion, pools.Evasion);
         Assert.Equal(expectedEvasionIncrease, pools.EvasionPct);
-        Assert.Equal(135u, pools.EnergyShield);
+        Assert.Equal(125u, pools.EnergyShield);
     }
 
     [Fact]
@@ -182,9 +182,9 @@ public sealed class AttributeDefenceSourceTests
                 Evasion: 5, EvasionPct: 2, ShieldEvasion: 10, BodyEvasion: 5,
                 EnergyShieldPctPerTenStrength: 1, EvasionPctPerTenIntelligence: 2));
 
-        Assert.Equal(4u, pools.EnergyShield); // Three1.4 contributions sum to4.2; separately rounding gives3.
+        Assert.Equal(4u, pools.EnergyShield); // Three1.39 contributions sum to4.17; separately rounding gives3.
         Assert.Equal(21, pools.Evasion); // Independent5.2 + body5.2 + shield10.4 =20.8, rather than20.
-        Assert.Equal(40, pools.EnergyShieldPct);
+        Assert.Equal(39, pools.EnergyShieldPct);
         Assert.Equal(4, pools.EvasionPct);
     }
 
@@ -192,7 +192,8 @@ public sealed class AttributeDefenceSourceTests
     public void Attribute_defence_completed_ratings_keep_existing_halfway_up_projection()
     {
         var pools = CharacterStats.For(Attributes(10, 0, 10), 1,
-            new(EnergyShield: 1, EnergyShieldPct: -53, EvasionPct: 8,
+            // Int10 contributes1 and Strength10 contributes1; -52 retains the exact -50% halfway factor.
+            new(EnergyShield: 1, EnergyShieldPct: -52, EvasionPct: 8,
                 EnergyShieldPctPerTenStrength: 1, EvasionPctPerTenIntelligence: 2));
 
         Assert.Equal(-50, pools.EnergyShieldPct);
@@ -205,7 +206,7 @@ public sealed class AttributeDefenceSourceTests
     public void Attribute_defence_wide_group_products_cancel_before_percentage_publication_bounds()
     {
         var pools = CharacterStats.For(Attributes(20, 0, 20), 1,
-            new(EnergyShield: 1, EnergyShieldPct: int.MinValue, EvasionPct: int.MinValue,
+            new(EnergyShield: 1, EnergyShieldPct: int.MinValue + 2, EvasionPct: int.MinValue,
                 EnergyShieldPctPerTenStrength: int.MaxValue, EvasionPctPerTenIntelligence: int.MaxValue));
 
         Assert.Equal(int.MaxValue, pools.EnergyShieldPct); // Wide ES INC2147483650 is bounded only for publication.
@@ -223,11 +224,11 @@ public sealed class AttributeDefenceSourceTests
                 EvasionPct: int.MaxValue, ShieldEvasionPct: int.MaxValue,
                 EnergyShieldPctPerTenStrength: int.MinValue, EvasionPctPerTenIntelligence: int.MinValue));
 
-        // Both wide global INCs are -2147483649; adding the shield2147483647 gives -2%, hence98.
+        // Wide global INCs are ES -2147483651 and EV -2147483649; shield2147483647 leaves -4%/-2%.
         // Prematurely clamping either global INC to int.MinValue would incorrectly give99 instead.
         Assert.Equal(int.MinValue, pools.EnergyShieldPct);
         Assert.Equal(int.MinValue, pools.EvasionPct);
-        Assert.Equal(98u, pools.EnergyShield);
+        Assert.Equal(96u, pools.EnergyShield);
         Assert.Equal(98, pools.Evasion);
     }
 

@@ -51,8 +51,8 @@ public sealed class PercentageAttributeMathTests
         Assert.Equal(328, pools.Accuracy);
         Assert.Equal(12, pools.EvasionPct);
         Assert.Equal(17, pools.Evasion);
-        Assert.Equal(17, pools.EnergyShieldPct); // Preserve the existing native-verified1% per5 Intelligence.
-        Assert.Equal(117u, pools.EnergyShield);
+        Assert.Equal(8, pools.EnergyShieldPct); // Eight completed groups of final 85 Intelligence.
+        Assert.Equal(108u, pools.EnergyShield);
         Assert.Equal(12, pools.MeleePhysicalDamagePct);
         Assert.True(pools.AttributesResolved);
     }

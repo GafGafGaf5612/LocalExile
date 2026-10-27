@@ -98,7 +98,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         else
         {
             Assert.Equal(673u, game.State.Pools.Mana); // 34 + 600 + floor(78/2); (32+40)*1.08 rounds77.76 to78.
-            Assert.Equal(15, game.State.Pools.EnergyShieldPct);
+            Assert.Equal(7, game.State.Pools.EnergyShieldPct); // Seven completed groups of final 78 Intelligence.
         }
         game.State.Passives.Remove(node);
         AssertPercentageAttributes(game.State, PercentageRefresh(game), 14, 14, 32);
@@ -124,8 +124,8 @@ public sealed partial class AscendancyGatewayIntegrationTests
             Assert.Equal(330, game.State.Pools.Accuracy);
             Assert.Equal(13, game.State.Pools.EvasionPct);
             Assert.Equal(13, game.State.Pools.MeleePhysicalDamagePct);
-            Assert.Equal(17, game.State.Pools.EnergyShieldPct);
-            Assert.Equal(117u, game.State.Pools.EnergyShield);
+            Assert.Equal(8, game.State.Pools.EnergyShieldPct); // Final 88 Intelligence contributes 8%.
+            Assert.Equal(108u, game.State.Pools.EnergyShield);
         }
         Increased();
         Increased(); // No feedback from published final attributes into a subsequent source calculation.
@@ -134,7 +134,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(1263u, game.State.Pools.Life);
         Assert.Equal(668u, game.State.Pools.Mana);
         Assert.Equal(300, game.State.Pools.Accuracy);
-        Assert.Equal(113u, game.State.Pools.EnergyShield);
+        Assert.Equal(106u, game.State.Pools.EnergyShield); //100 flat ES with six groups of final 68 Intelligence.
         inventory.Add(7, 0, 0, percentages);
         Increased();
     }

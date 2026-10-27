@@ -170,7 +170,7 @@ with level), the bases and attributes from Characters.dat:
 | `evasion_rating` | (15 + flat evasion from passives + base body/helmet/gloves/boots) × (1 + `evasion_rating_+%` / 100) |
 | `evasion_rating_+%` | dexterity / 5 + increased evasion passives |
 | `physical_damage_reduction_rating_+%` | increased armour passives |
-| `maximum_energy_shield_+%` | intelligence / 5 |
+| `maximum_energy_shield_+%` | floor(intelligence / 10) |
 | `melee_physical_damage_+%` | strength / 5 |
 
 `AttributeModifiers` combines class attributes and every flat passive/active-equipment source before scaling once.
@@ -199,7 +199,10 @@ supply 3% increased Strength and 10% increased Armour through ordinary raw stats
 That source evidence does not enable Phrecia selection or establish native class gameplay.
 
 The final attributes feed life/melee damage, accuracy/evasion and mana/energy shield respectively.
-Existing derived-pool divisions stay unchanged, including odd attributes and this server's Intelligence / 5 ES increase.
+Native `ClientStrings` row169, `IntelligenceDescription`, declares 1% increased ES per ten Intelligence.
+The ES term uses complete final groups of ten, matching pinned PoB `CalcPerform.lua:541`.
+This corrects the former `/5` term; static help text does not establish official fractional server arithmetic.
+Historical attribute captures below precede that correction and do not validate the updated ES totals.
 An explicit `AttributesResolved` pool marker distinguishes calculated zero attributes from legacy uninitialized pools.
 Record clones retain the marker; three saturated attributes cannot overflow a sum-based fallback check.
 `ClassAttributes` sends the same final values as both panel attributes and `virtual_*_for_requirements`.

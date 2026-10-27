@@ -48,9 +48,9 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         .ToDictionary(s => s.Item1, s => s.Item2);
 
     [Theory]
-    [InlineData(1, 0, 60, 64)]
-    [InlineData(20, 0, 217, 230)]
-    [InlineData(20, 20, 217, 230)]
+    [InlineData(1, 0, 60, 62)]
+    [InlineData(20, 0, 217, 224)]
+    [InlineData(20, 20, 217, 224)]
     public void Native_gem_levels_and_quality_supply_ES_once_to_the_pool_and_panel(
         int level, int quality, int flat, uint maximum)
     {
@@ -65,7 +65,7 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Assert.Equal(flat, bonus.EnergyShield);
         Assert.Equal(flat, raw[Key(FlatES)]);
         Assert.Equal(30, raw[Key(RechargeIncrease)]);
-        Assert.Equal(maximum, conn.Pools.EnergyShield); // Witch Intelligence adds 6%, then the total rounds halfway up.
+        Assert.Equal(maximum, conn.Pools.EnergyShield); // Witch Intelligence 32 adds 3%, then the total rounds halfway up.
         Assert.Equal(flat, Program.CharacterPlayerStats(conn)[Key(FlatES)]);
         Assert.Equal((int)maximum, Published(conn)[Key("maximum_energy_shield")]);
         // The native Q20 bonus is 40% skill area, not ES or recharge.
@@ -84,14 +84,14 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         var stats = Program.CharacterPlayerStats(conn);
         Assert.Equal(50, conn.Pools.AuraEffectPct);
         Assert.Equal(90, stats[Key(FlatES)]); // 60 * 1.5, then ordinary Intelligence scaling acts on the pool.
-        Assert.Equal(95u, conn.Pools.EnergyShield); // 90 * 1.06 = 95.4.
+        Assert.Equal(93u, conn.Pools.EnergyShield); // 90 * 1.03 = 92.7.
         Assert.Equal(45, stats[Key(RechargeIncrease)]);
         Assert.Equal(228, AuraCatalog.RequiredMana(conn.Pools, conn.Auras.Values)); // ceil(650 * 35%).
     }
 
     [Theory]
-    [InlineData(20, 50, 325, 345, 45)]
-    [InlineData(1, 5, 63, 67, 31)]
+    [InlineData(20, 50, 325, 335, 45)]
+    [InlineData(1, 5, 63, 65, 31)]
     public void Fractional_aura_stats_truncate_before_the_global_ES_total_is_rounded(
         int level, int effect, int flat, uint maximum, int recharge)
     {
@@ -104,8 +104,8 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Assert.Equal(flat, stats[Key(FlatES)]);
         Assert.Equal(recharge, stats[Key(RechargeIncrease)]);
         Assert.Equal(maximum, conn.Pools.EnergyShield);
-        // L20: truncate(217 * 1.5) = 325, then round_half_up(325 * 1.06) = 345.
-        // L1: truncate(30 recharge * 1.05) = 31, and round_half_up(63 flat * 1.06) = 67.
+        // L20: truncate(217 * 1.5) = 325, then round_half_up(325 * 1.03) = 335.
+        // L1: truncate(30 recharge * 1.05) = 31, and round_half_up(63 flat * 1.03) = 65.
     }
 
     [Fact]
@@ -117,8 +117,8 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Refresh(conn);
 
         Assert.Equal(160, Program.CharacterPlayerStats(conn)[Key(FlatES)]);
-        Assert.Equal(330u, conn.Pools.EnergyShield); // (100 from equipment + 60 aura) * 2.06 = 329.6.
-        Assert.Equal(330, Published(conn)[Key("maximum_energy_shield")]);
+        Assert.Equal(325u, conn.Pools.EnergyShield); // (100 from equipment + 60 aura) * 2.03 = 324.8.
+        Assert.Equal(325, Published(conn)[Key("maximum_energy_shield")]);
     }
 
     [Fact]
@@ -130,8 +130,8 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Refresh(conn);
 
         Assert.Equal(132, conn.Pools.Intelligence);
-        Assert.Equal(76, conn.Pools.EnergyShieldPct);
-        Assert.Equal(106u, conn.Pools.EnergyShield); // 60 * (1 + .26 Intelligence + .50 global) = 105.6.
+        Assert.Equal(63, conn.Pools.EnergyShieldPct);
+        Assert.Equal(98u, conn.Pools.EnergyShield); // 60 * (1 + .13 Intelligence + .50 global) = 97.8.
     }
 
     [Fact]
@@ -143,8 +143,8 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Activate(conn);
         Refresh(conn);
 
-        // Shield 100 * 2.06 + (30 independent + 60 Discipline) * 1.06 = 301.4.
-        Assert.Equal(301u, conn.Pools.EnergyShield);
+        // Shield 100 * 2.03 + (30 independent + 60 Discipline) * 1.03 = 295.7.
+        Assert.Equal(296u, conn.Pools.EnergyShield);
         Assert.Equal(90, Program.CharacterPlayerStats(conn)[Key(FlatES)]);
     }
 
@@ -157,7 +157,7 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Activate(conn);
         Refresh(conn);
 
-        Assert.Equal(95u, conn.Pools.EnergyShield); // Only (30 independent + 60 aura) * 1.06 remains.
+        Assert.Equal(93u, conn.Pools.EnergyShield); // Only (30 independent + 60 aura) * 1.03 remains.
     }
 
     [Theory]
@@ -177,8 +177,8 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Refresh(conn);
 
         Assert.Equal(bareLife + convertedLife, conn.Pools.Life);
-        Assert.Equal(185u, conn.Pools.EnergyShield); // (30 independent + 60 aura) * 2.06 = 185.4.
-        Assert.Equal(185, Published(conn)[Key("maximum_energy_shield")]);
+        Assert.Equal(183u, conn.Pools.EnergyShield); // (30 independent + 60 aura) * 2.03 = 182.7.
+        Assert.Equal(183, Published(conn)[Key("maximum_energy_shield")]);
     }
 
     [Fact]
@@ -189,9 +189,9 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Refresh(conn);
         conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
         var before = Published(conn);
-        Assert.Equal(64u, conn.EnergyShield.Current);
-        Assert.Equal(64, before[Key("maximum_energy_shield")]);
-        Assert.Equal(1664, before[Key(RechargeDisplay)]); // 64 * 20 per minute * 1.3.
+        Assert.Equal(62u, conn.EnergyShield.Current);
+        Assert.Equal(62, before[Key("maximum_energy_shield")]);
+        Assert.Equal(1612, before[Key(RechargeDisplay)]); // 62 * 20 per minute * 1.3.
         Assert.Equal(30, before[Key(RechargeIncrease)]);
 
         conn.Auras.Clear();
@@ -213,16 +213,16 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
             ItemCatalog.Create(Program.Items.Find("Simple Robe")!, defenceBaseRoll: 0));
         Refresh(conn);
         conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
-        Assert.Equal(15u, conn.EnergyShield.Current); // 14 local ES * 1.06.
+        Assert.Equal(14u, conn.EnergyShield.Current); // 14 local ES * 1.03 rounds to 14.
 
         Activate(conn);
         Refresh(conn);
-        Assert.Equal(78u, conn.EnergyShield.Maximum); // (14 item + 60 aura) * 1.06 = 78.44.
-        Assert.Equal(15u, conn.EnergyShield.Current);
+        Assert.Equal(76u, conn.EnergyShield.Maximum); // (14 item + 60 aura) * 1.03 = 76.22.
+        Assert.Equal(14u, conn.EnergyShield.Current);
         conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
         conn.Auras.Clear();
         Refresh(conn);
-        Assert.Equal(15u, conn.EnergyShield.Current); // Removing the aura clamps a previously full larger pool.
+        Assert.Equal(14u, conn.EnergyShield.Current); // Removing the aura clamps a previously full larger pool.
     }
 
     [Fact]
@@ -234,16 +234,16 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         var stats = Program.CharacterPlayerStats(conn);
         int Get(string name) => stats.GetValueOrDefault(Key(name));
         conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
-        Assert.Equal(0, conn.EnergyShield.Damage(64, bypass: false, now: 0));
+        Assert.Equal(0, conn.EnergyShield.Damage(62, bypass: false, now: 0)); // Empty the corrected 62 maximum exactly.
 
         conn.EnergyShield.Advance(0, 1.99, Get, alive: true);
         Assert.Equal(0u, conn.EnergyShield.Current);
         Assert.False(conn.EnergyShield.Recharging);
         conn.EnergyShield.Advance(1.99, 3, Get, alive: true);
 
-        Assert.Equal(27u, conn.EnergyShield.Current); // 1664 per minute for one second, carrying its fractional remainder.
+        Assert.Equal(26u, conn.EnergyShield.Current); // 1612 per minute for one second, carrying its fractional remainder.
         Assert.True(conn.EnergyShield.Recharging);
-        Assert.Equal(1664, EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, recharging: true));
+        Assert.Equal(1612, EnergyShield.PredictionPerMinute(conn.Pools.EnergyShield, Get, recharging: true));
         Assert.Equal(0, EnergyShield.RegenPerMinute(conn.Pools.EnergyShield, Get));
     }
 
@@ -275,7 +275,7 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
         Assert.Equal(new[] { "Discipline" }, CharacterSaves.Load(_name)!.ActiveAuras);
         foreach (var aura in AuraCatalog.Restore(saved, available, conn.Pools)) Activate(conn, aura);
         Refresh(conn);
-        Assert.Equal(64u, conn.Pools.EnergyShield);
+        Assert.Equal(62u, conn.Pools.EnergyShield);
     }
 
     [Fact]
@@ -297,10 +297,10 @@ public sealed class DisciplineEnergyShieldTests : IDisposable
 
         Assert.Single(restored);
         Assert.Equal("Discipline", restored[0].EffectId);
-        Assert.Equal(76u, conn.Pools.EnergyShield); // 60 aura ES * 1.26 from 132 Intelligence.
+        Assert.Equal(68u, conn.Pools.EnergyShield); // 60 aura ES * 1.13 from 132 Intelligence = 67.8.
         Assert.Equal(60, Program.CharacterPlayerStats(conn)[Key(FlatES)]);
         Assert.Empty((IReadOnlyList<AuraCatalog.Aura>)restore.Invoke(null, [conn, saved])!);
-        Assert.Equal(76u, conn.Pools.EnergyShield);
+        Assert.Equal(68u, conn.Pools.EnergyShield);
     }
 
     [Fact]

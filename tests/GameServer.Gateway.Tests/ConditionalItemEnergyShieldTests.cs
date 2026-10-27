@@ -46,8 +46,8 @@ public sealed class ConditionalItemEnergyShieldTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false, 100, 128)]
-    [InlineData(true, 110, 134)]
+    [InlineData(false, 100, 126)]
+    [InlineData(true, 110, 132)]
     public void Corruption_enables_a_global_increase_without_changing_the_item_tooltip(
         bool corrupted, int expectedGlobalIncrease, uint expectedES)
     {
@@ -62,8 +62,8 @@ public sealed class ConditionalItemEnergyShieldTests : IDisposable
         var global = ItemModStats.Global([body, ring], Program.Items.Mods, Program.Stats);
         Assert.Equal(expectedGlobalIncrease, global[Program.Stats.Key(GlobalIncrease)!.Value]);
         var pools = Program.PoolsFor(conn, 100);
-        // The conditional increase reaches all 62 gear ES alongside 100% increased ES and Witch Intelligence's 6%.
-        // Round the final total: 62 * 2.06 = 127.72 -> 128, or 62 * 2.16 = 133.92 -> 134 when corrupted.
+        // The conditional increase reaches all 62 gear ES alongside 100% increased ES and Witch Intelligence's 3%.
+        // Round the final total: 62 * 2.03 = 125.86 -> 126, or 62 * 2.13 = 132.06 -> 132 when corrupted.
         Assert.Equal(expectedES, pools.EnergyShield);
     }
 
@@ -83,8 +83,8 @@ public sealed class ConditionalItemEnergyShieldTests : IDisposable
 
         Assert.Equal(bare.Life + 62u, before.Life);
         Assert.Equal(before.Life, after.Life); // Only the displayed local item ES converts to Life.
-        Assert.Equal(206u, before.EnergyShield);
-        Assert.Equal(216u, after.EnergyShield); // The separate 100 global ES receives the extra global 10%.
+        Assert.Equal(203u, before.EnergyShield);
+        Assert.Equal(213u, after.EnergyShield); // The separate 100 global ES receives the extra global 10%.
     }
 
     [Theory]
@@ -101,7 +101,7 @@ public sealed class ConditionalItemEnergyShieldTests : IDisposable
         var pools = Program.PoolsFor(conn, 100);
 
         if (row == PlayerInventories.BodyArmour) Assert.Contains(source.Id, Program.InactiveItems[_name]);
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(103u, pools.EnergyShield);
     }
 
     public void Dispose()

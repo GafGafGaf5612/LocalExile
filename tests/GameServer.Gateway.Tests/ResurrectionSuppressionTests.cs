@@ -121,7 +121,7 @@ public sealed class ResurrectionSuppressionTests
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.Clock.Start();
-            Assert.Equal(189u, conn.EnergyShield.Maximum);
+            Assert.Equal(184u, conn.EnergyShield.Maximum); //(100 body+60 Discipline)*(1+.03 Int+.12 Void Barrier).
             Assert.Equal(100, RuntimeChance(conn));
 
             // The ticker reads 100 synchronously before reaching its first delay; it must not be relied on to notice
@@ -138,7 +138,7 @@ public sealed class ResurrectionSuppressionTests
             await Call("Resurrect", wire, conn, false).WaitAsync(TimeSpan.FromSeconds(5));
 
             Assert.Equal(conn.PlayerMaxLife, conn.PlayerLife);
-            Assert.Equal(118u, conn.EnergyShield.Maximum); // Body survives; Discipline ended on death.
+            Assert.Equal(115u, conn.EnergyShield.Maximum); //100 body*(1+.03+.12); Discipline ended on death.
             Assert.Equal(conn.EnergyShield.Maximum, conn.EnergyShield.Current);
             Assert.Equal(100, RuntimeChance(conn));
             var published = wire.Published();

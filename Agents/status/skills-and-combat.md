@@ -483,11 +483,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Item ES per ten final Strength and Evasion per ten final Intelligence now join their ordinary INC buckets once.
   Native coefficients 1/2, completed attribute groups, slot/shield exclusions, IR and signed wide cancellation have
   33 pure and 14 both-mode Gateway cases; actual commands cover whole-source zero, ES clamping and no refill.
-  Native sources give ES 126/137/148 and EV 18/22/26 in the controlled recipe, with qualification/removal checks.
+  Native sources give ES 113/124/135 and EV 18/22/26 in the controlled recipe, with qualification/removal checks.
   These are automated supplied-source controls; native publication, acquisition and full Shaper's Touch remain open.
-  Inherent Intelligence ES stays `/5`; pinned PoB uses `/10`, and exact official parity is unresolved.
-  The combined 54 focused cases and fresh Gateway 3928/Core 648/Data 37 pass without skips; retained diagnostic faults
-  and native/persistence limits are qualified in the defence reference below.
+  Inherent ES now uses complete groups of ten final Intelligence, correcting the former doubled `/5` term.
+  Static native Intelligence help text agrees with pinned PoB; exact official fractional arithmetic remains unverified.
+  Earlier native ES observations predate this correction; fresh native pool/recovery validation remains pending.
+  Eleven new baseline cases and selected compositions pass in 216 focused cases.
+  Full Gateway 3939 covers all updated tests, including the percentage-attribute and tick cases omitted by that filter.
+  Unchanged prior Core 648/Data 37 remain applicable; no tests skipped.
+  Retained diagnostic faults and native/persistence limits are qualified in the defence reference below.
   Code: `CharacterStats.cs`, `ItemModStats.cs`, Gateway (`CharacterStatSources`, `PassiveBonus`, `ClassAttributes`).
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2d,
   [attribute-scaled defences](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).

@@ -85,7 +85,7 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         Assert.Equal(10, Program.Passives.Stats([48698])[Key(FullESChance)]);
         Assert.Equal(10, conn.Pools.SpellSuppressionWhileFullEnergyShield);
         Assert.Equal(90, conn.Pools.SpellSuppressionChanceUncapped);
-        Assert.Equal(118u, conn.Pools.EnergyShield); //100*(1+.06 Intelligence+.12 Void Barrier).
+        Assert.Equal(115u, conn.Pools.EnergyShield); //100*(1+.03 Intelligence+.12 Void Barrier).
         Assert.True(conn.EnergyShield.Full);
         AssertPublishedChance(conn, 100);
 
@@ -211,11 +211,11 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         Assert.False(conn.EnergyShield.Recharging);
         AssertPublishedChance(conn, 90);
         conn.EnergyShield.Advance(1.99, 2.01, _ => 0, alive: true);
-        Assert.Equal(117u, conn.EnergyShield.Current); //Recharge has started but supplied less than1 ES.
+        Assert.Equal(114u, conn.EnergyShield.Current); //Recharge has started but supplied less than 1 ES.
         Assert.True(conn.EnergyShield.Recharging);
         AssertPublishedChance(conn, 90);
         conn.EnergyShield.Advance(2.01, 2.1, _ => 0, alive: true);
-        Assert.Equal(118u, conn.EnergyShield.Current);
+        Assert.Equal(115u, conn.EnergyShield.Current);
         Assert.True(conn.EnergyShield.Full);
         AssertPublishedChance(conn, 100);
     }
@@ -226,8 +226,8 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         var conn = Character();
         var independent = Inventory.Add(7, 0, 0, Ring((FlatES, 100)));
         Refresh(conn);
-        Assert.Equal(236u, conn.EnergyShield.Maximum);
-        Assert.Equal(118u, conn.EnergyShield.Current);
+        Assert.Equal(230u, conn.EnergyShield.Maximum); //200*(1+.03 Intelligence+.12 Void Barrier).
+        Assert.Equal(115u, conn.EnergyShield.Current);
         Assert.False(conn.EnergyShield.Full);
         AssertPublishedChance(conn, 90);
 
@@ -235,8 +235,8 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         AssertPublishedChance(conn, 100);
         Assert.NotNull(Inventory.Remove(7, independent.Id));
         Refresh(conn);
-        Assert.Equal(118u, conn.EnergyShield.Maximum);
-        Assert.Equal(118u, conn.EnergyShield.Current);
+        Assert.Equal(115u, conn.EnergyShield.Maximum);
+        Assert.Equal(115u, conn.EnergyShield.Current);
         AssertPublishedChance(conn, 100);
     }
 
@@ -254,7 +254,7 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
 
         Inventory.Add(PlayerInventories.BodyArmour, 0, 0, body.Item);
         Refresh(conn);
-        Assert.Equal(118u, conn.EnergyShield.Maximum);
+        Assert.Equal(115u, conn.EnergyShield.Maximum);
         Assert.Equal(0u, conn.EnergyShield.Current);
         AssertPublishedChance(conn, 90);
         Heal(conn);
@@ -274,7 +274,7 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         Inventory.Add(7, 0, 0, Ring((FlatES, 100)));
         Refresh(conn);
         Heal(conn);
-        Assert.Equal(118u, conn.EnergyShield.Maximum);
+        Assert.Equal(115u, conn.EnergyShield.Maximum);
         AssertPublishedChance(conn, 100);
     }
 
@@ -297,7 +297,7 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         Assert.NotNull(Inventory.Change(7, conversionRing.Id, i => i with { Mods = [.. i.Mods, Mod(FlatES, 100)] }));
         Refresh(conn);
         Heal(conn);
-        Assert.Equal(118u, conn.EnergyShield.Maximum);
+        Assert.Equal(115u, conn.EnergyShield.Maximum);
         AssertPublishedChance(conn, 100);
     }
 
@@ -309,7 +309,7 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
             1, 148, 0, 3500, 1, 0, SourceBuff: 2);
         conn.Auras[aura.SkillId] = aura;
         Refresh(conn);
-        Assert.Equal(71u, conn.EnergyShield.Maximum); //60 independent ES*(1+.06+.12)=70.8.
+        Assert.Equal(69u, conn.EnergyShield.Maximum); //60 independent ES*(1+.03+.12)=69.
         Assert.Equal(0u, conn.EnergyShield.Current);
         AssertPublishedChance(conn, 90);
         Heal(conn);
@@ -367,7 +367,7 @@ public sealed class FullEnergyShieldSuppressionTests : IDisposable
         int dealt = DamageModel.Suppress(100, before.Effect);
         Assert.Equal(60, dealt);
         Assert.Equal(0, conn.EnergyShield.Damage(dealt, bypass: false, now: 0));
-        Assert.Equal(58u, conn.EnergyShield.Current);
+        Assert.Equal(55u, conn.EnergyShield.Current); //115 ES minus the same suppressed 60 damage.
         Assert.Equal(conn.PlayerMaxLife, conn.PlayerLife);
         AssertPublishedChance(conn, 90);
     }

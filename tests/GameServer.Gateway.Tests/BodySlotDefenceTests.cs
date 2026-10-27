@@ -72,12 +72,12 @@ public sealed class BodySlotDefenceTests : IDisposable
             EnergyShieldPct: 50, BodyEnergyShieldPct: 50);
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 100, bonus);
 
-        Assert.Equal(362u, pools.EnergyShield); // Body 100 * 2.06 + other 100 * 1.56; not 100 * 1.5 * 1.56.
+        Assert.Equal(356u, pools.EnergyShield); // Body 100 * 2.03 + other 100 * 1.53; not 100 * 1.5 * 1.53.
     }
 
     [Theory]
-    [InlineData(false, 822)]
-    [InlineData(true, 566)]
+    [InlineData(false, 811)]
+    [InlineData(true, 558)]
     public void Body_shield_and_aura_sources_keep_their_own_increases_and_exclusions(bool excludeShield, uint es)
     {
         var conn = Character();
@@ -90,7 +90,7 @@ public sealed class BodySlotDefenceTests : IDisposable
 
         var pools = Program.PoolsFor(conn, 100);
 
-        // Body 236 + shield 256 (or excluded) + (100 independent + 60 Discipline) * 2.06 = 821.6/565.6.
+        // Body 233 + shield 253 (or excluded) + (100 independent + 60 Discipline) * 2.03 = 810.8/557.8.
         Assert.Equal(es, pools.EnergyShield);
     }
 
@@ -103,7 +103,7 @@ public sealed class BodySlotDefenceTests : IDisposable
 
         Assert.Equal(300, pools.Armour);
         Assert.Equal(204, pools.Evasion); // (15 character + 185 flat) * 1.02; body evasion is not doubled yet.
-        Assert.Equal(212u, pools.EnergyShield);
+        Assert.Equal(206u, pools.EnergyShield);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class BodySlotDefenceTests : IDisposable
 
         Assert.Equal(255, pools.Armour); // 200 doubled body + 25 gloves + 30 shield.
         Assert.Equal(151, pools.Evasion);
-        Assert.Equal(128u, pools.EnergyShield);
+        Assert.Equal(125u, pools.EnergyShield);
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class BodySlotDefenceTests : IDisposable
 
         Assert.Equal(55, pools.Armour);
         Assert.Equal(151, pools.Evasion);
-        Assert.Equal(128u, pools.EnergyShield);
+        Assert.Equal(125u, pools.EnergyShield);
     }
 
     [Theory]
@@ -149,7 +149,7 @@ public sealed class BodySlotDefenceTests : IDisposable
 
         Assert.Equal(armour, pools.Armour);
         Assert.Equal(evasion, pools.Evasion);
-        Assert.Equal(212u, pools.EnergyShield);
+        Assert.Equal(206u, pools.EnergyShield);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public sealed class BodySlotDefenceTests : IDisposable
         Inventory.Add(PlayerInventories.BodyArmour, 0, 0, robe);
         Inventory.Add(6, 0, 0, Ring((BodyES, 30), ("maximum_energy_shield_+%", 50)));
 
-        Assert.Equal(91u, Program.PoolsFor(conn, 100).EnergyShield); // 49 * (1 + .06 + .50 + .30) = 91.14.
+        Assert.Equal(90u, Program.PoolsFor(conn, 100).EnergyShield); // 49 * (1 + .03 + .50 + .30) = 89.67.
         Assert.Equal(49, Local(robe).EnergyShield);
     }
 
@@ -209,7 +209,7 @@ public sealed class BodySlotDefenceTests : IDisposable
         Inventory.Add(6, 0, 0, Ring((BodyES, 30), ("base_maximum_energy_shield", 100)));
 
         Assert.Equal(0, Local(body).EnergyShield);
-        Assert.Equal(106u, Program.PoolsFor(conn, 100).EnergyShield); // Independent ES remains; no phantom body subset.
+        Assert.Equal(103u, Program.PoolsFor(conn, 100).EnergyShield); // Independent ES remains; no phantom body subset.
     }
 
     [Theory]
@@ -231,7 +231,7 @@ public sealed class BodySlotDefenceTests : IDisposable
         var pools = Program.PoolsFor(conn, 100);
 
         Assert.Equal(bareLife + life, pools.Life); // Half truncates each local source: 50 body + 6 gloves + 3 shield.
-        Assert.Equal(330u, pools.EnergyShield); // Only (100 independent + 60 Discipline) * 2.06 survives as ES.
+        Assert.Equal(325u, pools.EnergyShield); // Only (100 independent + 60 Discipline) * 2.03 survives as ES.
     }
 
     [Fact]
@@ -280,7 +280,7 @@ public sealed class BodySlotDefenceTests : IDisposable
         var before = Published(conn);
         Assert.Equal(255, before[Key("physical_damage_reduction_rating")]);
         Assert.Equal(151, before[Key("evasion_rating")]);
-        Assert.Equal(159, before[Key("maximum_energy_shield")]); // Body 101 * 1.36 + other 20 * 1.06 = 158.56.
+        Assert.Equal(155, before[Key("maximum_energy_shield")]); // Body 101 * 1.33 + other 20 * 1.03 = 154.93.
 
         Assert.NotNull(Inventory.Remove(PlayerInventories.BodyArmour, body.Id));
         conn.Pools = Program.PoolsFor(conn, 100);
@@ -297,7 +297,7 @@ public sealed class BodySlotDefenceTests : IDisposable
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 100,
             new CharacterStats.Bonus(EnergyShield: 200, BodyEnergyShield: 100, BodyEnergyShieldPct: -200));
 
-        Assert.Equal(106u, pools.EnergyShield); // Body factor clamps at zero; other 100 * 1.06 remains.
+        Assert.Equal(103u, pools.EnergyShield); // Body factor clamps at zero; other 100 * 1.03 remains.
     }
 
     [Fact]
@@ -333,7 +333,7 @@ public sealed class BodySlotDefenceTests : IDisposable
                 EnergyShield: 2, EnergyShieldPct: 34, BodyEnergyShield: 1, BodyEnergyShieldPct: 40));
 
         Assert.Equal(4, pools.Armour); // 1.4 other + 2.8 doubled body = 4.2.
-        Assert.Equal(3u, pools.EnergyShield); // 1.4 other + 1.8 body = 3.2.
+        Assert.Equal(3u, pools.EnergyShield); // 1.37 other + 1.77 body = 3.14.
     }
 
     public void Dispose()

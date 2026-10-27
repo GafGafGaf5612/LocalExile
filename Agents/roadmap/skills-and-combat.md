@@ -98,7 +98,10 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Complete native vectors, source removal, qualification, active sets and explicit zero have automated coverage;
   actual command packets cover ES clamping without refill. Verify native publication and persisted reload separately.
   Other Shaper's Touch effects and legal unique acquisition remain separate; neither defence row is complete.
-  Preserve the separate unresolved inherent Intelligence ES `/5` versus pinned PoB `/10` baseline discrepancy.
+  The ordinary inherent ES term now follows native help text and pinned PoB: 1% per ten final Intelligence.
+  Focused 216 and full Gateway 3939 pass without skips, including eleven new baseline cases.
+  Verify corrected ES totals and dependent recovery/full-ES conditions natively; preserve prior captures as historical.
+  Exact official fractional/group arithmetic and attribute-bonus prohibitions remain separate work.
   Full-ES suppression chance now follows the effective resource state and shares the panel/combat consumer.
   Ordinary typed/all-attribute increases now share one whole-source calculation for pools, equipment and gems.
   Automated real-source/removal, zero, derived-pool and active-set checks pass in both modes. Thirty-four native

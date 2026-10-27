@@ -64,7 +64,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(250, pools.Armour); // Body 100 + shield 100 * 1.50.
         Assert.Equal(254, pools.Evasion); // (15 base + 85 body) * 1.02 + shield 100 * 1.52.
-        Assert.Equal(262u, pools.EnergyShield); // Body 100 * 1.06 + shield 100 * 1.56.
+        Assert.Equal(256u, pools.EnergyShield); // Body 100 * 1.03 + shield 100 * 1.53.
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(350, pools.Armour);
         Assert.Equal(354, pools.Evasion);
-        Assert.Equal(362u, pools.EnergyShield);
+        Assert.Equal(356u, pools.EnergyShield);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(250, pools.Armour);
         Assert.Equal(254, pools.Evasion);
-        Assert.Equal(262u, pools.EnergyShield);
+        Assert.Equal(256u, pools.EnergyShield);
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(200, pools.Armour);
         Assert.Equal(204, pools.Evasion);
-        Assert.Equal(242u, pools.EnergyShield); // Body 106 + shield 136.
+        Assert.Equal(236u, pools.EnergyShield); // Body 103 + shield 133.
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(370, pools.Armour);
         Assert.Equal(384, pools.Evasion);
-        Assert.Equal(402u, pools.EnergyShield);
+        Assert.Equal(396u, pools.EnergyShield);
     }
 
     [Fact]
@@ -134,13 +134,13 @@ public sealed class ShieldDefenceStatsTests : IDisposable
     {
         var bonus = new CharacterStats.Bonus(Armour: 1, Evasion: 1, EnergyShield: 1,
             EvasionPct: 48, ShieldArmour: 1, ShieldEvasion: 1, ShieldEnergyShield: 1,
-            ShieldArmourPct: 50, ShieldEvasionPct: 50, ShieldEnergyShieldPct: 44);
+            ShieldArmourPct: 50, ShieldEvasionPct: 50, ShieldEnergyShieldPct: 47);
 
         var pools = CharacterStats.For(SkillCatalog.ClassInfo.Witch, 100, bonus);
 
         Assert.Equal(2, pools.Armour); // Shield 1 * 1.5.
         Assert.Equal(25, pools.Evasion); // Character 15 * 1.5 + shield 1 * 2 = 24.5.
-        Assert.Equal(2u, pools.EnergyShield); // Shield 1 * (1 + .06 intelligence + .44) = 1.5.
+        Assert.Equal(2u, pools.EnergyShield); // Shield 1 * (1 + .03 Intelligence + .47 synthetic shield INC) = 1.5.
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(3, pools.Armour); // 1.4 + 1.4 = 2.8; truncating individual sources would give 2.
         Assert.Equal(21, pools.Evasion); // 10.4 + 10.4 = 20.8; separate source truncation would give 20.
-        Assert.Equal(3u, pools.EnergyShield);
+        Assert.Equal(3u, pools.EnergyShield); // Two 1.37 contributions sum to 2.74 before rounding.
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(360, pools.Armour);
         Assert.Equal(386, pools.Evasion);
-        Assert.Equal(371u, pools.EnergyShield);
+        Assert.Equal(365u, pools.EnergyShield); // 180 local ES * (1 + .03 Intelligence + .50 shield + .50 global).
         Assert.Equal((180, 180, 180), ItemDefences.Calculate(shield,
             Program.Items.Defences(Program.Items.ByHash(shield.TypeHash)!)!.Value, Program.Items.Mods));
     }
@@ -218,7 +218,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(100, pools.Armour);
         Assert.Equal(102, pools.Evasion);
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(103u, pools.EnergyShield);
     }
 
     [Fact]
@@ -233,7 +233,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(100, pools.Armour);
         Assert.Equal(102, pools.Evasion);
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(103u, pools.EnergyShield);
     }
 
     [Theory]
@@ -251,7 +251,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
         var pools = Program.PoolsFor(conn, 100);
 
         Assert.Equal(bare.Life + (uint)life, pools.Life);
-        Assert.Equal(206u, pools.EnergyShield); // Independent global ES stays ES; shield increases cannot raise it.
+        Assert.Equal(203u, pools.EnergyShield); // Independent global ES stays ES; shield increases cannot raise it.
         Assert.Equal(200, pools.Armour); // Conversion affects ES only.
     }
 
@@ -282,7 +282,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
 
         Assert.Equal(100, pools.Armour);
         Assert.Equal(102, pools.Evasion);
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(103u, pools.EnergyShield);
     }
 
     [Fact]
@@ -298,7 +298,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
         Assert.Contains(shield.Id, Program.InactiveItems[_name]);
         Assert.Equal(100, pools.Armour);
         Assert.Equal(102, pools.Evasion);
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(103u, pools.EnergyShield);
     }
 
     [Fact]
@@ -335,7 +335,7 @@ public sealed class ShieldDefenceStatsTests : IDisposable
         conn.Pools = Program.PoolsFor(conn, 100);
         var before = Published(conn);
         Assert.Equal(150, before[Program.Stats.Key("physical_damage_reduction_rating")!.Value]);
-        Assert.Equal(156, before[Program.Stats.Key("maximum_energy_shield")!.Value]);
+        Assert.Equal(153, before[Program.Stats.Key("maximum_energy_shield")!.Value]);
 
         Assert.NotNull(Inventory.Remove(PlayerInventories.Offhand1, shield.Id));
         conn.Pools = Program.PoolsFor(conn, 100);

@@ -10,7 +10,7 @@ using GameServer.Core.World;
 /// mana likewise with BaseMaxMana (34), 6 per level and intelligence; accuracy = (2 per level + 2 per dexterity + flat)
 /// × (1 + increased accuracy / 100), with the Accuracy Mastery's per-level and per-dexterity replacements;
 /// armour = flat armour × (1 + increased armour / 100); evasion = (15 + flat evasion) raised by 1% per 5 dexterity and
-/// increased evasion; 1% increased maximum energy shield per 5 intelligence and 1% increased melee physical damage per 5
+/// increased evasion; 1% increased maximum energy shield per 10 intelligence and 1% increased melee physical damage per 5
 /// strength. Without these stats the client falls back to the base for level 1 (the Witch's 50 life and 40 mana).
 /// </summary>
 static class CharacterStats
@@ -218,7 +218,9 @@ static class CharacterStats
             evasionValue = 0;
         }
         int armour = Rating(armourValue), evasion = Rating(evasionValue);
-        long totalEnergyShieldPct = intel / 5L + b.EnergyShieldPct
+        // Native ClientStrings IntelligenceDescription: 10 Intelligence grants 1% increased ES.
+        // Pinned PoB CalcPerform applies complete groups after resolving final attributes.
+        long totalEnergyShieldPct = intel / 10L + b.EnergyShieldPct
             + (long)b.EnergyShieldPctPerTenStrength * (str / 10);
         int energyShieldPct = (int)Math.Clamp(totalEnergyShieldPct, int.MinValue, int.MaxValue);
         uint energyShield = (uint)Rating(Increased(b.EnergyShield, b.ShieldEnergyShield, b.BodyEnergyShield,

@@ -101,30 +101,31 @@ public sealed partial class AscendancyGatewayIntegrationTests
         using var game = LevelPanelCharacter(ruthless, 100);
         var catalog = Program.ItemsFor(game.State); var items = AttributeDefenceItems(game);
         var foundation = AttributeDefenceFoundation(game);
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
+        // Int132 supplies13% ES; each native Strength coefficient adds11% on the independent100 ES.
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
         Assert.Equal((114, 114, 132), (game.State.Pools.Strength, game.State.Pools.Dexterity, game.State.Pools.Intelligence));
         var primary = items.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)) with { ItemLevel = 100 });
         string originalPrimary = AttributeDefencePayload(catalog, primary.Item);
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
         AttributeDefenceQualified(game, foundation, primary);
-        game.State.EnergyShield.SetMaximum(137, refill: true);
+        game.State.EnergyShield.SetMaximum(124, refill: true);
 
         var divergent = items.Add(7, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog, divergent: true)) with { ItemLevel = 100 });
         string originalDivergent = AttributeDefencePayload(catalog, divergent.Item);
-        AttributeDefenceAssert(game, 148, 26, 2, 4, 48, 74);
+        AttributeDefenceAssert(game, 135, 26, 2, 4, 35, 74);
         AttributeDefenceQualified(game, primary, divergent);
-        Assert.Equal(137u, game.State.EnergyShield.Current); // Increasing the maximum never refills the resource.
+        Assert.Equal(124u, game.State.EnergyShield.Current); // Increasing the maximum never refills the resource.
         Assert.Equal(52, ItemModStats.LevelRequirement(divergent.Item, catalog.ByHash(divergent.Item.TypeHash)!.DropLevel, catalog.Mods));
         Assert.Equal(originalPrimary, AttributeDefencePayload(catalog, Assert.Single(items.Items(6)).Item));
         Assert.Equal(originalDivergent, AttributeDefencePayload(catalog, Assert.Single(items.Items(7)).Item));
         Assert.NotNull(items.Remove(7, divergent.Id));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
         Assert.NotNull(items.Remove(6, primary.Id));
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
-        Assert.Equal(126u, game.State.EnergyShield.Current);
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
+        Assert.Equal(113u, game.State.EnergyShield.Current);
         items.Add(6, 0, 0, primary.Item);
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
-        Assert.Equal(126u, game.State.EnergyShield.Current);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
+        Assert.Equal(113u, game.State.EnergyShield.Current);
         Assert.DoesNotContain(AttributeDefenceKey(AttributeDefenceEs), game.State.PlayerStats.Keys);
         Assert.DoesNotContain(AttributeDefenceKey(AttributeDefenceEv), game.State.PlayerStats.Keys);
     }
@@ -140,21 +141,21 @@ public sealed partial class AscendancyGatewayIntegrationTests
         var weapon = items.Add(PlayerInventories.Weapon2, 0, 0, LevelPanelCarrier(catalog, "Rusted Sword", AttributeDefencePair(catalog)));
         var body = items.Add(PlayerInventories.BodyArmour, 0, 0, LevelPanelCarrier(catalog, "Chestplate", AttributeDefencePair(catalog)));
         Assert.Equal((25, 0, 0), catalog.Requirements(catalog.Find("Chestplate")!));
-        AttributeDefenceAssert(game, 106, 15, 0, 0, 6, 2);
+        AttributeDefenceAssert(game, 103, 15, 0, 0, 3, 2);
         Assert.Contains(body.Id, Program.InactiveItems[game.Character]);
         var qualifier = items.Add(5, 0, 0, LevelPanelCarrier(catalog, "Coral Amulet", AttributeDefenceMod(catalog, AttributeDefenceQualifier)));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
         AttributeDefenceQualified(game, qualifier, body);
         items.SwapWeaponSets();
-        AttributeDefenceAssert(game, 148, 26, 2, 4, 48, 74);
+        AttributeDefenceAssert(game, 135, 26, 2, 4, 35, 74);
         AttributeDefenceQualified(game, weapon, body);
         Assert.NotNull(items.Remove(5, qualifier.Id));
-        AttributeDefenceAssert(game, 107, 16, 1, 2, 7, 8);
+        AttributeDefenceAssert(game, 104, 16, 1, 2, 4, 8);
         Assert.Contains(body.Id, Program.InactiveItems[game.Character]);
         items.SwapWeaponSets();
-        AttributeDefenceAssert(game, 106, 15, 0, 0, 6, 2);
+        AttributeDefenceAssert(game, 103, 15, 0, 0, 3, 2);
         items.Add(5, 0, 0, qualifier.Item);
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
         AttributeDefenceQualified(game, body);
     }
 
@@ -168,13 +169,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AttributeDefenceFoundation(game);
         var carrier = items.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog, divergent: true)));
         Assert.Equal(52, ItemModStats.LevelRequirement(carrier.Item, catalog.ByHash(carrier.Item.TypeHash)!.DropLevel, catalog.Mods));
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
         Assert.Contains(carrier.Id, Program.InactiveItems[game.Character]);
         Assert.Null((await game.SetLevel(100)).Error);
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
         AttributeDefenceQualified(game, carrier);
         Assert.Null((await game.SetLevel(10)).Error);
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
         Assert.Contains(carrier.Id, Program.InactiveItems[game.Character]);
     }
 
@@ -187,29 +188,29 @@ public sealed partial class AscendancyGatewayIntegrationTests
         var catalog = Program.ItemsFor(game.State);
         AttributeDefenceFoundation(game);
         AttributeDefenceItems(game).Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
-        game.State.EnergyShield.SetMaximum(137, refill: true); // Controlled resource setup, not a recovery claim.
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
+        game.State.EnergyShield.SetMaximum(124, refill: true); // Controlled resource setup, not a recovery claim.
         uint life = game.State.PlayerLife, mana = game.State.PlayerMana;
 
         var zero = await game.Command($"/set_stat {AttributeDefenceEs} 0");
         Assert.Null(zero.Error);
         Assert.Equal(0, game.State.PlayerStats[4994]);
-        AttributeDefenceAssert(game, 126, 22, 0, 2, 26, 48);
-        Assert.Equal(126u, game.State.EnergyShield.Current);
-        AttributeDefencePacket(zero.Bytes, InstanceProtocol.LifeUpdate(Program.PlayerId, 126, pool: 2));
-        AttributeDefenceStatPacket(zero.Bytes, "maximum_energy_shield", 126);
+        AttributeDefenceAssert(game, 113, 22, 0, 2, 13, 48);
+        Assert.Equal(113u, game.State.EnergyShield.Current);
+        AttributeDefencePacket(zero.Bytes, InstanceProtocol.LifeUpdate(Program.PlayerId, 113, pool: 2));
+        AttributeDefenceStatPacket(zero.Bytes, "maximum_energy_shield", 113);
         AttributeDefenceStatPacket(zero.Bytes, AttributeDefenceEs, 0);
 
         var two = await game.Command($"/set_stat {AttributeDefenceEs} 2");
         Assert.Null(two.Error);
-        AttributeDefenceAssert(game, 148, 22, 2, 2, 48, 48);
-        Assert.Equal(126u, game.State.EnergyShield.Current);
-        AttributeDefenceStatPacket(two.Bytes, "maximum_energy_shield", 148);
+        AttributeDefenceAssert(game, 135, 22, 2, 2, 35, 48);
+        Assert.Equal(113u, game.State.EnergyShield.Current);
+        AttributeDefenceStatPacket(two.Bytes, "maximum_energy_shield", 135);
         Assert.Equal(life, game.State.PlayerLife);
         Assert.Equal(mana, game.State.PlayerMana);
         Assert.True(game.State.PlayerStats.Remove(4994)); // Test fixture restoration, not a public remove command.
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
-        Assert.Equal(126u, game.State.EnergyShield.Current);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
+        Assert.Equal(113u, game.State.EnergyShield.Current);
     }
 
     [Theory]
@@ -221,8 +222,8 @@ public sealed partial class AscendancyGatewayIntegrationTests
         var catalog = Program.ItemsFor(game.State);
         AttributeDefenceFoundation(game);
         AttributeDefenceItems(game).Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
-        game.State.EnergyShield.SetMaximum(137, refill: true);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
+        game.State.EnergyShield.SetMaximum(124, refill: true);
         Assert.Equal(0, game.State.EnergyShield.Damage(7, bypass: false, now: 0));
         game.State.PlayerLife = 1284; game.State.PlayerMana = 691;
         foreach (var (coefficient, evasion, increase) in new[] { (0, 18, 22), (1, 20, 35) })
@@ -230,16 +231,16 @@ public sealed partial class AscendancyGatewayIntegrationTests
             var result = await game.Command($"/set_stat {AttributeDefenceEv} {coefficient}");
             Assert.Null(result.Error);
             Assert.Equal(coefficient, game.State.PlayerStats[4998]);
-            AttributeDefenceAssert(game, 137, evasion, 1, coefficient, 37, increase);
+            AttributeDefenceAssert(game, 124, evasion, 1, coefficient, 24, increase);
             AttributeDefenceStatPacket(result.Bytes, "evasion_rating", evasion);
             AttributeDefenceStatPacket(result.Bytes, AttributeDefenceEv, coefficient);
-            Assert.Equal(130u, game.State.EnergyShield.Current);
+            Assert.Equal(117u, game.State.EnergyShield.Current);
             Assert.Equal(1284u, game.State.PlayerLife);
             Assert.Equal(691u, game.State.PlayerMana);
         }
         Assert.True(game.State.PlayerStats.Remove(4998));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
-        Assert.Equal(130u, game.State.EnergyShield.Current);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
+        Assert.Equal(117u, game.State.EnergyShield.Current);
     }
 
     [Theory]
@@ -251,7 +252,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         var catalog = Program.ItemsFor(game.State);
         AttributeDefenceFoundation(game);
         AttributeDefenceItems(game).Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
         game.State.PlayerStats[AttributeDefenceKey("strength")] = 1000;
         game.State.PlayerStats[AttributeDefenceKey("intelligence")] = 1000;
         game.State.PlayerStats[AttributeDefenceKey("maximum_energy_shield")] = 0;
@@ -260,7 +261,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         {
             game.State.Pools = Program.PoolsFor(game.State, 100);
             var published = LevelPanelPublished(game);
-            Assert.Equal((114, 132, 137u, 22), (game.State.Pools.Strength, game.State.Pools.Intelligence,
+            Assert.Equal((114, 132, 124u, 22), (game.State.Pools.Strength, game.State.Pools.Intelligence,
                 game.State.Pools.EnergyShield, game.State.Pools.Evasion));
             Assert.Equal(1000, published[AttributeDefenceKey("strength")]);
             Assert.Equal(1000, published[AttributeDefenceKey("intelligence")]);
@@ -270,7 +271,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         }
         foreach (string stat in new[] { "strength", "intelligence", "maximum_energy_shield", "evasion_rating" })
             Assert.True(game.State.PlayerStats.Remove(AttributeDefenceKey(stat)));
-        AttributeDefenceAssert(game, 137, 22, 1, 2, 37, 48);
+        AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
     }
 
     [Theory]
@@ -291,20 +292,20 @@ public sealed partial class AscendancyGatewayIntegrationTests
             { Quality = 0, Mods = [AttributeDefenceMod(catalog, conversion)] });
         string original = AttributeDefencePayload(catalog, gloves.Item);
         Assert.Equal(5, ItemDefences.Calculate(gloves.Item, basis, catalog.Mods).EnergyShield);
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
         AttributeDefenceQualified(game, gloves);
         Assert.Equal(1300u, game.State.Pools.Life); //1295 ordinary Life plus the native local5, before global ES INC.
         var source = items.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefenceMod(catalog, AttributeDefenceNative[0])));
-        AttributeDefenceAssert(game, 137, 18, 1, 0, 37, 22);
+        AttributeDefenceAssert(game, 124, 18, 1, 0, 24, 22);
         Assert.Equal(1300u, game.State.Pools.Life);
         Assert.Equal(700u, game.State.Pools.Mana);
         Assert.Equal(5, ItemDefences.Calculate(gloves.Item, basis, catalog.Mods).EnergyShield);
         Assert.Equal(original, AttributeDefencePayload(catalog, Assert.Single(items.Items(PlayerInventories.Gloves)).Item));
         Assert.NotNull(items.Remove(6, source.Id));
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
         Assert.Equal(1300u, game.State.Pools.Life);
         Assert.NotNull(items.Remove(PlayerInventories.Gloves, gloves.Id));
-        AttributeDefenceAssert(game, 126, 18, 0, 0, 26, 22);
+        AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
         Assert.Equal(1295u, game.State.Pools.Life);
     }
 

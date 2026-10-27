@@ -645,16 +645,21 @@ Final attribute presentation overrides do not become a second production attribu
 Thirty-three pure and fourteen both-mode Gateway cases cover groups, slot/IR composition, qualification, active sets,
 source removal, actual command packets and unchanged serialized item payloads.
 Persisted reload is not established here.
-Those 47 cases and seven ES publication regressions pass together.
-Fresh full Gateway 3928/Core 648/Data 37 pass with no skips.
-The final diagnostic hook retains seven actual disposed-NetworkStream task faults: six `MonsterKilled` through `Send`
-and one projectile-hit `NotifyMonsterHit` path through `Send`; its 391 first-chance records are a separate count.
+Those 47 cases, seven ES publication regressions and eleven inherent-baseline cases pass in a 216-case focused batch.
+Full Gateway 3939 passes without skips; unchanged prior Core 648/Data 37 remain applicable after this Gateway-only fix.
+The latest diagnostic hook retains six actual disposed-NetworkStream task faults, all `MonsterKilled` through `Send`.
+Its 386 first-chance records are a separate count; previous runs and their faults remain preserved.
 No new coefficient/publisher path, diagnostic errors, truncation or cap hit is captured.
 Passing tests do not establish fault-free execution.
 The native vectors and pinned PoB `16de4b8` grouping rule support these operators as a labelled 3.29.x projection.
 Native publication, complete Shaper's Touch, acquisition and full ES/Evasion rows remain unverified.
-The existing inherent Intelligence ES rule remains `floor(Intelligence / 5)`; pinned PoB CalcPerform uses `/10`.
-That separate baseline discrepancy is unresolved against exact official 3.29.3b evidence and is not changed by this job.
+The ordinary inherent Intelligence ES term is now `floor(final Intelligence / 10)`, correcting the former `/5` term.
+Native `ClientStrings` row169, `IntelligenceDescription` (HASH32 1789395335), declares 1% ES per ten Intelligence.
+This static help text is independent of our server-fed panel and agrees with pinned PoB `CalcPerform.lua:541`.
+The current extraction report associates the table with the copied 3.29.3b client; no fresh archive comparison was run.
+Complete groups follow the accepted pinned model; exact official fractional/group arithmetic remains unverified.
+At Intelligence 132, the native-source recipe's zero/one/two Strength coefficients now give ES 113/124/135.
+The corresponding EV 18/22/26, local item ES and converted Life remain unchanged.
 
 Discipline supplies another global flat ES source after equipment conversion, including with no ES equipment worn.
 Its 60/217 flat ES at gem levels 1/20 receives Intelligence and global ES increases, without shield-only modifiers.
@@ -694,6 +699,8 @@ An unchanged state suppresses packets only at the gate, allowing changes made wh
 Held-gate encrypted-wire tests cover a clamped pool, prediction clearing, death and duplicate suppression.
 These publication regressions are automated; the earlier live checks below do not validate this new queued-send case.
 
+The earlier live ES values below predate the inherent Intelligence correction and remain historical lifecycle evidence.
+Fresh native validation of the corrected pool totals remains pending.
 Live OfflineWitch had 185 ES: `/hit physical 100` left life at 3250 and ES at 85, then recovered to 185. Chaos reduced
 life while leaving ES intact. With the prediction bridge, client values advance between pool packets during recharge.
 Measurements used the local client Life component, not orb pixels or an official server trace. ES uses upstream RunResourceRecovery with its 16 ms target and elapsed time/fractional carries; foreground verification saw at most 2-point positive ES updates

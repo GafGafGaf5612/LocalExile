@@ -45,7 +45,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
             .Invoke(null, [state, new[] { "Grace" }]);
         Assert.Equal(1345u, state.Pools.Life);
         Assert.Equal(750u, state.Pools.Mana);
-        Assert.Equal(175u, state.Pools.EnergyShield);
+        Assert.Equal(148u, state.Pools.EnergyShield); //120 local ES*(1+floor(232 Intelligence/10)%)=147.6.
 
         var result = await game.ObserveLeechPanelTick(state, recover);
 

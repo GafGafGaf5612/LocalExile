@@ -67,7 +67,7 @@ public sealed class ArmourEnergyShieldConversionTests : IDisposable
 
         // Native truncates per item: 50% gives floor(49/2)+floor(13/2)+floor(7/2)=33, not floor(69/2)=34.
         Assert.Equal(bare.Life + (uint)addedLife, pools.Life);
-        Assert.Equal(addedLife == 0 ? 73u : 0u, pools.EnergyShield);
+        Assert.Equal(addedLife == 0 ? 71u : 0u, pools.EnergyShield); // Unconverted local69 * 1.03, rounded once.
     }
 
     [Fact]
@@ -77,13 +77,13 @@ public sealed class ArmourEnergyShieldConversionTests : IDisposable
         _ = Equip69ES();
         Inventory.Add(7, 0, 0, Ring(("base_maximum_energy_shield", 100), ("maximum_energy_shield_+%", 100)));
         var before = Program.PoolsFor(conn, 100);
-        Assert.Equal(348u, before.EnergyShield); // (69 local item ES + 100 flat global ES) * 2.06.
+        Assert.Equal(343u, before.EnergyShield); // (69 local item ES + 100 flat global ES) * 2.03 = 343.07.
 
         Inventory.Add(6, 0, 0, Ring((Full, 1)));
         var after = Program.PoolsFor(conn, 100);
 
         Assert.Equal(before.Life + 69u, after.Life);
-        Assert.Equal(206u, after.EnergyShield); // The independent 100 flat global ES still receives global increases.
+        Assert.Equal(203u, after.EnergyShield); // The independent 100 flat global ES still receives global increases.
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class ArmourEnergyShieldConversionTests : IDisposable
         var pools = Program.PoolsFor(conn, 100);
 
         Assert.Equal(bare.Life, pools.Life);
-        Assert.Equal(106u, pools.EnergyShield);
+        Assert.Equal(103u, pools.EnergyShield);
     }
 
     [Fact]
@@ -203,9 +203,9 @@ public sealed class ArmourEnergyShieldConversionTests : IDisposable
         var after = Published(conn);
 
         Assert.Equal(bare.Life, conn.Pools.Life);
-        Assert.Equal(73u, conn.Pools.EnergyShield);
+        Assert.Equal(71u, conn.Pools.EnergyShield);
         Assert.Equal((int)bare.Life, after[life]);
-        Assert.Equal(73, after[es]);
+        Assert.Equal(71, after[es]);
     }
 
     [Fact]
