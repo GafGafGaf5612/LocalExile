@@ -218,9 +218,20 @@ A Plate Vest supplies 19 Armour when its 12-Strength requirement is met, stops c
 and resumes after the final Strength rises again.
 Calculated all-zero attributes stay zero; removing the sources and relog restore the expected base pools.
 These controls verify delivery and shared consumers, not the official server's fractional attribute algorithm.
-The rebased composition has automated coverage; fresh native composition checks remain outstanding.
+Eleven native controls at rebased source `00b246f2` on main `79cc0337` verify the Strength-mana composition.
+On a new level-one Marauder, eight mana per four Strength changes maximum mana from 47 to 111.
+Strength 40 gives 127 mana; Strength 48 and Intelligence 18 give 145.
+A temporary active-vest 100% mana modifier raises that result to 290 once; removing it restores 145.
+Reduced attributes disable the ordinary vest at Strength 8 with 58 mana and restore it at Strength 16 with 75 mana.
+Clearing the inputs restores Strength 32, mana 47 and Armour 19.
+Every control reads the actual native final and requirement stats; Gateway/Core/Storage/Host revisions were pinned.
+The check uses raw development inputs and ordinary equipment, without enabling a Phrecia class.
+The ordered #290 / #294 / #296 / #300 integration at `c9cd1864` passes 28 fresh native controls.
+Eight conversion controls preserve final Strength groups and the half mana from odd final Intelligence.
+At final Strength 16 and Intelligence 7, conversion uses B=75.5 and publishes 15 mana and 140 Armour with the vest.
 Combined regressions cross the rounded four-Strength boundary, then verify mana increases and truncation once.
 Equipment, inactive/current weapon snapshots, zero/off raw replacements and idle aura reservation share that result.
+Inactive-weapon, cascading-equipment, passive-refund and active-aura composition still need native coverage.
 
 Maximum mana also includes the ordinary flat and increased mana sources from passives and active equipment.
 `X_mana_per_4_strength` (Stats row 4992, client key 4993) contributes
