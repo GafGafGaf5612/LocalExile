@@ -74,6 +74,13 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- League isolation is enforced by full league for towns and instance selection.
+  SSF wilderness instances and Gateway ground-item state additionally belong to the stable character ID.
+  Another character, including one reusing a deleted name, cannot inherit or join that state.
+  Automated league/SSF instance checks pass.
+  The native SSF town omitted its guild stash; the ordinary Standard town created one.
+  Multi-client world joining and pickup boundaries remain covered by automated checks.
+  See [league modes](../docs/game/league-modes.md).
 - **Predictive actor collision.** Player paths include living monsters and published players in the same instance.
   Monster paths use their `MonsterVarieties.ObjectSize` clearance and avoid other living bodies, including friendlies.
   A 50 ms correction loop sweeps monster movement and separates overlaps; death/removal releases the occupied space.

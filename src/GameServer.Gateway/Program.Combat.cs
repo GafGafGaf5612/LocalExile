@@ -48,7 +48,7 @@ partial class Program
     // the use is no more than a quarter of an attack early (the client's jitter). Does not reserve the timer: an attack used
     // on a monster waits for the walk into reach, and CastGemSkill reserves it when the swing starts.
     static double SkillAttackSeconds(ClientState conn, int effect, int level) =>
-        SkillAttackTiming.ForSkill(Skills, effect, level, WeaponFor(conn), CharacterPlayerStats(conn));
+        SkillAttackTiming.ForSkill(SkillsFor(conn), effect, level, WeaponFor(conn), CharacterPlayerStats(conn));
 
     static bool AttackReady(ClientState conn, int effect, int level, out double seconds)
     {
@@ -79,7 +79,7 @@ partial class Program
     // attack may start (which would cancel the hit).
     static double AttackContactDelay(ClientState conn, double attackSeconds, bool approach)
     {
-        string ao = Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? Skills.ClassFor(conn.ClassRow).AnimatedObject;
+        string ao = Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? SkillsFor(conn).ClassFor(conn.ClassRow).AnimatedObject;
         double contact = Animations.AttackContact(ao, WeaponProfileFor(conn, activeSet: true));
         return AttackTiming.ContactDelay(attackSeconds, contact, approach ? HitContactOffsetSeconds() : 0);
     }
@@ -190,9 +190,9 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}) blocked");
             return;
         }
-        int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
+        int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? SkillsFor(conn).EffectRow(attackId) : -1;
         var ownPenetration = attackEffect >= 0
-            ? Skills.EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
+            ? SkillsFor(conn).EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
         // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
         // hits, and the hit's own physical damage may store a new stack for the hits after it.
         double stored, impaleStored;
@@ -274,10 +274,10 @@ partial class Program
     static async Task CastOn(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, SpawnedMonster m, double requestedAt)
     {
-        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
+        var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == use.SkillId);
         // A movement attack (Flicker Strike, Leap Slam) closes the distance itself, and an attack used with "always attack
         // without moving" (Flags bit 0) swings from where the player stands: both keep the immediate cast.
-        if (gem.Name is not null && Skills.IsAttack(gem.Effect) && !Skills.IsMovement(gem.Effect) && (use.Flags & 0x1) == 0)
+        if (gem.Name is not null && SkillsFor(conn).IsAttack(gem.Effect) && !SkillsFor(conn).IsMovement(gem.Effect) && (use.Flags & 0x1) == 0)
         {
             if (!AttackReady(conn, gem.Effect, gem.Level, out double attackSeconds))
             {
@@ -359,11 +359,11 @@ partial class Program
         lock (conn.Monsters)
             if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
-        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
         bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || PlayerActionCurrent(conn, action));
         if (!Current()) return false;
-        if (locationInstant && (gem.Name is null || !InstantLocationSkill.Supported(Skills, gem.Effect))) return false;
-        if (gem.Name is not null && Skills.IsSpell(gem.Effect) && !Skills.IsAttack(gem.Effect)
+        if (locationInstant && (gem.Name is null || !InstantLocationSkill.Supported(SkillsFor(conn), gem.Effect))) return false;
+        if (gem.Name is not null && SkillsFor(conn).IsSpell(gem.Effect) && !SkillsFor(conn).IsAttack(gem.Effect)
             && CastMs(conn, gem.Effect) is null)
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: invalid cast duration (no effect or mana cost)");
@@ -378,7 +378,7 @@ partial class Program
             return false;
         }
         // Vaal souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill never has the souls it needs.
-        if (gem.Name is not null && Skills.VaalSouls(gem.Effect, gem.Level) is int souls and > 0)
+        if (gem.Name is not null && SkillsFor(conn).VaalSouls(gem.Effect, gem.Level) is int souls and > 0)
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: needs {souls} Vaal souls, has 0");
             return false;
@@ -393,7 +393,7 @@ partial class Program
         else if (gem.Name is not null && CooldownFor(conn, gem.Effect, gem.Level, gem.Quality) is not null)
             return false;
         // Multi-use and unsupported cooldown mechanics retain their existing raw-deadline behavior.
-        else if (gem.Name is not null && Skills.CooldownMs(gem.Effect, gem.Level) is int cooldown and > 0)
+        else if (gem.Name is not null && SkillsFor(conn).CooldownMs(gem.Effect, gem.Level) is int cooldown and > 0)
         {
             double now = conn.Clock.Elapsed.TotalSeconds, readyAt;
             lock (conn.Monsters)
@@ -415,7 +415,7 @@ partial class Program
         // the client keeps aiming it, and every use used to pay its cost and start a swing (live 2026-10-25: Holy Strike on
         // the right mouse button, twelve swings a second at 6 mana each). The timer is shared with the default attack, so
         // two attacks cannot start at once either.
-        if (gem.Name is not null && Skills.IsAttack(gem.Effect))
+        if (gem.Name is not null && SkillsFor(conn).IsAttack(gem.Effect))
         {
             double duration = SupportedAttackSeconds(conn, skillId);
             double now = conn.Clock.Elapsed.TotalSeconds, next;
@@ -464,7 +464,7 @@ partial class Program
         if (locationInstant) return true;
         // The Portal skill: a town portal, as the Portal Scroll's, once its cast (2.5 s) is over.
         if (actionToken is not null && !PlayerActionCurrent(conn, action)) return false;
-        if (gem.Name is not null && Skills.EffectId(gem.Effect) == "Portal")
+        if (gem.Name is not null && SkillsFor(conn).EffectId(gem.Effect) == "Portal")
         {
             if (!PortalAllowed(conn)) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} Portal: not here"); return false; }
             if (CastMs(conn, gem.Effect) is not int castMs) return false;
@@ -489,13 +489,13 @@ partial class Program
     internal static async Task UseInstantSkill(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, uint targetId, (int X, int Y) at)
     {
-        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-        if (gem.Name is not null && InstantLocationSkill.Supported(Skills, gem.Effect))
+        var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
+        if (gem.Name is not null && InstantLocationSkill.Supported(SkillsFor(conn), gem.Effect))
         {
             await UseInstantSkillAtLocation(remote, stream, ciphers, conn, skillId, default, targetId);
             return;
         }
-        if (gem.Name is null || !InstantLocationSkill.ObjectTargetSupported(Skills, gem.Effect)) return;
+        if (gem.Name is null || !InstantLocationSkill.ObjectTargetSupported(SkillsFor(conn), gem.Effect)) return;
         int epoch;
         lock (conn.Monsters)
         {
@@ -523,9 +523,9 @@ partial class Program
     static async Task UseInstantSkillAtLocation(string remote, NetworkStream stream, ConnectionCiphers ciphers,
         ClientState conn, ushort skillId, (uint X, uint Y) aim, uint? targetObjectId = null)
     {
-        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
-        if (gem.Name is null || !InstantLocationSkill.Supported(Skills, gem.Effect)) return;
-        var own = Skills.EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
+        if (gem.Name is null || !InstantLocationSkill.Supported(SkillsFor(conn), gem.Effect)) return;
+        var own = SkillsFor(conn).EffectStats(gem.Effect, gem.Level, gem.Quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int epoch;
         (int X, int Y) from, to;
         // GemSkills places the skill's own stat over the player's; use the same inputs for native distance resolution.
@@ -556,7 +556,7 @@ partial class Program
             {
                 lock (conn.Monsters)
                 {
-                    var current = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+                    var current = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
                     if (current != gem || GemSkillInstanceDisabled(conn, gem.Effect, skillId) is not null) return null;
                     (int X, int Y) rawAim;
                     if (targetObjectId is uint target)
@@ -586,7 +586,7 @@ partial class Program
     static async Task<bool> ToggleAura(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, int effect, string name, (int Flat, int Percent) reservation, int level, int quality)
     {
-        string? effectId = Skills.EffectId(effect);
+        string? effectId = SkillsFor(conn).EffectId(effect);
         if (effectId is null || !AuraCatalog.Supported(effectId))
         {
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {name}: reservation is known but this aura's effect is not implemented yet");
@@ -649,21 +649,21 @@ partial class Program
         int? actionToken = null, CooldownUseTicket? cooldownUse = null)
     {
         int action = actionToken ?? cooldownUse?.ActionToken ?? conn.ActionCount;
-        var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
+        var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
         if (gem.Name is null) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no gem skill"); return; }
         // An attack gem keeps its swing through a later move order: the client attack-moves while the mouse button is
         // held (C→S 0x25 with bit 0 clear), sending a new Move that used to cancel the release — the mana was paid and
         // no projectile appeared (live 2026-10-26, Kinetic Blast while walking). Spells still stop on a new action.
-        bool attackGem = Skills.IsAttack(gem.Effect);
+        bool attackGem = SkillsFor(conn).IsAttack(gem.Effect);
         if (!attackGem && cooldownUse?.Instant != true && !PlayerActionCurrent(conn, action)) return;
-        if (Skills.ProjectileFor(gem.Effect) is not { } projectile)
+        if (SkillsFor(conn).ProjectileFor(gem.Effect) is not { } projectile)
         {
             // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point.
             await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence,
                 actionToken: actionToken, cooldownUse: cooldownUse);
             return;
         }
-        var projectileHitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
+        var projectileHitPlan = SkillHitPlan.ForSkill(SkillsFor(conn), gem.Effect, gem.Level, gem.Quality);
         if (!projectileHitPlan.CanHit) return;
         int epoch;
         lock (conn.Monsters) epoch = cooldownUse?.ProjectileEpoch ?? conn.ProjectileEpoch;
@@ -673,7 +673,7 @@ partial class Program
         // the cast). Using the spell fraction for a bow sent the arrow 0.617 of the action after the swing had already
         // lowered the bow (live 2026-10-25: the client's create arrived ~600 ms after 0x1ab, while attack1_bow's contact is
         // ~0.37 of it).
-        var cls = Skills.ClassFor(conn.ClassRow);
+        var cls = SkillsFor(conn).ClassFor(conn.ClassRow);
         bool attack = attackGem;
         int? castDuration = attack ? 0 : CastMs(conn, gem.Effect, skillId);
         if (castDuration is null) return;
@@ -690,7 +690,7 @@ partial class Program
         // sticks and disappears on hit, so it gets no impact. Its burning/debuff is the monster's, not the arrow's.
         // Kinetic Blast is the exception among the non-Fireball skills: its wand projectile bursts in the cluster_burst
         // explosion where it lands, which is what the player sees.
-        string? effectId = Skills.EffectId(gem.Effect);
+        string? effectId = SkillsFor(conn).EffectId(gem.Effect);
         string impact = effectId is "KineticBlast" or "KineticBlastAltX" or "KineticBlastAltY"
             ? KineticBlastImpactAo
             : projectile.Id.Contains("Fireball")
@@ -721,7 +721,7 @@ partial class Program
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             var own = SupportedSkill(conn, skillId).Stats;
             int chance = SupportedCriticalChance(conn, skillId);
-            var pen = Penetration.Of(stats, Stats, attack: Skills.IsAttack(gem.Effect), own);
+            var pen = Penetration.Of(stats, Stats, attack: SkillsFor(conn).IsAttack(gem.Effect), own);
             var resistanceMods = HitResistMods(stats, own);
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
@@ -820,7 +820,7 @@ partial class Program
     {
         var areaStats = MergeSkillStats(AreaPlayerStats(conn), skillStats);
         int Get(string name) => Stats.Key(name) is uint k ? areaStats.GetValueOrDefault(k) : 0;
-        return SkillArea.Radius(SkillArea.BaseRadius(Skills.EffectId(effect), Get), Get, spell);
+        return SkillArea.Radius(SkillArea.BaseRadius(SkillsFor(conn).EffectId(effect), Get), Get, spell);
     }
 
     // Whether a living monster stands within a gem attack's hit radius of a ground point. The client sends a point with a
@@ -851,10 +851,10 @@ partial class Program
         if (!Current()) return;
         var skillStats = SupportedSkill(conn, skillId).Stats;
         // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
-        int effectiveness = Skills.DamageEffectiveness(gem.Effect, gem.Level);
+        int effectiveness = SkillsFor(conn).DamageEffectiveness(gem.Effect, gem.Level);
         int Stat(string name) => Stats.Key(name) is uint k ? skillStats.GetValueOrDefault(k) : 0;
         if (Stat("base_deal_no_damage") != 0) return;
-        var hitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
+        var hitPlan = SkillHitPlan.ForSkill(SkillsFor(conn), gem.Effect, gem.Level, gem.Quality);
         if (!hitPlan.CanHit) return;
         bool spell = hitPlan.Kind == SkillHitKind.Spell;
         var weapon = WeaponFor(conn);
@@ -914,9 +914,9 @@ partial class Program
                         if (!fortificationGranted)
                             fortificationGranted = FortificationOnHitLocked(conn, m,
                                 RawFortificationDamage(rolled, critical, criticalMultiplier),
-                                !spell && Skills.IsMelee(gem.Effect), player, skillStats);
+                                !spell && SkillsFor(conn).IsMelee(gem.Effect), player, skillStats);
                         if (!rageGranted) rageGranted = RageOnHitLocked(conn, attack: !spell,
-                            melee: !spell && Skills.IsMelee(gem.Effect), critical, skillStats);
+                            melee: !spell && SkillsFor(conn).IsMelee(gem.Effect), critical, skillStats);
                     }))
                 ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
         }
@@ -1518,7 +1518,7 @@ partial class Program
         if (stats.Any(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key)))) return;
         // Skill immunity can depend on a native action's contact phase, which this server does not track yet.
         // Conservatively skip builds with any equipped skill carrying it, rather than stun an uninterruptible phase.
-        if (GemSkillEffects(conn.Character).Any(g => Skills.EffectStats(g.Effect, g.Level, g.Quality)
+        if (GemSkillEffects(conn).Any(g => SkillsFor(conn).EffectStats(g.Effect, g.Level, g.Quality)
             .Any(s => s.Item2 != 0 && Stats.Name(s.Item1).StartsWith("skill_cannot_be_stunned", StringComparison.Ordinal)))) return;
         int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
         if (PlayerHasEnergyShieldForRecovery(conn, Get)) return;
@@ -1657,9 +1657,11 @@ partial class Program
     static async Task DropLoot(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, SpawnedMonster m, (int X, int Y) at)
     {
         if (Environment.GetEnvironmentVariable("Game_DROPS") == "0") return;
-        List<ItemDrops.Drop> drops = [.. Drops.Roll(m.Level, m.Rarity, Random.Shared, IncreasedItemRarity(conn))];
+        var balance = conn.Ruthless ? RuthlessSettings.Current : null;
+        List<ItemDrops.Drop> drops = [.. DropsFor(conn).Roll(m.Level, m.Rarity, Random.Shared, IncreasedItemRarity(conn),
+            balance?.ItemDropMultiplier ?? 1, balance?.EquipmentRarityMultiplier ?? 1)];
         // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
-        if (Drops.Gold(m.Level, m.Rarity, Random.Shared) is { } gold) drops.Add(gold);
+        if (DropsFor(conn).Gold(m.Level, m.Rarity, Random.Shared, balance?.GoldMultiplier ?? 1) is { } gold) drops.Add(gold);
         foreach (var drop in drops)
         {
             // A ring around the corpse, 3 to 6 cells out.

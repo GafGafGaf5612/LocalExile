@@ -314,6 +314,7 @@ partial class Program
                 conn.RecentEnemyHits.Record(now);
                 ChargesWhenHit(conn, blocked);
                 if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
+                RecordHardcoreDeath(conn);
                 life = conn.PlayerLife;
                 mana = conn.PlayerMana;
                 RageWhenHitLocked(conn);

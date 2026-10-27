@@ -14,6 +14,8 @@ partial class Program
     {
         foreach (var (id, bytes) in messages)
         {
+            // Hidden UI controls are not enforcement: a dead HC connection cannot trade, move items or resurrect.
+            if ((conn.HardcoreDeathRecorded || (conn.Hardcore && conn.PlayerLife == 0)) && id != 0x0153) continue;
             // Native TakeHit blocks predicted action starts too. Buffered normal actions must not restart the server's
             // movement/cast timeline during that same recovery. Flasks and instant skills retain their own paths.
             if (id is InstanceProtocol.UseSkillAtLocationId or InstanceTransfer.UseSkillOnObjectId or InstanceProtocol.ChannelUpdateId)
@@ -28,7 +30,7 @@ partial class Program
                 // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
                 if (InTown(conn) && Skills.ActionName(use.SkillId) != "Move") continue;
                 bool cast = Skills.IsGemSkill(use.SkillId);
-                var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
+                var gem = cast ? GemSkillEffects(conn).FirstOrDefault(g => g.Id == use.SkillId) : default;
                 // A disabled gem's skill is not confirmed: the client animates the cast and sends the use anyway (it only reds
                 // the gem), so without the 0x1ab the action does not run. No projectile, mana or cooldown either.
                 if (cast && gem.Name is not null
@@ -350,6 +352,7 @@ partial class Program
             {
                 // The tab buttons' order, kept with the stash (personal or guild by kind) and sent back in the tab lists.
                 var (kind, order) = InstanceStash.ReadReorderTabs(bytes);
+                if (kind == InstanceStash.Guild && conn.Ssf) continue;
                 var target = kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn);
                 int moved = target.SetPositions(order);
                 Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} ({moved} moved, saved)");
@@ -367,7 +370,7 @@ partial class Program
                     channelAction = conn.ActionCount;
                     conn.Walk.Teleport(cx, cy, t);
                 }
-                var channelled = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == conn.ChannelSkill);
+                var channelled = GemSkillEffects(conn).FirstOrDefault(g => g.Id == conn.ChannelSkill);
                 if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
                 {
                     double every;
@@ -415,6 +418,7 @@ partial class Program
             {
                 // A premium tab renamed in the tab settings; kept with the stash (personal or guild), account-wide.
                 var (kind, tab, name) = InstanceStash.ReadRenameTab(bytes);
+                if (kind == InstanceStash.Guild && conn.Ssf) continue;
                 bool done = (kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn)).Rename(tab, name);
                 Console.WriteLine($"[gateway] {remote} <= 0x00cd stash {kind} tab {tab} renamed \"{name}\": {(done ? "saved" : "refused")}");
                 await SendTabListAgain(remote, stream, ciphers, conn, kind);
@@ -422,6 +426,7 @@ partial class Program
             else if (id == InstanceStash.ColourTabId)
             {
                 var (kind, tab, colour) = InstanceStash.ReadColourTab(bytes);
+                if (kind == InstanceStash.Guild && conn.Ssf) continue;
                 bool done = (kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn)).SetColour(tab, colour);
                 Console.WriteLine($"[gateway] {remote} <= 0x00ce stash {kind} tab {tab} colour 0x{colour:x8}: {(done ? "saved" : "refused")} ({Convert.ToHexString(bytes)})");
                 await SendTabListAgain(remote, stream, ciphers, conn, kind);

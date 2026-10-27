@@ -32,6 +32,22 @@ public class InstanceStoreTests
     }
 
     [Fact]
+    public void Ssf_dropped_items_cannot_be_transferred_through_a_shared_town_even_after_relogin()
+    {
+        var store = NewStore();
+        var first = store.Enter(4, Created, "FirstSSF");
+        uint id = first.Ground.Add(Sword());
+        store.Leave(first);
+        var other = store.Enter(4, Created, "OtherSSF");
+        Assert.Empty(other.Ground.All());
+        Assert.Null(other.Ground.Take(id));
+        Assert.Empty(store.Enter(4, Created).Ground.All());
+        var again = store.Enter(4, Created, "firstssf");
+        Assert.Same(first, again);
+        Assert.Equal(id, Assert.Single(again.Ground.All()).Id);
+    }
+
+    [Fact]
     public void Ground_items_get_ids_from_their_own_range()
     {
         var ground = NewStore().Enter(4, Created).Ground;

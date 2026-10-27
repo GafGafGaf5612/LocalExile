@@ -37,6 +37,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Personal stash and gold are shared only within the same account and full league, including mode combinations.
+  Guild stash storage is also league-scoped; Standard retains the legacy bank and other leagues use separate banks.
+  SSF refuses guild opening, tab requests and inventory moves.
+  The real client received no guild-stash object in the SSF town, while Standard received one.
+  Stash sharing, forged requests and dropped-item isolation are covered by automated checks.
+  See [league modes](../docs/game/league-modes.md).
 - **Crafting cells.** Delve crafting cells accept equipment, support swaps and retain their contents after reload.
   Lioneye's Watch now creates a guild stash beside its personal stash.
   Persistence checks pass; the real client opened the city guild stash and loaded its guild tab.
@@ -45,5 +51,5 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 - Stash: a switch to an already loaded tab sends nothing, so it is missed if the player logs out without reopening the
   stash or moving an item; the special tabs' slot rules, tab folders (the tab order, names and colours are kept,
-  2026-10-22), real guilds for the guild stash, per-league stashes and stashes in other towns
+  2026-10-22), real guilds for the guild stash and stashes in other towns
   ([18](../docs/protocol/18-stash.md) "Open").

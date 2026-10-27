@@ -50,7 +50,8 @@ static class CharacterSaves
         SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
         Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null,
         OpeningTutorial? Tutorial = null, AscendancyProgress? MainAscendancy = null,
-        Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null)
+        Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null,
+        uint? Life = null, uint? Mana = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -92,12 +93,17 @@ static class CharacterSaves
 
     public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
 
+    /// <summary>Ruthless carries resource pools through town, area changes and reconnects instead of refilling them.</summary>
+    public static void SaveVitals(string character, uint life, uint mana) =>
+        Update(character, s => s with { Life = life, Mana = mana });
+
     public static void ClearActiveAuras(string character) => Update(character, save => save with { ActiveAuras = [] });
 
-    /// <summary>Persist aura intent by stable GrantedEffects Id, never by a connection's skill or buff id.</summary>
+    /// <summary>Persist aura intent by stable GrantedEffects Id, replacing any alias of the same aura family.</summary>
     public static void SetAuraActive(string character, string effect, bool active) => Update(character, save =>
     {
-        var auras = (save.ActiveAuras ?? []).Where(id => id != effect).ToList();
+        string family = AuraCatalog.Family(effect);
+        var auras = (save.ActiveAuras ?? []).Where(id => AuraCatalog.Family(id) != family).ToList();
         if (active) auras.Add(effect);
         return save with { ActiveAuras = auras };
     });

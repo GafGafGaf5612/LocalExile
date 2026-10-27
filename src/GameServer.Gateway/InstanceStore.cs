@@ -8,17 +8,19 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class InstanceStore(TimeProvider clock, TimeSpan lifetime)
 {
-    readonly Dictionary<(ulong Id, long Created), InstanceState> _instances = [];
+    readonly Dictionary<(ulong Id, long Created, string? SoloOwner), InstanceState> _instances = [];
 
     /// <summary>A connection enters the instance: its state, a fresh one for a new or expired instance.</summary>
-    public InstanceState Enter(ulong id, long created)
+    public InstanceState Enter(ulong id, long created, string? soloOwner = null)
     {
         lock (_instances)
         {
             var now = clock.GetUtcNow();
             foreach (var (key, _) in _instances.Where(e => e.Value.EmptySince is { } t && now - t >= lifetime).ToList())
                 _instances.Remove(key);
-            if (!_instances.TryGetValue((id, created), out var state)) _instances[(id, created)] = state = new InstanceState();
+            // SSF towns may share their social instance, but never their dropped items or other mutable world state.
+            var instanceKey = (id, created, soloOwner?.ToUpperInvariant());
+            if (!_instances.TryGetValue(instanceKey, out var state)) _instances[instanceKey] = state = new InstanceState();
             state.Connections++;
             state.EmptySince = null;
             return state;

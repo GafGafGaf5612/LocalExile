@@ -147,16 +147,16 @@ partial class Program
             if (args.Length > 1 && args[^1].ToLowerInvariant() is "magic" or "rare") { rolled = Enum.Parse<ItemRarity>(args[^1], true); args = args[..^1]; }
             int count = 1, requested = 1;
             if (args.Length > 1 && int.TryParse(args[^1], out int n)) { requested = n; count = Math.Clamp(n, 1, 60); args = args[..^1]; }
-            if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
+            if (ItemsFor(conn).Error is { } error) { await conn.Commands!.Reply(error); return; }
             string query = string.Join(' ', args);
-            if (Uniques.Find(query) is { } unique)
+            if (UniquesFor(conn).Find(query) is { } unique)
             {
                 var uniqueItems = ItemsOf(conn);
                 var uniqueAdded = new List<InventoryItem>();
                 for (int i = 0; i < count; i++)
                 {
-                    if (Uniques.Create(unique.Name, Random.Shared) is not { } createdUnique
-                        || Items.ByHash(createdUnique.TypeHash) is not { } uniqueType
+                    if (UniquesFor(conn).Create(unique.Name, Random.Shared) is not { } createdUnique
+                        || ItemsFor(conn).ByHash(createdUnique.TypeHash) is not { } uniqueType
                         || uniqueItems.FreeCell(PlayerInventories.MainInventory, uniqueType.Width, uniqueType.Height, ShapeOf) is not { } uniqueCell) break;
                     uniqueAdded.Add(uniqueItems.Put(PlayerInventories.MainInventory,
                         new InventoryItem(uniqueItems.NewItemId(), uniqueCell.X, uniqueCell.Y, createdUnique)));
@@ -168,7 +168,7 @@ partial class Program
                 await conn.Commands!.Reply($"Added {unique.Name}");
                 return;
             }
-            if (Items.Find(query) is not { } type) { await conn.Commands!.Reply($"No item type \"{query}\""); return; }
+            if (ItemsFor(conn).Find(query) is not { } type) { await conn.Commands!.Reply($"No item type \"{query}\""); return; }
             if (!type.Supported)
             {
                 await conn.Commands!.Reply($"{type} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");
@@ -193,9 +193,9 @@ partial class Program
             for (int i = 0; i < count; i++)
             {
                 if (items.FreeCell(PlayerInventories.MainInventory, type.Width, type.Height, ShapeOf) is not { } cell) break;
-                var (sockets, links) = Items.DefaultSockets(type, itemLevel);
+                var (sockets, links) = ItemsFor(conn).DefaultSockets(type, itemLevel);
                 var created = ItemCatalog.Create(type, sockets, links) with { ItemLevel = (byte)itemLevel };
-                if (rolled != ItemRarity.Normal) created = Rolls.Roll(created, rolled, Random.Shared);
+                if (rolled != ItemRarity.Normal) created = RollsFor(conn).Roll(created, rolled, Random.Shared);
                 added.Add(items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, created)));
             }
             if (added.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
@@ -208,9 +208,9 @@ partial class Program
             var numbers = new List<int>();
             while (args.Length > 1 && numbers.Count < 2 && int.TryParse(args[^1], out int n)) { numbers.Insert(0, n); args = args[..^1]; }
             if (args.Length == 0) throw new ArgumentException("which gem?");
-            if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
+            if (ItemsFor(conn).Error is { } error) { await conn.Commands!.Reply(error); return; }
             string query = string.Join(' ', args);
-            if (Items.FindGem(query) is not var (type, variant) || Items.Gem(type) is not { } gem) { await conn.Commands!.Reply($"No gem \"{query}\""); return; }
+            if (ItemsFor(conn).FindGem(query) is not var (type, variant) || ItemsFor(conn).Gem(type) is not { } gem) { await conn.Commands!.Reply($"No gem \"{query}\""); return; }
             if (!type.Supported)
             {
                 await conn.Commands!.Reply($"{variant.Name} has components the server cannot write yet: {string.Join(", ", type.Components.Where(c => !Item.Supported.Contains(c)))}");
@@ -236,17 +236,17 @@ partial class Program
             var items = ItemsOf(conn);
             int Set(Item gem, ItemCatalog.GemType type)
             {
-                int level = Items.GemLevel(gem);
-                int max = Math.Min(Skills.MaxLevelAt(type.Variant(gem.GemVariant).Effect, conn.Pools.Level), type.MaxLevel);
+                int level = ItemsFor(conn).GemLevel(gem);
+                int max = Math.Min(SkillsFor(conn).MaxLevelAt(type.Variant(gem.GemVariant).Effect, conn.Pools.Level), type.MaxLevel);
                 return near ? (level < max ? type.ExperienceFor(level + 1) - 1 : gem.GemExperience) : amount;
             }
             var changed = new List<(byte Row, InventoryItem Item)>();
             foreach (var held in items.Items(PlayerInventories.MainInventory))
-                if (Items.ByHash(held.Item.TypeHash) is { } baseType && Items.Gem(baseType) is { } type)
+                if (ItemsFor(conn).ByHash(held.Item.TypeHash) is { } baseType && ItemsFor(conn).Gem(baseType) is { } type)
                     if (items.Change(PlayerInventories.MainInventory, held.Id, it => it with { GemExperience = Set(it, type) }) is { } after)
                         changed.Add((PlayerInventories.MainInventory, after));
             foreach (var (row, item, _) in items.ChangeSocketedGems((_, gem) =>
-                Items.ByHash(gem.TypeHash) is { } baseType && Items.Gem(baseType) is { } type ? gem with { GemExperience = Set(gem, type) } : null))
+                ItemsFor(conn).ByHash(gem.TypeHash) is { } baseType && ItemsFor(conn).Gem(baseType) is { } type ? gem with { GemExperience = Set(gem, type) } : null))
                 changed.Add((row, item));
             if (changed.Count == 0) { await conn.Commands!.Reply("No gem to change"); return; }
             foreach (var row in changed.GroupBy(c => c.Row))
@@ -350,26 +350,26 @@ partial class Program
                     $"mods cleared{(only is { } o ? $" ({o})" : "")}");
                 return;
             }
-            if (Items.Mods.Find(args[0]) is not { } mod) { await conn.Commands!.Reply($"No mod \"{args[0]}\" in Mods.dat"); return; }
+            if (ItemsFor(conn).Mods.Find(args[0]) is not { } mod) { await conn.Commands!.Reply($"No mod \"{args[0]}\" in Mods.dat"); return; }
             var values = args[1..].Select(int.Parse).ToList();
             var added = mod.With(section ?? mod.DefaultSection, values, Random.Shared);
-            await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Mods = [.. i.Mods, added] }, $"+ {Items.Mods.Describe(added)}");
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { Mods = [.. i.Mods, added] }, $"+ {ItemsFor(conn).Mods.Describe(added)}");
         })
         .Add("roll", "/roll <magic|rare> [item level] (new affixes and name for the held item)", async args =>
         {
             if (args.Length == 0 || !Enum.TryParse<ItemRarity>(args[0], true, out var rarity) || rarity is not (ItemRarity.Magic or ItemRarity.Rare))
                 throw new ArgumentException("magic or rare");
             byte? level = args.Length > 1 ? byte.Parse(args[1]) : null;
-            await ChangeHeldItem(remote, stream, ciphers, conn, i => Rolls.Roll(level is byte l ? i with { ItemLevel = l } : i, rarity, Random.Shared),
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => RollsFor(conn).Roll(level is byte l ? i with { ItemLevel = l } : i, rarity, Random.Shared),
                 $"rolled {rarity}");
         })
         .Add("mods", "/mods (the held item's rarity and mods)", async args =>
         {
             if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
-            await conn.Commands!.Reply($"{(held.Item.NameWords.Count > 0 ? Rolls.NameOf(held.Item.NameWords) + ", " : "")}" +
-                $"{Items.ByHash(held.Item.TypeHash)?.Name} ilvl {held.Item.ItemLevel}, {held.Item.Rarity}" +
+            await conn.Commands!.Reply($"{(held.Item.NameWords.Count > 0 ? RollsFor(conn).NameOf(held.Item.NameWords) + ", " : "")}" +
+                $"{ItemsFor(conn).ByHash(held.Item.TypeHash)?.Name} ilvl {held.Item.ItemLevel}, {held.Item.Rarity}" +
                 $"{(held.Item.Identified ? "" : ", unidentified")}: " +
-                (held.Item.Mods.Count == 0 ? "no mods" : string.Join("; ", held.Item.Mods.Select(Items.Mods.Describe))));
+                (held.Item.Mods.Count == 0 ? "no mods" : string.Join("; ", held.Item.Mods.Select(ItemsFor(conn).Mods.Describe))));
         })
         .Add("rarity", "/rarity <normal|magic|rare|unique> [unid] (the held item)", async args =>
         {
@@ -382,7 +382,7 @@ partial class Program
         {
             if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
             if (args.Length == 0) { await conn.Commands!.Reply($"sockets: {SocketLayout.Describe(held.Item)}"); return; }
-            if (Items.ByHash(held.Item.TypeHash) is not { } type) { await conn.Commands!.Reply("Unknown item type"); return; }
+            if (ItemsFor(conn).ByHash(held.Item.TypeHash) is not { } type) { await conn.Commands!.Reply("Unknown item type"); return; }
             if (SocketLayout.Parse(args, out string? error) is not var (colours, links)) throw new ArgumentException(error);
             int capacity = SocketLayout.CapacityOverride;
             if (SocketLayout.Apply(held.Item, type, colours, links, out error, capacity) is not { } result) { await conn.Commands!.Reply(error!); return; }
@@ -404,9 +404,9 @@ partial class Program
         .Add("passives", "/passives (passive skill points and the allocated passives)", async _ =>
         {
             var (points, refundPoints, nodes, _) = PassiveState(conn);
-            int unspent = points + Passives.PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count;
+            int unspent = points + PassivesFor(conn).PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count;
             await conn.Commands!.Reply($"Level {conn.Pools.Level}, {conn.Experience} experience: {points} passive skill point(s), {unspent} unspent, {refundPoints} refund point(s).\n" +
-                string.Join("\n", nodes.Select(n => $"{n} {Passives.Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
+                string.Join("\n", nodes.Select(n => $"{n} {PassivesFor(conn).Find(n)?.Name}").DefaultIfEmpty("No passives allocated.")));
         })
         .Add("ascendancy", "/ascendancy [normal|phrecia] [name] (list or choose; Phrecia play is gated pending client compatibility)", async args =>
         {

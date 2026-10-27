@@ -112,7 +112,7 @@ static class UtilityFlasks
 
     /// <summary>The utility flasks by BaseItemTypes row, from data/tables Flasks, BuffDefinitions, BuffTemplates,
     /// ComponentCharges and Stats: every one, whatever its stats do here (<see cref="SupportOf"/>).</summary>
-    public static Dictionary<int, Utility> Load(string folder, IReadOnlyList<ItemCatalog.BaseType> rows)
+    public static Dictionary<int, Utility> Load(string folder, IReadOnlyList<ItemCatalog.BaseType> rows, bool ruthless = false)
     {
         var result = new Dictionary<int, Utility>();
         string Table(string name) => Path.Combine(folder, "tables", name + ".json");
@@ -132,7 +132,8 @@ static class UtilityFlasks
         {
             using var templates = JsonDocument.Parse(File.ReadAllBytes(Table("BuffTemplates")));
             foreach (var t in templates.RootElement.EnumerateArray())
-                if (t.GetProperty("Id").GetString() == OnslaughtTemplate && t.GetProperty("BuffDefinitionsKey") is { ValueKind: JsonValueKind.Number } k && k.GetInt32() == onslaught)
+                if (t.GetProperty("Id").GetString() == OnslaughtTemplate + (ruthless ? "HardMode" : "")
+                    && t.GetProperty("BuffDefinitionsKey") is { ValueKind: JsonValueKind.Number } k && k.GetInt32() == onslaught)
                     onslaughtBuff = new((ushort)onslaught, OnslaughtBuff,
                         [.. buffRows[onslaught].GetProperty("StatsKeys").EnumerateArray().Select(StatName)
                             .Zip(t.GetProperty("Buff_StatValues").EnumerateArray().Select(v => v.GetInt32()))]);
@@ -149,12 +150,16 @@ static class UtilityFlasks
             // BuffStatValues has one value per StatsKeys entry (Ruby Flask: base_fire_damage_resistance_% 40,
             // base_maximum_fire_damage_resistance_% 5).
             List<(string, int)> values = [.. buff.GetProperty("StatsKeys").EnumerateArray().Select(StatName)
-                .Zip(f.GetProperty("BuffStatValues").EnumerateArray().Select(v => v.GetInt32()))];
+                .Zip(f.GetProperty(ruthless && f.TryGetProperty("BuffStatValues2", out var alternateValues)
+                    && alternateValues.ValueKind == JsonValueKind.Array ? "BuffStatValues2" : "BuffStatValues")
+                    .EnumerateArray().Select(v => v.GetInt32()))];
             bool grantsOnslaught = buff.GetProperty("GrantedFlags").EnumerateArray().Any(s => StatName(s) == OnslaughtFlag);
             // RecoveryTime is in tenths of a second, as for life flasks (Quicksilver Flask: 60, 6 s; Path of Building and
-            // RePoE 3.29 agree). The second column, RecoveryTime2 (Quicksilver 20), is not the duration the game uses.
+            // RePoE 3.29 agree). RecoveryTime2 is the Ruthless duration (Quicksilver 20, 2 s).
             result.TryAdd(b.GetInt32(), new Utility(b.GetInt32(), (ushort)bk.GetInt32(), buff.GetProperty("Id").GetString() ?? "", values,
-                f.GetProperty("RecoveryTime").GetInt32() / 10.0, use.PerUse, use.Max, grantsOnslaught ? onslaughtBuff : null));
+                f.GetProperty(ruthless && f.TryGetProperty("RecoveryTime2", out var alternateTime)
+                    && alternateTime.ValueKind == JsonValueKind.Number ? "RecoveryTime2" : "RecoveryTime").GetInt32() / 10.0,
+                use.PerUse, use.Max, grantsOnslaught ? onslaughtBuff : null));
         }
         return result;
     }

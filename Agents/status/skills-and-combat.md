@@ -304,6 +304,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Ruthless resolves native skill/gem, passive and mod alternatives per connection, including zero-valued overrides.
+  Ordinary characters in the same Gateway keep ordinary catalogs.
+  Hardcore death is terminal for the old connection; a queued level-up cannot revive it.
+  Hardcore migration and permanent Ruthless death were checked in the real client.
+  Native skill/passive/mod alternatives and late-action guards have automated coverage.
+  See [league modes](../docs/game/league-modes.md).
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;
@@ -704,4 +710,3 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent;
   an effect object follows the player only by 0x1ba glides.
   Combat auras, Heralds and banners are not implemented; only the simple auras above use buffs.
-  Ruthless and SSF change nothing in game; towns are shared across leagues.

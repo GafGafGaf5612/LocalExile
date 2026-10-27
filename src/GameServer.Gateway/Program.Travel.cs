@@ -31,7 +31,7 @@ partial class Program
     {
         lock (conn.Monsters)
             if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
-        if (InTown(conn) && (Skills.IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)) return;
+        if (InTown(conn) && (SkillsFor(conn).IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)) return;
         SpawnedMonster? target;
         lock (conn.Monsters) target = conn.Monsters.GetValueOrDefault(use.TargetId);
         if (target is not null)
@@ -41,9 +41,9 @@ partial class Program
             return;
         }
         // A self-cast skill (Righteous Fire) targets the player itself: echo it in place, then cast.
-        if (use.TargetId == PlayerId && Skills.IsGemSkill(use.SkillId))
+        if (use.TargetId == PlayerId && SkillsFor(conn).IsGemSkill(use.SkillId))
         {
-            var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId);
+            var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == use.SkillId);
             double at = conn.Clock.Elapsed.TotalSeconds;
             (int X, int Y) self = default;
             if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
@@ -369,6 +369,7 @@ partial class Program
             if (!ReferenceEquals(conn.PendingTransfer, t)) return; // the acknowledgement and fallback timer can race
             conn.PendingTransfer = null;
         }
+        PersistRuthlessVitals(conn);
         var r = await InstanceControl.CallAsync(new ControlRequest
         {
             Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New,
