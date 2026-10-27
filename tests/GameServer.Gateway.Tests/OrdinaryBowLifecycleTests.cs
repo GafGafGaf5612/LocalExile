@@ -35,7 +35,7 @@ public class OrdinaryBowLifecycleTests
     [InlineData("disconnect")]
     public async Task Cancelled_windup_cannot_release_even_with_native_output_held(string cancellation)
     {
-        await using var f = new ProjectileRuntimeFixture(); await f.Gate.WaitAsync();
+        await using var f = new ProjectileRuntimeFixture(); await f.HoldOutput();
         int token = f.Conn.ActionCount, epoch = f.Conn.ProjectileEpoch; bool released = false;
         f.Session.Schedule(120000, () => f.Conn.ActionCount == token && f.Conn.PlayerLife > 0
             && f.Conn.ProjectileActive(epoch), () => { released = true; return f.Shot(offense: Offense); });
@@ -77,7 +77,7 @@ public class OrdinaryBowLifecycleTests
     {
         await using var f = new ProjectileRuntimeFixture();
         var target = ProjectileRuntimeFixture.Monster(50, 10); f.Conn.Monsters.Add(42, target);
-        await f.Gate.WaitAsync(); f.Release(f.Shot(offense: Offense)); f.Conn.ActionCount++;
+        await f.HoldOutput(); f.Release(f.Shot(offense: Offense)); f.Conn.ActionCount++;
         f.Advance(5); f.Advance(10);
         Assert.Equal(1, target.Impale.Stacks); Assert.Equal(90u, target.Life);
         Assert.True(f.Conn.LastEnemyHitAt > 0); Assert.Equal(0, f.Available);
@@ -92,7 +92,7 @@ public class OrdinaryBowLifecycleTests
     {
         await using var f = new ProjectileRuntimeFixture();
         var target = ProjectileRuntimeFixture.Monster(100, 10); target.Impale.Apply(100);
-        f.Conn.Monsters.Add(42, target); await f.Gate.WaitAsync();
+        f.Conn.Monsters.Add(42, target); await f.HoldOutput();
         f.Release(f.Shot(offense: Offense)); f.Advance(1);
         if (change == "pause") f.Conn.Clock.Stop();
         if (change == "transfer") f.Conn.TryBeginAreaChange(new(2, 0, false), out _);

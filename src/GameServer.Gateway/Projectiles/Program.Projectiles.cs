@@ -235,7 +235,7 @@ partial class Program
             var p = value.Projectile;
             int x = (int)Math.Round(value.Position.X), y = (int)Math.Round(value.Position.Y);
             var presentation = PresentationFor(p);
-            if (presentation.EventEffect?.Invoke(value) is { } eventEffect) Effect(x, y, eventEffect);
+            if (presentation.EventEffect?.Invoke(value) is { } eventEffect) Effect(x, y, eventEffect, presentation.EffectLifetime);
             if (value.Kind == ProjectileEventKind.Spawn)
             {
                 string? flightVisual = (p.Use.Payload as ProjectileOffense)?.FlightVisual ?? presentation.FlightVisual;
@@ -283,10 +283,10 @@ partial class Program
                 });
             }
             else if (value.Kind == ProjectileEventKind.Area && p.Use.Payload is ProjectileOffense { AreaVisual: { } ao })
-                Effect(x, y, ao);
+                Effect(x, y, ao, presentation.EffectLifetime);
         }
 
-        void Effect(int x, int y, string ao)
+        void Effect(int x, int y, string ao, long lifetime)
         {
             uint id = Conn.NextObjectId++;
             var effect = new EffectObject(x, y, ao);
@@ -299,7 +299,7 @@ partial class Program
                 return InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(EffectObject.TypePath), effect.Blob());
             });
             Packet(() => visual.Created ? InstanceProtocol.EnterWakeZone(id) : null);
-            Runtime.Schedule(Runtime.Now + 60000, () =>
+            Runtime.Schedule(Runtime.Now + lifetime, () =>
             {
                 visual.Ended = true;
                 Packet(() =>
@@ -364,7 +364,8 @@ partial class Program
                     end = p.Position + p.Direction * Math.Min(p.Remaining, (next - fraction) * arc.Distance);
                     startHeight = arc.Height(fraction);
                 }
-                if (TraceTerrain(p.Position, end) is { } wall) end = p.Position + (end - p.Position) * wall.Fraction;
+                if (!(p.Phase > 0 && p.Profile.IgnoreTerrainOnReturn) && TraceTerrain(p.Position, end) is { } wall)
+                    end = p.Position + (end - p.Position) * wall.Fraction;
                 if (visual.Arc is { } path) endHeight = path.Height(path.Fraction(p.Distance + (end - p.Position).Length));
                 float duration = (float)Math.Max(.001, (end - p.Position).Length / p.Speed);
                 return [.. startHeight.StopAt(visual.Id, (int)Math.Round(p.Position.X), (int)Math.Round(p.Position.Y)),

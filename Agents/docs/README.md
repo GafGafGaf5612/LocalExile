@@ -46,7 +46,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 
 ## How-to
 
-[Projectile framework](game/projectile-framework.md): optional generic host and skill-provider boundary.
+[Projectile framework](game/projectile-framework.md): sole production simulator and skill-provider boundary.
 | Doc | Content |
 |---|---|
 | [../GettingStarted.md](../GettingStarted.md) | setup from a fresh clone, third-party tools, troubleshooting |

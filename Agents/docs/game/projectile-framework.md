@@ -2,7 +2,7 @@
 
 The generic implementation is in `src/GameServer.Core/Projectiles/` and
 `src/GameServer.Gateway/Projectiles/`. Concrete registrations live in the optional
-`Projectiles/Skills/` provider, delivered by the dependent skill-coverage branch.
+`Projectiles/Upstream/` provider in the upstream-migration layer; the researched skill layer is deferred.
 
 `feat/projectile-framework` is based on upstream main. It supplies integer-time simulation,
 30 Hz hosting, continuation and hit-admission primitives, resolved-stat binding, synchronous
@@ -12,11 +12,12 @@ resolved counts and continuations; ordinary bows use the same runtime. This appr
 implement a special skill's explosions, pulses, children, forms or resource rules. Missing metadata
 or an unsupported damage plan is refused before costs, without falling through to an area hit.
 
-`feat/projectile-skill-coverage` is stacked on that framework. It registers exact effects and
-replaces basic recipes for adopted gems and requires explicit recipes for gem projectiles.
-Skill recipes, numeric calibration, native art and resource rules belong there. It does not
-replace the production entrance or install a flight simulator.
-The split preserves the previous behavior; it does not establish official visual parity.
+`feat/projectile-upstream-coverage` is stacked on the framework and migrates existing upstream Fireball,
+Kinetic Blast and named return policies while keeping catalog fallback. It contains no researched skill expansion.
+`feat/projectile-skill-coverage` is preserved at its tested full delivery; porting those recipes onto the minimal
+layer is deferred. Only framework and upstream migration form the first local milestone.
+See the [milestone boundary and plan](../design/projectile-milestone-one.md).
+This migration does not establish official visual parity.
 
 ## Extension contract
 
@@ -27,6 +28,11 @@ The split preserves the previous behavior; it does not establish official visual
 - The common release captures position, damage, stats, critical inputs and speed, then invokes
   specialization once inside the existing simulation commit. Specialization can supply frozen
   per-initial-projectile payloads. Continuation children inherit those snapshots.
+- Generic stage controls distinguish contact/terminal areas, excluded contact victims and return phases.
+  Return chance, speed, hit budget, phase-specific quota, denied-contact skipping, collision-only triggers,
+  wall handling and overshoot are recipe inputs. Optional outbound contact budgets retain endpoint travel,
+  while terminal-area policies can suppress a later area after piercing contacts.
+  Defaults retain the existing staged behavior; upstream migration selects its historical policies.
 - `GatewayProjectileModifiers` binds generic counts, continuation grants and prohibitions.
   Recipes explicitly declare consumed chain or intrinsic split inputs; count conversion runs once.
 - `ProjectilePresentation` chooses flight mesh/clip, second-form clip and event effects.

@@ -15,6 +15,9 @@ sealed class ProjectileRuntimeFixture : IAsyncDisposable
     public readonly ConnectionCiphers Ciphers = new(new byte[64], false);
     public NetworkStream Stream => writer.GetStream();
     public SemaphoreSlim Gate => Program.SendGates.GetValue(Ciphers, _ => new(1, 1));
+    bool outputHeld;
+    public async Task HoldOutput() { await Gate.WaitAsync(); outputHeld = true; }
+    public void ReleaseOutput() { if (outputHeld) { outputHeld = false; Gate.Release(); } }
     public ClientState Conn { get; }
     public Program.ProjectileSession Session { get; }
     public int Available => reader.Available;
@@ -61,7 +64,7 @@ sealed class ProjectileRuntimeFixture : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Conn.Closed = true; Session.Invalidate();
-        if (Gate.CurrentCount == 0) Gate.Release();
+        ReleaseOutput();
         await Session.OutputCompleted.WaitAsync(TimeSpan.FromSeconds(5));
         reader.Dispose(); writer.Dispose(); listener.Stop();
     }

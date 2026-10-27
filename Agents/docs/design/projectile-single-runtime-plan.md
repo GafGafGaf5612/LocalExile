@@ -1,5 +1,8 @@
 # Single projectile runtime correction
 
+The [three-layer milestone plan](projectile-milestone-one.md) supersedes this earlier delivery plan.
+Existing upstream return policies are now migration requirements; full researched coverage remains deferred.
+
 > Execute continuously using the existing isolated worktree; the user's split correction authorizes implementation.
 
 ## Goal and revised boundary

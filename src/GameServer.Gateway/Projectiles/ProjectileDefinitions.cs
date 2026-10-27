@@ -23,10 +23,13 @@ partial class Program
         public uint? FlightClip { get; init; }
         public uint? SecondFormClip { get; init; }
         public Func<ProjectileEvent, string?>? EventEffect { get; init; }
+        public long EffectLifetime { get; init; } = 60000;
     }
 
     static partial void RegisterProjectileSkillDefinitions(Dictionary<string, ProjectileSkillDefinition> definitions,
         ref bool requireExplicitProfiles);
+
+    static partial void ConfigureCatalogProjectileDefinition(int effect, ref ProjectileSkillDefinition? definition);
 
     static readonly (IReadOnlyDictionary<string, ProjectileSkillDefinition> Definitions, bool RequireExplicitProfiles) ProjectileDefinitions
         = BuildProjectileDefinitions();
@@ -47,8 +50,10 @@ partial class Program
     internal static ProjectileSkillDefinition? CatalogProjectileDefinition(int effect)
     {
         if (!Skills.IsProjectile(effect) || Skills.ProjectileFor(effect) is not { } projectile) return null;
-        return new(projectile.Id, (get, speed) =>
+        ProjectileSkillDefinition? definition = new(projectile.Id, (get, speed) =>
             GatewayProjectileDefaults.Resolve(projectile.Id, get, speed, Skills.IsAttack(effect)));
+        ConfigureCatalogProjectileDefinition(effect, ref definition);
+        return definition;
     }
 
     static ProjectileSkillDefinition? ResolveProjectileDefinition(int effect) =>

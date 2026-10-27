@@ -54,7 +54,7 @@ public class PiercingProjectileTests
         await using var f = new ProjectileRuntimeFixture();
         var near = ProjectileRuntimeFixture.Monster(40, 10); var far = ProjectileRuntimeFixture.Monster(110, 10);
         f.Conn.Monsters.Add(9, far); f.Conn.Monsters.Add(2, near);
-        await f.Gate.WaitAsync(); f.Release(f.Shot(Arrow));
+        await f.HoldOutput(); f.Release(f.Shot(Arrow));
         f.Advance(.7); Assert.Equal(90u, near.Life); Assert.Equal(100u, far.Life);
         f.Advance(4.01); f.Advance(5);
         Assert.Equal(90u, near.Life); Assert.Equal(90u, far.Life); Assert.Equal(0, f.Available);

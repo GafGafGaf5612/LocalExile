@@ -1,10 +1,15 @@
 # Projectile framework and skill coverage split
 
+The current three-layer delivery and first-milestone acceptance are specified in
+[projectile-milestone-one.md](projectile-milestone-one.md).
+This document retains the generic/recipe responsibility contract; the former full-coverage delivery is deferred.
+
 ## Intent
 
 Split the existing implementation into separately reviewable code responsibilities and stacked development branches.
-The user selected both code and branch separation. The preserved behavioral baseline is `9fe3262`.
-Existing adopted skills retain their counts, timing, hit policies, damage and visuals.
+The user selected both code and branch separation. The earlier full-split baseline was `9fe3262`;
+that delivery remains preserved by the frozen full coverage ref. Milestone one instead migrates upstream behavior
+as described in the current plan; additional adopted skills are deferred.
 The user's correction requires the framework alone to own actual production execution and removes the old engine.
 Unresolved native height, appearance and official-parity questions remain unresolved.
 
@@ -12,8 +17,10 @@ Unresolved native height, appearance and official-parity questions remain unreso
 
 1. `feat/projectile-framework`, based on the current upstream `main`, supplies the source-neutral Core simulator
    and generic Gateway hosting contracts, lifecycle, combat mutation and presentation machinery.
-2. `feat/projectile-skill-coverage`, based on the framework branch, registers exact supported skills, their profiles,
-   resource rules, display bindings and presentation choices, with explicit-recipe admission for gem projectiles.
+2. `feat/projectile-upstream-coverage`, based on framework, migrates only executable upstream special behavior
+   (Fireball, three KB IDs, named return policies), with basic catalog fallback.
+3. `feat/projectile-skill-coverage` preserves the full tested delivery at `f41993dc`; migration onto layer 2 is deferred.
+   Its researched exact skills, resources, panels and presentation are outside milestone one.
 
 The original `feat/projectile-runtime` and existing `dev/ci` history are preserved.
 No force push, branch deletion, CI reset or unrelated feature import is part of the split.
@@ -38,7 +45,7 @@ it does not establish special-skill parity. Unknown projectile metadata/damage p
 Coverage replaces recipes and may require explicit registrations, but cannot replace production routing or flight.
 There is no dormant-host mode, legacy flight engine or test-only callback collision implementation.
 
-## Coverage responsibilities
+## Deferred extended coverage responsibilities
 
 - Exact GrantedEffects IDs, metadata, profile defaults and provisional numeric choices.
 - Per-skill consumption of count/chain/split inputs, including conversion ownership.

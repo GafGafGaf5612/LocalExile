@@ -183,9 +183,9 @@ public class ProjectileFlightTests
         {
             await using var f = new ProjectileRuntimeFixture();
             f.Release(); await f.Read(); uint id = Assert.Single(f.Conn.ProjectileObjects);
-            await f.Gate.WaitAsync(); f.Advance(10.01);
+            await f.HoldOutput(); f.Advance(10.01);
             Assert.Empty(f.Session.Runtime.Projectiles); // Terminal simulation precedes paused output cleanup.
-            f.Conn.Clock.Stop(); f.Gate.Release();
+            f.Conn.Clock.Stop(); f.ReleaseOutput();
             Assert.Contains(id, f.Conn.ProjectileObjects);
             if (transfer)
             {

@@ -284,7 +284,7 @@ and may require explicit registrations. The old flight engine and its test-only 
   grants and independent prohibitions in the sole staged runtime. Ordinary bows and catalog-known projectile gems
   work without a skill provider. A basic recipe is straight flight, not complete special-skill behavior.
   Return opens another hit-admission phase and reads the shared returning-damage multiplier. Partial return chance,
-  return overshoot and support-specific return pierce budgets remain pending; old debug/exception policy is removed.
+  return speed, contact budgets, overshoot and terrain behavior are configurable; named policies live in coverage.
   Skill explosions, pulses, children, forms, native art and specialized resources belong to coverage registrations.
   Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
   Code: Core `Projectiles/`, Gateway `Projectiles/`; see the [framework guide](../docs/game/projectile-framework.md).

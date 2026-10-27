@@ -25,7 +25,10 @@ public sealed record ProjectileHitRule(ProjectileHitScope Scope = ProjectileHitS
 public enum ProjectileEndReason { Enemy, Terrain, Distance, Lifetime, Landing, Consumed, Teardown, Fork, Split, Returned }
 public enum ProjectileEventKind { Spawn, Redirect, End, Area, Hit }
 public sealed record ProjectileAreaRecipe(string Stage, double Radius, int Count = 1, double Offset = 0,
-    double Multiplier = 1, ProjectileHitScope Scope = ProjectileHitScope.Projectile);
+    double Multiplier = 1, ProjectileHitScope Scope = ProjectileHitScope.Projectile)
+{
+    public bool ExcludeContactTarget { get; init; }
+}
 public sealed record ProjectilePulseRecipe(string Stage, double Radius, long Interval);
 public sealed record ProjectileEmissionRecipe(ProjectileProfile Child, bool Radial = false, long Interval = 0,
     bool RandomDirections = false);
@@ -39,6 +42,8 @@ public sealed record ProjectileProfile(string Id)
 {
     public int Count { get; init; } = 1;
     public double SpreadRadians { get; init; } = Math.PI / 6;
+    /// <summary>Null infers circular emission from a spread of at least one full turn.</summary>
+    public bool? CircularSpread { get; init; }
     /// <summary>Sample each launch direction within the spread instead of placing an evenly spaced fan.</summary>
     public bool RandomSpread { get; init; }
     /// <summary>Zero keeps a fixed fan; positive values widen it as aim approaches the emitter.
@@ -56,6 +61,20 @@ public sealed record ProjectileProfile(string Id)
     public int Split { get; init; }
     public double ChainRange { get; init; } = 60;
     public bool Returns { get; init; }
+    public int ReturnChancePercent { get; init; }
+    public double ReturnSpeedMultiplier { get; init; } = 1;
+    public double ReturnOvershoot { get; init; }
+    /// <summary>Null retains unlimited return contacts; zero admits no return contacts.</summary>
+    public int? ReturnHitLimit { get; init; }
+    /// <summary>When set, limits outbound contact attempts while flight continues to its endpoint.</summary>
+    public int? OutboundHitLimit { get; init; }
+    public bool ReturnOnDistance { get; init; } = true;
+    public bool IgnoreTerrainOnReturn { get; init; }
+    public bool ExcludeTurnaroundTarget { get; init; }
+    /// <summary>Skip contacts denied by direct-hit admission before running contact stages.</summary>
+    public bool SkipDeniedReturnContacts { get; init; }
+    /// <summary>Skip outbound contacts denied by direct-hit admission before running contact stages.</summary>
+    public bool SkipDeniedContacts { get; init; }
     public bool CannotPierce { get; init; }
     public bool CannotFork { get; init; }
     public bool CannotChain { get; init; }
@@ -63,8 +82,14 @@ public sealed record ProjectileProfile(string Id)
     public bool CannotReturn { get; init; }
     public int TerrainBounces { get; init; }
     public ProjectileHitRule HitRule { get; init; } = new();
+    /// <summary>Optional direct-hit admission during return. Null inherits HitRule.</summary>
+    public ProjectileHitRule? ReturnHitRule { get; init; }
     public ProjectileAreaRecipe? EndArea { get; init; }
+    public IReadOnlySet<ProjectileEndReason>? EndAreaReasons { get; init; }
     public ProjectileAreaRecipe? ContactArea { get; init; }
+    public bool ContactAreaOnReturn { get; init; } = true;
+    /// <summary>Suppress outbound terminal areas after actor contacts, including terrain contact areas.</summary>
+    public bool TerminalAreaRequiresNoContact { get; init; }
     public ProjectileEmissionRecipe? EndEmission { get; init; }
     public ProjectileEmissionRecipe? TravelEmission { get; init; }
     public ProjectilePulseRecipe? Pulse { get; init; }
@@ -129,6 +154,9 @@ public sealed class ProjectileEntity
     public double DamageMultiplier { get; internal set; } = 1;
     internal int Pierce, Fork, Chain, Split, TerrainBounces;
     internal int GroundChains;
+    internal int ReturnContacts = 0;
+    internal int OutboundContacts = 0;
+    internal ProjectileActorKey? TurnaroundTarget;
     internal long ChildEmission;
     internal int EmissionNumber;
     internal readonly Random Random;

@@ -89,6 +89,7 @@ public sealed partial class ProjectileRuntime
             world.Publish(new(ProjectileEventKind.Area, p, Now, centre, Radius: recipe.Radius));
             foreach (var target in world.Actors(Now, Now).OrderBy(a => a.Key.Id).ThenBy(a => a.Key.Generation))
                 if (target.Team != p.Use.Team && target.Key != p.Use.Owner
+                    && (!recipe.ExcludeContactTarget || target.Key != victim)
                     && (target.Position(Now) - centre).Length <= recipe.Radius + target.Radius)
                     if (target.Key == victim)
                         Damage(p, target, recipe.Stage, multiplier: recipe.Multiplier, admissionStage: "direct");

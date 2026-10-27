@@ -47,14 +47,19 @@ static class GatewayProjectileModifiers
                 throw new InvalidOperationException("Unadopted early end transition for " + p.Id + " (COMBO-01)");
             p = p with { Range = distance };
         }
-        p = ProjectileParameters.Resolve(p, modifiers);
+        ProjectileProfile ReturnControls(ProjectileProfile target) => target with
+        {
+            ReturnChancePercent = Math.Max(target.ReturnChancePercent, Math.Clamp(get("projectile_return_%_chance"), 0, 100)),
+            ReturnSpeedMultiplier = target.ReturnSpeedMultiplier * Math.Max(.01, 1 + get("returned_projectile_speed_+%") / 100d)
+        };
+        p = ReturnControls(ProjectileParameters.Resolve(p, modifiers));
         // Children receive already resolved continuation grants, never another count expansion.
         if (p.EndEmission is { } endEmission)
-            p = p with { EndEmission = endEmission with { Child = ProjectileParameters.Resolve(endEmission.Child,
-                modifiers with { ExtraProjectiles = 0 }) } };
+            p = p with { EndEmission = endEmission with { Child = ReturnControls(ProjectileParameters.Resolve(endEmission.Child,
+                modifiers with { ExtraProjectiles = 0 })) } };
         if (p.TravelEmission is { } travelEmission)
-            p = p with { TravelEmission = travelEmission with { Child = ProjectileParameters.Resolve(travelEmission.Child,
-                modifiers with { ExtraProjectiles = 0 }) } };
+            p = p with { TravelEmission = travelEmission with { Child = ReturnControls(ProjectileParameters.Resolve(travelEmission.Child,
+                modifiers with { ExtraProjectiles = 0 })) } };
         return p;
     }
 }

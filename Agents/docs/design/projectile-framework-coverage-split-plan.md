@@ -1,5 +1,8 @@
 # Projectile Framework and Coverage Split Implementation Plan
 
+The [three-layer milestone plan](projectile-milestone-one.md) supersedes this earlier delivery plan.
+Existing upstream return policies are now migration requirements; full researched coverage remains deferred.
+
 > Execute continuously with `superpowers:executing-plans`; code and stacked branch separation are user-authorized.
 
 **Goal:** Deliver a standalone generic framework and a dependent skill-coverage branch without losing existing fixes.
