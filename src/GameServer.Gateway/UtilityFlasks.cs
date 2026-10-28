@@ -8,7 +8,7 @@ using GameServer.Core.Protocol.Instance;
 /// second); ComponentCharges its charges. A use puts the buff on the player for the duration and its stats count on the
 /// character until it ends (<see cref="Apply"/>, <see cref="RawStats"/>), as do the flask's "during effect" mods
 /// (<see cref="DuringEffect"/>). How each stat counts is <see cref="SupportOf"/>: modelled, shown on the character panel
-/// only (ailments, stun and curses on the player, which nothing here inflicts), or waiting for Ward (PR #206).
+/// only (unsupported ailment/curse effects), or consumed by the authoritative Ward pool.
 /// </summary>
 static class UtilityFlasks
 {
@@ -35,7 +35,7 @@ static class UtilityFlasks
         /// <summary>It goes to the client for the character panel only: ailments, stun and curses on the player do not
         /// exist here (monsters only hit), so it changes nothing yet.</summary>
         PanelOnly,
-        /// <summary>Ward, which PR #206 brings (<see cref="Ward"/> is the one place to connect it).</summary>
+        /// <summary>Ward bonuses consumed by the authoritative pool through <see cref="Apply"/>.</summary>
         Ward,
         /// <summary>Not applied.</summary>
         Unsupported,

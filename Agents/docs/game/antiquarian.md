@@ -2,7 +2,7 @@
 
 The delivery unit is the selected Antiquarian class, with legal connected eight-point builds and gameplay consumers.
 The implementation branch is `codex/antiquarian-completion`, based on main `fc5f4b17`, tracked in issue #98.
-Native whole-class acceptance is still pending; passing source or isolated consumer tests is not completion.
+All nine notables and nine small nodes passed whole-class native acceptance in three legal builds.
 Behemoth is delivered separately in PR #328; its Rampage/Vaal engines are not imported here.
 
 ## Admission and client data
@@ -79,6 +79,7 @@ The prerequisite implementation is composed from PR #323 head `8b681aef`.
 Enduring Cry now supplies a concrete owner-duration consumer alongside its existing charge generation.
 The target stat set gives 2500 ms and 120% Life/min per five Power, capped at 25 Power by its stat description.
 Whaletooth and compatible duration supports scale that recovery interval, retaining its rate.
+Unrepresentable intervals are bounded to one day; negative duration factors produce no recovery interval.
 The native recovery buff, exact resource integral, death cleanup and transfer use the same paid skill snapshot.
 
 Turtle Shell runs only after the existing supported physical melee stun is accepted.
@@ -117,6 +118,32 @@ All deadlines use the connection's pausable game clock.
 Successful ticket transfer carries remaining Ward delay, Adrenaline and earned/pending stun recovery once.
 Destination loading freezes the remaining durations; old-area actors and pending attacks are not carried.
 Relog and Gateway restart clear transient effects while retaining the class and paid passive progress.
-The whole-class native run must check all three builds, actual combat, refunds, pause, death, travel and restart.
-Record the tested source/base, embedded Gateway/Core/Host versions, DLL hash and listener working directory.
-Then restore the accepted normal Gateway and leave the single client at login.
+
+### Native evidence
+
+The single 3.29.3b client passed 37 checks through the documented native control bridge, without desktop input.
+Each run created its own synthetic Marauder and verified the actual selected Phrecia identity, graph and saved nodes.
+Packed class 193 and graph stat 21146 confirmed Antiquarian rather than normal Chieftain.
+All eight-point allocations were connected, and full refunds spent 40 refund points.
+
+| Build | Checks and observed behavior | Evidence directory |
+|---|---|---|
+| Ward | 12: Plate Vest 19 becomes 22 Ward/22 Armour after conversion and scaling; chaos hit breaks Ward; all six Adrenaline stats; one-second restoration; 21 wall seconds paused; paid source refund/reallocation; remaining-time area carry/expiry; death/resurrection; paid Iron Flask restores 502 Ward for 40 charges; full refund | `logs/native-ward-20261028-170649/` |
+| Strength and stun | 11: final Strength 272, Intelligence 0, Dexterity 7; real level-8 Fireball requirement refusal; actual Hungry Corpse melee stun and 8% recovery; paid Turtle refund/reallocation; paid Enduring Cry heals 251 over 3.175 seconds versus 198 over 2.5 seconds without Whaletooth; ten actual always-hit contacts and miss control after refund; relog; full refund | `logs/native-strength-20261028-164056/` |
+| Lioneye | 14: real shield base block 60%; physical ranged Life loss 33 versus melee/spell 133; paid shield refund and shield removal; real bow arrows deal 80 near/160 far versus 100 without Far Shot; paid full refund; new eight-point Ward build survives Gateway process restart with Adrenaline cleared; ordinary Juggernaut restores Default graph | `logs/native-lioneye-20261028-170126/` |
+
+Ward/Iron Flask used source `270450a5d90da64c72cd5702e6fce72a5164e279` over main
+`fc5f4b171c459982e850904e90122dc61a6c8708`.
+Its Gateway SHA-256 was `e94a4053eff0762093c15919ce79f5c1e0db241b60fec1166452c07aedfb34e7`.
+The other two runs used `a8bacb9a684f06f5ab2d0fde848f9e15a45c5064` over the same base, with Gateway SHA-256
+`c6cf815c19e8bef1674a6ded712f5f0d7f9d10c4b27539d9f0de9359eff0d521`.
+The only later behavioral change is the paid Iron Flask restoration covered by the final Ward run.
+Every run checked clean source, embedded Gateway/Core/Host revisions, the listening DLL path and repository-root CWD.
+Metadata, read-only class events and results are retained locally in those ignored directories.
+No client archive writes or client restarts were performed.
+Cleanup left the existing single client at login and restored the accepted normal Gateway without either opt-in.
+
+The native incoming ranged comparison uses the same production mitigation path through a diagnostic hit.
+Actual player bow travel/contact and an actual monster melee stun were checked separately.
+This acceptance covers the explicit supported server models above, not every enemy projectile/stun executor,
+every skill-duration engine, the native Altar, or official-server parity of rounding and timing.

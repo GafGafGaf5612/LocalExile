@@ -24,13 +24,11 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** command selection, saved identities, separate point awards, paid refunds and ordinary/ascendancy
   graph connectivity now have automated coverage; see [scope and limitations](../docs/game/ascendancies.md).
   Ordinary command selection, refunds, relog and a Gateway restart are verified with a native Duelist/Slayer smoke.
-- **Known:** Antiquarian's Whaletooth Bangle derives increased owner skill duration from final Strength (#245).
-  Allocation/refund/reload have automated coverage; Phrecia client admission remains gated.
-  Executable skill/summon lifetime consumers and their native elapsed-time checks remain separate work.
+- **Known:** Antiquarian's complete supported node consumers and three legal builds have native acceptance (#98).
+  Whaletooth scales actual Enduring Cry recovery; paid refunds, transient effects and durable class progress pass.
+  See [Status](../status/progression.md) and the [model/evidence audit](../docs/game/antiquarian.md).
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
-  Antiquarian whole-class acceptance is tracked in #98; finish its native matrix before starting another class.
-  The [Antiquarian audit](../docs/game/antiquarian.md) covers every node and pending acceptance.
-  Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
+  Other Phrecia classes retain their default gate; Antiquarian requires its exact verified installed graph opt-in.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
 - **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
   Implementing all 19 Phrecia classes' special gameplay is separate from this selection lifecycle.
