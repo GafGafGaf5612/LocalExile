@@ -167,10 +167,11 @@ partial class Program
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         // Derive once from the resolved final rating, after pools and explicit stat replacements. Only this
         // temporary dictionary changes; repeated builds and removal cannot feed the bonus back into raw sources.
-        if (Get(ArmourAttackDamage.Per450Armour) is int perArmour and not 0
+        if ((Get(ArmourAttackDamage.Per450Armour) != 0 || Get(ArmourAttackDamage.Per450Evasion) != 0)
             && Stats.Key("attack_damage_+%") is uint attackDamage)
             stats[attackDamage] = ArmourAttackDamage.Total(Get("attack_damage_+%"),
-                Get("physical_damage_reduction_rating"), perArmour);
+                Get("physical_damage_reduction_rating"), Get(ArmourAttackDamage.Per450Armour),
+                Get("evasion_rating"), Get(ArmourAttackDamage.Per450Evasion));
         // Whaletooth Bangle uses complete groups of final Strength. Derive from this fresh snapshot once; never
         // write back into raw sources. An explicit final-duration /set_stat keeps its usual replacement semantics.
         if (Stats.Key(SkillDurationModifiers.IncreasedDuration) is uint durationKey && !devSet.Contains(durationKey))
