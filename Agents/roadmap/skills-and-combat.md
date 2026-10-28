@@ -32,7 +32,11 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### The player's real stats
 
-- **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) Ã‚Â§8); `/set_stat` takes names.
+Issue #75 validation counts and Standard/Ruthless native matrices below describe the source LocalExile revisions.
+This branch ports their completed ordinary-mode calculations; fresh build/test results, scope exclusions and
+remaining native checks are recorded in [the port record](../docs/dev/issue75-port.md).
+
+- **Known:** client stat key = Stats.dat row + 1 ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes names.
   The server must send final values (the client derives none): the attack's are computed in
   `SkillCatalog.Unarmed.Stats`.
   Mana per complete group of final Strength now has native raw-source/gear controls and automated pool coverage.
@@ -45,7 +49,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   layout/send-gate checks; remaining base progress is retained without consuming another use.
   Remaining cooldown work includes multi-use recharge, shared groups, bypass, typed/conditional/more recovery,
   official tick boundaries.
-  See [11](../docs/protocol/11-skills.md) Ã‚Â§9.
+  See [11](../docs/protocol/11-skills.md) §9.
 - **Spell cast timing (#192):** native base milliseconds are preserved and cast speed adjusts server waits and
   displayed rate once. Automated checks and real-client -80%/+100%/zero clip durations pass.
   Projectile release/contact alignment was not separately measured.
@@ -78,8 +82,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   consumers and Spirit/Abyss-jewel counting remain open; these changes do not certify entire charge rows.
   Selected area/item-rarity/minion-increased aliases now use one raw actor-plus-own snapshot, with explicit final
   zero/replacement precedence, source clearing and Cyclone radius preservation. `SendPlayer` initial/transition
-  creation and later skill refreshes share the snapshot path. Real support controls cover both modes, including
-  Ruthless exclusion of unavailable Item Rarity Support.
+  creation and later skill refreshes share the snapshot path. Real support controls cover ordinary availability.
+  The historical LocalExile Ruthless exclusion of Item Rarity Support is outside this port.
   Minion combat/drop execution and native alias checks remain open.
   Added-base/default-mirror/selected-alias coverage passes 52/19/22 new cases and 95 existing controls: 188 focused
   cases without skips. Fresh full Gateway 3803/Core 648/Data 37 pass without skips (4488 freshly rerun cases).
@@ -190,7 +194,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### Auras: reservation and effects
 
-- **Known:** `GrantedEffectsPerLevel` carries the reservation; the Life pool's reserved field and SÃ¢â€ â€™C 0x1b1 update it;
+- **Known:** `GrantedEffectsPerLevel` carries the reservation; the Life pool's reserved field and S→C 0x1b1 update it;
   Purity of Elements/Fire/Ice/Lightning, Clarity, Vitality, Precision and Haste are implemented with their buff
   visuals and `/auras`, awaiting live verification ([11](../docs/protocol/11-skills.md) 13,
   [Status](../status/skills-and-combat.md)).
@@ -216,7 +220,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   packets.
   The default attack, Fireball and monster melee use packets and read the player's/skill's conversion stats
   ([20](../docs/protocol/20-damage.md)).
-  Player hits on monsters take the target's base resistance per type (`MonsterTypes.Resistances` Ã¢â€ â€™
+  Player hits on monsters take the target's base resistance per type (`MonsterTypes.Resistances` →
   `MonsterResistances` by the level's difficulty, `MonsterResistanceCatalog`/`HitMitigation`), with the hit's
   unconditional penetration subtracted from the capped value and no second clamp (`Penetration`): general
   per-element and elemental stats on every hit, attack-only variants on attacks, the cannot-penetrate flag
@@ -231,9 +235,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   verify queued capacity changes and predictor clearing in the native client.
   Added damage has its first stat: the attack's added lightning gets
   `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
-  (Whisperer "we know all", [20](../docs/protocol/20-damage.md) Ã‚Â§2b).
+  (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
   Whisperer's 150% spell-increase transfer has shared attack regression coverage and native hit/panel checks.
-  Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) Ã‚Â§2c.
+  Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) §2c.
   Steel Willed's attack increase from complete groups of final armour has shared regression and native coverage.
   Boolean chaos-hit armour has native raw-source Life-loss controls and shared incoming-hit regressions.
   Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.
@@ -279,7 +283,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   The pure base overrides are in as a generic stat consumer (`override_weapon_base_critical_strike_chance` and the
   unarmed base in `AttackBaseCriticalStrike`): Slayer Overwhelm, Blind Prophet's Sightless and Behemoth Final Blow
   have native-verified base calculations, active-set isolation and cannot-crit gates (Status and
-  protocol/11-skills.md Ã‚Â§critical strikes).
+  protocol/11-skills.md §critical strikes).
   Recheck the resolved stack's shared half-up midpoint natively; the original head's native checks remain historical.
   Recheck development generic/spell increases and rounding live after the input-consistency review fixes.
   Deliver their nodes through the separate ascendancy lifecycle; Slayer's per-nearby-enemy crit multiplier is separate.
@@ -316,7 +320,7 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### Death screen variants
 
-- **Known:** SÃ¢â€ â€™C 0x55 flags bit0/2/3 are mapped ([11](../docs/protocol/11-skills.md) Ã‚Â§7);
+- **Known:** S→C 0x55 flags bit0/2/3 are mapped ([11](../docs/protocol/11-skills.md) §7);
   bit4 and the trailing u32 / u8 / u16 are not.
 - **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
 

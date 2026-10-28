@@ -93,6 +93,12 @@ ActionType → `HASH16`); the default attack's is `Melee` 45448 = 0xb188.
 
 ## 4. The default attack
 
+**Issue #75 evidence scope:** imported test counts and Standard/Ruthless native matrices in this document describe
+the original LocalExile revisions. They are retained as historical evidence, including their UNPROVED boundaries.
+This branch ports the completed ordinary-mode work without the source's private game-mode implementation.
+See [the port record](../dev/issue75-port.md) for revision mapping, fresh automated validation and native checks
+still required on the ported branch. Source `artifacts/issue75-completion/` paths refer to the LocalExile checkout.
+
 Characters.dat `StartingMeleeSkill` is the GEPL row of each class's default attack: **4474** = `PlayerMelee` level 1
 for the Witch. Its stat set is GrantedEffects `StatSet1` = 476 (`PlayerMelee`), level 1 = GESSPL row **4430**.
 `SkillCatalog` looks both up by GrantedEffects `Id` and level (`Game_PLAYER_ATTACK` picks another effect).
@@ -1938,9 +1944,9 @@ Both `PlayerSkills` refreshes and `SendPlayer` initial/area-transition object cr
 override membership and actual player level into `GemSkills`. The selected overlay runs after Cyclone's radius
 calculation, preserving its separate base/radius inputs: actor area 20 plus real Increased AoE own 30 gives area 50,
 radius 19 from base 16, and radius-percent 22; unlinking restores area 20/radius 17 without counting the alias twice.
-Real linked supports cover AoE 20+30=50 and minion increased 15+quality 10=25 in both modes;
-Standard rarity gives 10+40=50.
-Item Rarity Support is unavailable in Ruthless, so its own40 remains excluded; actor sources and explicit final
+Real linked supports cover AoE 20+30=50, minion increased 15+quality 10=25 and ordinary rarity 10+40=50.
+The historical LocalExile tests additionally excluded Item Rarity Support's own40 in Ruthless; that private
+mode-specific availability is outside this branch. Actor sources and explicit final
 replacements still work. Requirement failure, incompatible supports, unlink/relink/removal, unrelated/default skill
 isolation and repeated builds are covered. This changes selected publication; it does not add minion combat or
 item-drop execution, and native validation of these aliases remains outstanding.

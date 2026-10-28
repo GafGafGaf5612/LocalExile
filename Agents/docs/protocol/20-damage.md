@@ -22,7 +22,7 @@ A hit is a **packet** with a separate minimum/maximum range for each type:
 Conversion only goes **forward** in this order:
 
 ```
-physical Ã¢â€ â€™ lightning Ã¢â€ â€™ cold Ã¢â€ â€™ fire Ã¢â€ â€™ chaos
+physical → lightning → cold → fire → chaos
 ```
 
 So physical can become fire, lightning or cold; cold can become fire or chaos; fire can become chaos. Fire cannot
@@ -31,15 +31,20 @@ values were not used on the wire).
 
 ## 2. Hit pipeline
 
+**Issue #75 evidence scope:** test counts and native matrices imported with the completed jobs are historical
+LocalExile results. Standard/Ruthless observations do not add private game-mode support to this branch or certify
+its current native behavior. The [port record](../dev/issue75-port.md) identifies revisions, fresh automated
+results and remaining checks. Source `artifacts/issue75-completion/` paths remain in the LocalExile checkout.
+
 ```
 base skill/weapon damage by type
-  Ã¢â€ â€™ added damage (DamageStats.RawAdded; the first added-damage stat is read, see Ã‚Â§2)
-  Ã¢â€ â€™ gain X% as extra (does not consume the source)
-  Ã¢â€ â€™ conversion (source is consumed; converted damage can convert again)
-  Ã¢â€ â€™ increased / more multipliers per type
-  Ã¢â€ â€™ critical strike
-  Ã¢â€ â€™ per-type resistance / mitigation (the critical-strike elemental rules resolve first, Ã‚Â§4)
-  Ã¢â€ â€™ roll a whole number per type and send the life change
+  → added damage (DamageStats.RawAdded; the first added-damage stat is read, see §2)
+  → gain X% as extra (does not consume the source)
+  → conversion (source is consumed; converted damage can convert again)
+  → increased / more multipliers per type
+  → critical strike
+  → per-type resistance / mitigation (the critical-strike elemental rules resolve first, §4)
+  → roll a whole number per type and send the life change
 ```
 
 `DamagePacket` is immutable and holds one `DamageRange` per type. `DamageConversion` holds global conversion,
@@ -50,12 +55,12 @@ as in Path of Building. Gains are added to the destination without reducing the 
 "gain as extra" rule.
 
 A player hit on a monster rolls each type once and then takes the monster's own base resistance on each type
-(MonsterResistanceCatalog, Ã‚Â§4), before the critical multiplier and the life update. A monster's attack on the player
+(MonsterResistanceCatalog, §4), before the critical multiplier and the life update. A monster's attack on the player
 does the mirror pass through the player's resistances. Damage over time is outside this pass: it has no hit, and
 Righteous Fire's monster burn keeps its per-tick percentage-of-life model with no resistance or penetration.
 
 Penetration lowers the target's resistance before the damage is reduced. The server caps the monster's base
-resistance first (the 75 default, the 90 absolute maximum, the Ã¢Ë†â€™200 floor) and subtracts the hit's penetration from
+resistance first (the 75 default, the 90 absolute maximum, the −200 floor) and subtracts the hit's penetration from
 that capped value with no second clamp, as Path of Building's `calcResistForType` and hit branch do (16de4b8, lines
 494..509 and 3490..3500): the effective resistance can go below the floor, so penetration against a negative
 resistance deals more than the raw damage. Penetration is read per hit from the player's and the skill's own stats
@@ -77,7 +82,7 @@ The unconditional stats the server reads (whole percents, this client's Stats.da
 | `base_attack_damage_penetrates_elemental_resist_%` | attacks only, on fire, cold and lightning (Forces of Nature, Warden) |
 | `cannot_penetrate_or_ignore_elemental_resistances` | a flag: every elemental penetration is off for the player's hits; chaos is not elemental |
 
-The `main_hand_Ã¢â‚¬Â¦`/`off_hand_Ã¢â‚¬Â¦` and `local_Ã¢â‚¬Â¦` weapon-hand aliases are not read (the server attacks with the main
+The `main_hand_…`/`off_hand_…` and `local_…` weapon-hand aliases are not read (the server attacks with the main
 hand's global stats, and a weapon-local scope guess would double-count), and neither are the non-base
 `reduce_enemy_elemental/chaos_resistance_%` variants (Penetration Support's own granted stat in this client) or the
 conditional ones tied to auras or enemy state.
@@ -98,8 +103,8 @@ stats apply; `DamageStats` reads the Stats.dat names:
 | gain as extra | `physical_damage_%_to_add_as_fire` |
 | non-chaos as chaos | `non_chaos_damage_to_add_as_chaos_damage_%` |
 
-`skill_Ã¢â‚¬Â¦` stats use the skill-conversion table; `base_Ã¢â‚¬Â¦`, `attack_Ã¢â‚¬Â¦`, `spell_Ã¢â‚¬Â¦` and the plain
-`Ã¢â‚¬Â¦_damage_%_to_convert_to_Ã¢â‚¬Â¦` names use the global table. Conditional variants ("while affected by Anger", "against
+`skill_…` stats use the skill-conversion table; `base_…`, `attack_…`, `spell_…` and the plain
+`…_damage_%_to_convert_to_…` names use the global table. Conditional variants ("while affected by Anger", "against
 frozen enemies", ...) are not read yet. Skill conversion takes precedence when skill and global conversion together
 exceed 100%, matching PoB's `buildConversionTable`.
 
@@ -205,7 +210,7 @@ Added damage is not fully modelled yet, but one stat is read.
 The value is the percentage: both the added lightning minimum and maximum become that percent of `maximum_mana`
 from the same final stat dictionary, so spending mana and reserved mana never change the damage, while a pool
 change (level, equipment, passives) does.
-Path of Building pinned 16de4b82 (ModParser.lua lines 5636Ã¢â‚¬â€œ5639) maps the node's value to both LightningMin and
+Path of Building pinned 16de4b82 (ModParser.lua lines 5636–5639) maps the node's value to both LightningMin and
 LightningMax as BASE with PercentStat Mana and ModFlag Attack; the packet agrees.
 At 6% of a 1000 mana pool (Whisperer "we know all", PassiveSkills.dat graph id 22720) the attack gets 60-60
 added lightning, not 1-60.
@@ -226,11 +231,11 @@ Spell hits and damage over time are untouched, and saved gem quality/experience 
 The node's separate mana-cost drawback (`base_mana_cost_-%`) is a mana-cost change outside this damage
 consumption's scope.
 Fourteen real-client stat checks used a fresh synthetic Witch and development overrides for these inputs.
-With the 6% grant, 56 maximum mana showed 3Ã¢â‚¬â€œ3 added lightning and 1000 showed 60Ã¢â‚¬â€œ60.
-Adding 50% increased lightning showed 90Ã¢â‚¬â€œ90; 997 maximum mana showed 59Ã¢â‚¬â€œ59 after the panel's existing floor.
-With 1000 mana, 50% increased attack damage showed 90Ã¢â‚¬â€œ90; another 50% melee increase raised unarmed damage to 120Ã¢â‚¬â€œ120.
-A wand stayed at 90Ã¢â‚¬â€œ90 even with a club in the inactive set; switching to the club gave 120Ã¢â‚¬â€œ120 and back gave 90Ã¢â‚¬â€œ90.
-Clearing the attack increase left the ranged wand at 60Ã¢â‚¬â€œ60 despite the melee input.
+With the 6% grant, 56 maximum mana showed 3–3 added lightning and 1000 showed 60–60.
+Adding 50% increased lightning showed 90–90; 997 maximum mana showed 59–59 after the panel's existing floor.
+With 1000 mana, 50% increased attack damage showed 90–90; another 50% melee increase raised unarmed damage to 120–120.
+A wand stayed at 90–90 even with a club in the inactive set; switching to the club gave 120–120 and back gave 90–90.
+Clearing the attack increase left the ranged wand at 60–60 despite the melee input.
 Clearing the grant removed the lightning rows' damage, and relog restored the baseline maximum mana and damage.
 These checks validate the generic damage consumer; ascendancy allocation remains in its separate lifecycle change.
 
@@ -291,7 +296,7 @@ Fourteen native checks on a fresh unascended Witch use raw development inputs ra
 Ten fixed-chaos cases read both panel ranges and actual monster life: 100 at 449 armour, 102 at 450/899 and 104 at 900.
 Generic 100% gives 204; another raw 10% attack increase gives 214, and a modifier value of 3 at 900 armour gives 106.
 Negative armour and modifier removal restore 100; maximum-mana lightning composes to a native 62-damage hit.
-Two additional panel-only checks show weapon physical 2ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“5 becoming 6ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“15 at 45000 armour.
+Two additional panel-only checks show weapon physical 2–5 becoming 6–15 at 45000 armour.
 Relog clears the development effect.
 Phrecia node admission and the rest of Behemoth remain separate work; this consumer does not enable a new chooser.
 
@@ -469,7 +474,7 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
 - Monster melee is a physical packet (`MonsterAttack.Damage`); the server rolls it when the swing lands.
   Each type takes resistance, then shared incoming hit mitigation, including enabled chaos armour (section 2e).
 - Player hits on monsters (default attack, gem projectile and area hits) roll each type once and reduce it by the
-  monster's base resistance: `MonsterTypes.Resistances` Ã¢â€ â€™ `MonsterResistances`, the level's
+  monster's base resistance: `MonsterTypes.Resistances` → `MonsterResistances`, the level's
   `DefaultMonsterStats.Difficulty` (1/2/3) picking the Normal/Cruel/Merciless columns (`MonsterResistanceCatalog`,
   `MonsterCatalog.BaseResistance`, the shared pass is `HitMitigation`). Without the extracted tables every type reads
   0 for the base input.
@@ -479,7 +484,7 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
   Automated mixed fractional-hit, target-modifier, bow RNG and same-key player/skill cases cover the resolved paths.
   Native penetration checks belong to original head `0d800d1`; recheck the target-modifier and bow composition natively.
 - The hit's penetration (`Penetration.cs`) subtracts from the capped resistance with no second clamp: the general
-  per-element and elemental stats on every hit, the attack-only variants on attacks (Ã‚Â§2), the
+  per-element and elemental stats on every hit, the attack-only variants on attacks (§2), the
   `cannot_penetrate_or_ignore_elemental_resistances` flag suppressing the elemental ones. Damage over time and the
   physical part take no penetration.
 - Critical elemental hits with `critical_strikes_ignore_elemental_resistances` use effective resistance zero,
@@ -510,7 +515,7 @@ its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignit
 
 ## 5. Continuous resource updates (2026-10-24)
 
-The client Life handler for SÃ¢â€ â€™C 0x1b1 stores the current whole pool value; merely sending the
+The client Life handler for S→C 0x1b1 stores the current whole pool value; merely sending the
 regeneration stat does not make the visible life value advance between these updates. The former
 250 ms player tick therefore made /god recovery jump by roughly one quarter of maximum life.
 
@@ -586,12 +591,12 @@ regressions cover tick-only and tick-plus-recovery loops with both native and sy
 ## 6. Not modelled yet
 
 - Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances are
-  in, Ã‚Â§4, with unconditional penetration).
+  in, §4, with unconditional penetration).
 - General character-added flat damage beyond the maximum-mana lightning grant, and unsupported skill-specific
-  increased/more/effectiveness mechanics. Weapon-local flat ranges are in Ã‚Â§2a; existing supports retain their own pipeline.
+  increased/more/effectiveness mechanics. Weapon-local flat ranges are in §2a; existing supports retain their own pipeline.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.
 - Per-monster damage conversion and monster-specific mitigation.
-- Damage reflection, active leech instances/recovery, life/mana gain on hit, and recoup. Leech limits are in Ã‚Â§5b.
+- Damage reflection, active leech instances/recovery, life/mana gain on hit, and recoup. Leech limits are in §5b.
 - Party/minion damage and the full support-gem effect set.
 
 The next support-gem work (#64) can add its effects as packet operations: `Add` for added damage, `Scale` for
@@ -704,13 +709,13 @@ Aura effect scales and truncates its integer ES/recharge stats first, following 
 Gem quality changes area of effect, not those two stats.
 The existing 30% recharge increase is counted once through the raw aura stats and the shared recharge calculator.
 Toggling the aura updates capacity without healing current ES; removing it clamps current ES to the new maximum.
-See [11](11-skills.md) Ã‚Â§13 for source ordering, reference scope and lifecycle checks.
+See [11](11-skills.md) §13 for source ordering, reference scope and lifecycle checks.
 The item's tooltip ES is retained even though its character contribution changes to Life.
 The hit-recovery ES guard uses the final pool and published ES values rather than raw equipment bases.
 `local_maximum_energy_shield_+%_if_item_corrupted` is a global ES increase gated by its source item's corruption.
 It affects character ES, including independent global ES, without scaling tooltip ES or converted Life.
 Native application and reload checks passed for the supported conversions, no-ES overrides and corrupted-item
-scaling; see [13](13-items.md) Ã‚Â§2 for the verified scope and remaining mechanics.
+scaling; see [13](13-items.md) §2 for the verified scope and remaining mechanics.
 
 Character.ot supplies 2000% of maximum per minute: base recharge is one third per second, after a two-second delay.
 Faster start divides the delay by `1 + energy_shield_delay_-%/100`; recharge/regen recovery increases scale their rates.

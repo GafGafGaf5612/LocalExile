@@ -28,7 +28,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Checked live: kill and crit charges and the hostile-area rule; charges when hit and every 3 seconds by tests.
   Code: `FlaskCharges.cs`, Gateway (`Program.FlaskCharges.cs`).
   Docs: [13](../docs/protocol/13-items.md) §8b.
-- Flask modifier composition (#75): raw character charge-gain sources resolve into the native virtual once,
+- Flask modifier composition (#75): the validation counts and Standard/Ruthless observations in this entry are
+  historical LocalExile evidence. This branch ports ordinary-mode calculations; fresh automated results and
+  outstanding native checks are in the [port record](../docs/dev/issue75-port.md).
+  Raw character charge-gain sources resolve into the native virtual once,
   then multiply local flask charge recovery with fractional carry. Generic and resource-specific recovery-rate
   factors multiply; hybrid Life/Mana keep independent rates, native buff rows 5/9, queues and lifetimes.
   Global duration now resolves `flask_duration_+%` plus the actual-player-level source once for both panel and use.

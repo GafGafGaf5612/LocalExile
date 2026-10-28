@@ -119,11 +119,13 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   Fireball socketed at `/set_stat intelligence 200`, then 130 — at 130 the client reds the gem and a use is refused.
   The historical host-deactivation behavior is superseded: current per-gem admission retains a qualified host's mods.
   Ordinary percentage attributes feed the final pool and requirement fields used here. Automated source-removal
-  controls verify Fireball 9's 67-Intelligence threshold while its Plate Vest remains active. Native controls in both
+  controls verify Fireball 9's 67-Intelligence threshold while its Plate Vest remains active. Historical LocalExile native controls in both
   Standard and Ruthless independently confirm ordinary Q input starts Fireball at Intelligence 68, is explicitly
   refused at 62, and starts again after recovery. The qualified Plate Vest retains 19 Armour in all three states.
   The acceptance cases include the normal action, Mana cost and projectile; the refusal includes the requirement
   diagnostic and no accepted action/projectile. Separate aura transitions still need their own lifecycle evidence.
+  These captures precede this port; the ordinary-mode integration checks and fresh-native limitation are recorded
+  in [the port record](../dev/issue75-port.md).
 - **Supports:** GrantedEffects holds what a support applies to (`AllowedActiveSkillTypes`, `ExcludedActiveSkillTypes`,
   `AddedActiveSkillTypes`, `SupportsGemsOnly`) and its skill-bar letter (`SupportGemLetter`); a skill's types come from
   its ActiveSkills row.

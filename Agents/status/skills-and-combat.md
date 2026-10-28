@@ -115,11 +115,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Behemoth Steel Willed: each complete group of 450 final armour adds 2% increased attack damage.
   The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
   Native fixed-hit checks verify thresholds, additive 204/214, modifier removal and maximum-mana lightning.
-  Weapon physical panel checks show 2â€“5 becoming 6â€“15; relog clears the development inputs.
+  Weapon physical panel checks show 2–5 becoming 6–15; relog clears the development inputs.
   Native checks use raw stats on an unascended character; selection remains separate.
   Recent-hit armour defence is implemented below; current-main composition awaits native verification.
   Code: `ArmourAttackDamage`, Gateway (`CharacterPlayerStats`), `SkillCatalog.Unarmed.IncreasedDamage`.
-  Docs: [20](../docs/protocol/20-damage.md) Â§2d.
+  Docs: [20](../docs/protocol/20-damage.md) §2d.
 - Steel Willed incoming-hit armour: prior accepted enemy contacts supply a four-second authoritative counter.
   The per-hit contribution caps at 30%, then the real generic double-armour chance adds before a 0..100 clamp.
   One decision supplies physical and enabled chaos mitigation; blocked and zero contacts count without armour RNG.
@@ -296,6 +296,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   projectile block and chaos resistance against damage over time combine the pools with their stat;
   the Defence tab's Life / Mana / Energy Shield Regeneration per Second rows are the tick's own per-minute rates
   (`total_*_recovery_per_minute_from_regeneration`).
+  Evidence scope for the imported issue #75 entries: earlier test counts and Standard/Ruthless native matrices
+  describe the source LocalExile revisions, not a fresh native run of this branch. Private game-mode mechanics
+  are excluded; current automated results and remaining checks are in the [port record](../docs/dev/issue75-port.md).
   Six native Character.ot defaults now enter the original sources once: Brand limit 3, Brutal triple-damage/stun
   coefficients 3/10, Affliction damage/non-damaging coefficients 8/8 and Absorption recoup coefficient 12.
   Real Brand item +1 and Brand Equity +2 give actor 6; compatible linked Foulgrasp gives selected 8.
@@ -306,8 +309,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   retaining signed cancellation/zero and final developer replacement precedence. Initial `SendPlayer` and
   area-transition object creation share that snapshot with later `PlayerSkills` refreshes; Cyclone's radius inputs
   are calculated before the selected overlay and keep their existing result.
-  Real supports cover area 20+30=50 and minion 15+quality 10=25 in both modes; Standard Item Rarity gives 10+40=50,
-  while Ruthless excludes the unavailable support's own 40. Link/source removal, incompatible or unqualified supports,
+  Real supports cover area 20+30=50, minion 15+quality 10=25 and ordinary Item Rarity 10+40=50.
+  Historical LocalExile Ruthless support exclusions are outside this branch. Link/source removal, incompatible or unqualified supports,
   unrelated/default skills and repeated builds are covered; minion combat and item-drop execution remain separate.
   Added-base critical/default-mirror/selected-alias cases pass 52/19/22 new tests plus 95 existing controls:
   the combined focused batch passes 188/188 without skips. Fresh Gateway 3803/Core 648/Data 37 all pass without skips,
