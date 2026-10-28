@@ -34,6 +34,10 @@ public sealed record ProjectileAreaRecipe(string Stage, double Radius, int Count
     public bool SectorPlacement { get; init; }
     /// <summary>Skip an offset centre whose path crosses blocked projectile terrain.</summary>
     public bool RespectTerrain { get; init; }
+    /// <summary>Delay from the triggering contact to the first area, in simulation quanta.</summary>
+    public long Delay { get; init; }
+    /// <summary>Simulation quanta between area slots, including terrain-skipped slots.</summary>
+    public long Interval { get; init; }
 }
 public sealed record ProjectilePulseRecipe(string Stage, double Radius, long Interval);
 public sealed record ProjectileEmissionRecipe(ProjectileProfile Child, bool Radial = false, long Interval = 0,
@@ -175,6 +179,9 @@ public sealed class ProjectileEntity
     public Random ReactionRandomSource { get; }
     internal readonly HashSet<ProjectileActorKey> Contacts = [];
     internal readonly HashSet<long> Interactions = [];
+
+    // Freeze trigger-time flight state while sharing the use's chronological combat RNG streams.
+    internal ProjectileEntity AreaSnapshot() => (ProjectileEntity)MemberwiseClone();
 }
 
 public sealed record ProjectileDamage(ProjectileEntity Projectile, ProjectileActorKey Target, long At, string Stage,

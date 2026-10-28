@@ -42,8 +42,11 @@ Contact areas run at admitted impacts while continuation remains possible. Termi
 wait until no continuation, including return, remains. Recipes select terminal reasons and can exclude a
 contact victim when the mechanic requires it. Offset areas support one sample per angular sector, a minimum
 placement distance and skipped terrain-obstructed sectors. Radius, placement radius and damage multiplier
-are separate inputs. Sector sampling and simultaneous area timing are deterministic approximations, not
-measurements of client timing or official random distributions.
+are separate inputs. Area recipes have a first-slot `Delay` and inter-slot `Interval` in simulation quanta;
+zero defaults remain synchronous. Centers and trigger flight state are captured before continuation, while
+actors and defenses resolve at each detonation. Pending areas survive their parent flight, retain admission
+history, pause with simulation time and clear on teardown. Omitted terrain slots retain their timing gaps.
+Sector sampling and recipe timing values do not establish official random distributions or measured timing.
 
 `EndAreaOnReturnTurnaround` lets a recipe emit an allowed endpoint area before a successful return starts.
 It respects the selected end reasons and leaves child emissions deferred; the default keeps terminal areas deferred.

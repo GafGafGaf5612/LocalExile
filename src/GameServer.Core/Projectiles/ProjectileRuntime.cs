@@ -8,6 +8,7 @@ public sealed partial class ProjectileRuntime(IProjectileWorld world)
     readonly SortedDictionary<long, ProjectileEntity> projectiles = [];
     readonly PriorityQueue<Action, (long At, long Order)> scheduled = new();
     readonly ProjectileHitLedger ledger = new();
+    readonly Dictionary<long, ProjectileEntity> pendingAreas = [];
     long sequence, commandSequence;
     public long Now { get; private set; }
     public IReadOnlyCollection<ProjectileEntity> Projectiles => projectiles.Values;
@@ -57,6 +58,8 @@ public sealed partial class ProjectileRuntime(IProjectileWorld world)
             || !double.IsFinite(p.ReturnSpeedMultiplier) || p.ReturnSpeedMultiplier <= 0
             || !double.IsFinite(p.ReturnOvershoot) || p.ReturnOvershoot < 0 || p.ReturnHitLimit < 0 || p.OutboundHitLimit < 0)
             throw new ArgumentOutOfRangeException(nameof(p));
+        foreach (var area in new[] { p.ContactArea, p.EndArea })
+            if (area is { Delay: < 0 } or { Interval: < 0 }) throw new ArgumentOutOfRangeException(nameof(p));
     }
 
     static ProjectileProfile ResolveReturn(ProjectileProfile profile, int roll) => profile with
@@ -127,8 +130,9 @@ public sealed partial class ProjectileRuntime(IProjectileWorld world)
             Now = at;
             if (first is { } contact) Resolve(contact, actors);
         }
-        // Area events are synchronous. Retain only groups that can still emit/return during later advances.
-        ledger.RetainGroups(projectiles.Values.SelectMany(p => new[] { p.Id, p.EmissionId, p.ChildEmission }).ToHashSet());
+        // Detached delayed areas still need the triggering flight's phase-specific admission history.
+        ledger.RetainGroups(projectiles.Values.Concat(pendingAreas.Values)
+            .SelectMany(p => new[] { p.Id, p.EmissionId, p.ChildEmission }).ToHashSet());
     }
 
     readonly record struct Contact(long At, ProjectileEntity Projectile, ProjectileActor? Target,
@@ -376,6 +380,6 @@ public sealed partial class ProjectileRuntime(IProjectileWorld world)
     public void Clear()
     {
         foreach (var p in projectiles.Values.ToArray()) End(p, ProjectileEndReason.Teardown, allowReturn: false);
-        scheduled.Clear(); ledger.Clear(); Interactions.Clear();
+        scheduled.Clear(); pendingAreas.Clear(); ledger.Clear(); Interactions.Clear();
     }
 }
