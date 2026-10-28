@@ -198,13 +198,17 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 - **Known:** the [framework](../docs/game/projectile-framework.md) owns production projectile routing and the
   only Core simulator. Catalog-known gems and ordinary bows have basic straight flight and resolved modifiers;
-  registered definitions supply their special stages and native presentation.
+  [registered skills](../docs/game/projectile-skills.md) supply terminal Fireball blasts and separate KB clusters.
+  Clustering converts quantity to explosions and forbids Split; the internal AltY row is a compatibility alias.
+  Direct admission, independent explosion overlap and supported area scaling have automated runtime/input coverage.
   Chronological contacts, hit quotas, pause/transfer, release snapshots and held-output independence have automated
   production-input coverage, including raw item modifiers, scoped area damage and continuation/lifetime boundaries.
   Basic catalog flight does not implement all special skill behavior; unknown metadata is refused before costs.
   Earlier native packet/collision controls need retesting on the new path; actor positions still use integer walk
   estimates and shared collision radii. Live hostile projectile adapters remain future work.
-- **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
+- **Start:** user-run Fireball/KB checks from the skill guide, including return, terrain and overlapping explosions.
+  Calibrate cluster radial distribution, counter-clockwise sequence timing and native art against client evidence.
+  Build a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
   (or in the walk-map recorder), and collision with doodads and objects that have their own colliders.
 - **Done when:** Fireball and bow arrows look like the real ones in every area: at the caster's torso on terrain and
   platforms, stopping at walls and objects.

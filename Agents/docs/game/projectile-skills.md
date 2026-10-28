@@ -1,0 +1,114 @@
+# Projectile skills
+
+The [projectile framework](projectile-framework.md) supplies one simulator, common modifiers, damage snapshots and
+native output. `src/GameServer.Gateway/Projectiles/Skills/` registers named stages and catalog return policies.
+A recipe attaches its intrinsic stages to the unresolved common baseline, then resolves generic modifiers once.
+Ordinary bows and catalog gems retain the same counts, scoped extras, aim-sensitive spread, continuation priority,
+prohibitions and phase-specific direct admission. Catalog metadata supplies straight flight for other projectile gems;
+it does not establish those skills' special mechanics. Missing metadata or damage plans are refused before costs.
+
+## Implemented behavior
+
+| Skill | Enemy contact | Terrain | Maximum range / return endpoint | Quantity and area damage |
+|---|---|---|---|---|
+| Fireball | Full direct hit while continuing. One terminal area when no continuation remains; its collision victim receives one area-classified hit through direct admission | Terminal area if return cannot continue | Terminal area at the actual stop; a successful return defers it | Normal primary quantity; radius from exported level/quality stats |
+| Kinetic Blast | Direct hit and four independent offset explosions at every admitted impact, including impacts that pierce/fork/chain/split/return | One cluster group, including turnaround; blocked placement sectors are skipped | One group when stopping, including range turnaround before return; another at final return stop | Normal primary quantity; explosions alone have 40% less area damage |
+| Kinetic Blast of Clustering (`KineticBlastAltX`) | Direct hit and three independent offset explosions, modified by projectile quantity | Same terrain contract | Same stop contract | One primary; extra generic and attack projectiles increase cluster count; cannot Split; no native 40% penalty |
+
+`KineticBlastAltY` is exported as `[DNT] KineticBlastAltY`. It uses the normal KB data profile for compatibility;
+no public evidence here establishes a third playable gem. The normal/Clustering base cluster totals are four/three,
+not five/four inferred from tooltip wording about additional explosions. Exported `cluster_burst_spawn_amount` wins.
+
+A simultaneous volley admits one direct collision per target and phase. Denied siblings pass through without
+consuming continuations or spawning collision explosions. Return opens a separate shared admission phase.
+Fireball's terminal victim uses this direct admission but receives the captured area packet, so area increases and
+Concentrated Effect apply once without a direct-plus-blast double hit. Each distinct explosion admits covered targets
+independently: neighboring enemy/wall blasts may overlap, and KB does not grant its original victim area immunity.
+
+Split, Pierce, Fork, Chain and Return use the common ordered continuation rules. Finite pierce hands off after its
+last grant; prohibitions win. Clustering declares its area count consumer before resolution, so Fury Valve's quantity
+still increases explosions while its Split cannot run. This composition has community corroboration rather than an
+independent official current-version gameplay measurement.
+
+A natural maximum-range stop and a stat-forced distance endpoint both produce the selected endpoint area. Neither
+is a physical wall collision. Successful return defers Fireball's area but triggers KB's stop cluster before redirect.
+Crossing the caster does not itself create a stop or explosion. Lifetime expiry, cancellation and teardown are silent
+for these recipes; they are not classified as explosive distance/terrain stops. Exact lifetime-expiry equivalence
+remains unmeasured. Return preserves remaining continuations and lifetime, excludes the turnaround victim and uses
+the common fixed 150-cell overshoot. Only `returning_projectiles_always_pierce` grants return pierce-all. Terrain is
+still active on return, and ordinary return does not receive a support-only damage penalty.
+
+Named cannot-return inventory: Spark/AltX/AltY, RainOfArrows, BlastRain, SplittingSteel, VenomGyre, WinterOrb,
+ForbiddenRite, Cremation, RollingMagma, ToxicRain and PoisonousConcoction. FreezingPulse returns only from collision.
+These policies do not claim complete behavior for each catalog skill.
+
+## Radius, damage and presentation
+
+| Profile | Base blast radius (cells) | Base placement radius (cells) | Explosion multiplier |
+|---|---:|---:|---:|
+| Kinetic Blast / internal AltY | 14 | 20 | 0.6 |
+| Clustering | 19 | 28 | 1.0 |
+| Fireball | Exported level/quality radius: 10–18 before quality | Centered | 1.0 |
+
+The exported blast and secondary placement radii override the fallback values above. Release specialization overlays
+the supported skill stats onto area-specific player stats, excluding the player's base increased area already present
+in the panel total. Each radius is rebuilt from its own base and the shared supported area multiplier exactly once.
+The generic damage adapter captures separate direct/area packets, including area increases and area-only supports;
+KB applies `active_skill_area_damage_+%_final` only at the explosion stage. Skill-owned Arcane Might and Clustering's
+maximum-mana physical addition enter the common attack damage construction, before stage multipliers.
+
+Cluster centers use one seeded sample in each equal angular sector, visited counter-clockwise. Minimum placement is
+`min(placement radius, blast radius + projectile collision radius + 0.001)`, with a uniformly sampled radius up to the
+placement radius. Blocked center paths are omitted without redistributing those sectors. This spacing and sampling
+are explicit approximations; unusual target sizes may overlap geometrically. The Core actor interface supports actor
+radii, while the present Gateway adapter represents monster centers with radius zero and a shared projectile radius.
+
+All cluster damage events simulate simultaneously at impact/stop. The native cluster burst uses
+`Metadata/Effects/Spells/cluster_burst/big.ao` at each actual center for 0.35 seconds. There is no invented interval:
+exact official random distribution, radial spiral and sequential timing have not been calibrated. Fireball art uses
+the selected native variation for 1.5 seconds on actual area events, including the final return event. These durations
+are presentation lifetimes, not damage delays. Native height, art alignment and full visual equivalence remain pending
+user-operated client validation.
+
+## Evidence and versions
+
+Target configuration: existing read-only exports from client **3.29.3b** (`ActiveSkills`, `GrantedEffects`,
+`GrantedEffectStatSets`, `GrantedEffectStatSetsPerLevel`, `Stats`). Normal KB/AltX/AltY active rows 539/540/541 map to
+stat sets 4612/4613/4614: cluster counts 4/3/4, radii 14/19/14, secondary radii 20/28/20 and area final -40/absent/-40.
+AltX carries quantity-to-clusters and cannot-Split. These client values corroborate configuration, not server algorithms.
+
+- [3.29.0 official patch notes](https://www.pathofexile.com/forum/view-thread/3985332): Fireball radius/effectiveness,
+  both KB Arcane Might values, normal KB's area penalty, Clustering's 10–15% mana addition at levels 1–20.
+- [Mark_GGG, 20 April 2023](https://www.pathofexile.com/forum/view-thread/3373661/page/2#p24964202) and
+  [Crucible FAQ](https://www.pathofexile.com/forum/view-thread/3361940): Fireball waits for exhausted continuation;
+  KB explodes on impact or stopping, including while continuing; returning projectiles can pass the caster.
+  These are official historical 3.21 explanations, not new measurements of 3.29.3b.
+- [Fireball wiki rev 1698987](https://www.poewiki.net/w/index.php?title=Fireball&oldid=1698987),
+  [KB rev 1681855](https://www.poewiki.net/w/index.php?title=Kinetic_Blast&oldid=1681855) and
+  [Clustering rev 1681856](https://www.poewiki.net/w/index.php?title=Kinetic_Blast_of_Clustering&oldid=1681856):
+  terminal/direct distinction, independent area overlap, sectors, blocked-sector omission and quantity conversion.
+  Clustering's spiral/sequence is a community description; its precise timing is not established.
+- [Projectile rev 1642414](https://www.poewiki.net/w/index.php?title=Projectile&oldid=1642414),
+  [Return rev 1660588](https://www.poewiki.net/w/index.php?title=Return&oldid=1660588) and
+  [Returning Projectiles Support rev 1681728](https://www.poewiki.net/w/index.php?title=Returning_Projectiles_Support&oldid=1681728):
+  simultaneous-volley admission, denied sibling pass-through, return exclusion and source-specific pierce.
+- [Official 3.12.0 notes](https://www.pathofexile.com/forum/view-thread/2935777) and
+  [2022 mechanics Q&A](https://www.pathofexile.com/forum/view-thread/3284453): unavailable Chain may work later after
+  Return; split projectiles return to the firing entity and share admission if crossing the original target.
+- [PoEDB KB](https://poedb.tw/us/Kinetic_Blast), [Clustering](https://poedb.tw/us/Kinetic_Blast_of_Clustering) and
+  [PoB skill data at 16de4b82](https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/16de4b82d57f1c0de6eb40f37143c32d4da36a02/src/Data/Skills/act_int.lua)
+  corroborate the public normal/Clustering configuration. The audited wiki snapshot is dated 2026-10-13 and is not
+  certified exact-patch evidence. Conflicting old Fireball prose radius 9 is superseded by the version-specific data.
+
+## Client checks
+
+The user operates the client. Automated runtime and held-output input tests establish damage/ordering behavior;
+they do not establish official gameplay or visual parity.
+
+- Fireball: lone target and grouped enemies; extra-projectile direct admission; independent neighboring/wall blast
+  overlap; pierce followed by fork/chain; terminal victim once with area supports; return deferral and actual final art.
+- KB: four separate bursts, repeated pierced impacts, terrain-blocked sectors, empty range and return turnaround;
+  large-target/neighbor overlap; separate area/placement growth and explosion-only damage penalty.
+- Clustering: three base bursts, quantity-to-explosions with GMP/Fury Valve, no Split, retained Fork and support penalty.
+- Ordinary bow/catalog flight: close/far aim spread, finite pierce handoff, return terrain collision, pause/transfer and
+  retirement. Report height/surface issues separately from contact/damage discrepancies.

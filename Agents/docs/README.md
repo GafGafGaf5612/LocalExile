@@ -47,7 +47,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 ## How-to
 
 [Projectile framework](game/projectile-framework.md): sole production simulator and skill-provider boundary.
-[Upstream projectile migration](game/projectile-upstream-migration.md): milestone-one recipes and local checks.
+[Projectile skills](game/projectile-skills.md): Fireball, Kinetic Blast, catalog policies, evidence and client checks.
 | Doc | Content |
 |---|---|
 | [../GettingStarted.md](../GettingStarted.md) | setup from a fresh clone, third-party tools, troubleshooting |

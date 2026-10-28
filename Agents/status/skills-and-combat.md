@@ -347,11 +347,15 @@ and can require explicit recipes.
   Direct and area snapshots keep area increases/supports scoped to their damage stages.
   Skill explosions, pulses, children, forms, native art and specialized resources belong to skill definitions.
   Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
-  The [upstream migration layer](../docs/game/projectile-upstream-migration.md) adds Fireball and all three KB effect IDs,
-  their contact areas/art and existing named return restrictions.
-  Piercing retains its upstream contact budget/endpoint travel, with no extra terminal area after an actor contact.
-  Extended researched skills remain frozen outside milestone one; local validation of the migrated stack is pending.
-  Code: Core `Projectiles/`, Gateway `Projectiles/` and `Projectiles/Upstream/`; see the
+  [Named skills](../docs/game/projectile-skills.md) implement terminal Fireball blasts and Kinetic Blast clusters.
+  Direct volleys share admission separately outbound and returning; denied siblings pass through.
+  Fireball waits for exhausted continuation and gives the terminal victim one area-classified hit.
+  Normal KB creates four offset explosions with 40% less area damage; Clustering creates three plus quantity modifiers,
+  keeps one primary and cannot Split.
+  The internal AltY row retains normal-KB compatibility, without establishing a third playable gem.
+  Separate blast/placement radii use supported area stats once; independent explosions can overlap covered victims.
+  Geometry, simultaneous cluster timing and native height/art equivalence still need client validation.
+  Code: Core `Projectiles/`, Gateway `Projectiles/` and `Projectiles/Skills/`; see the
   [framework guide](../docs/game/projectile-framework.md).
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
   `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking;
