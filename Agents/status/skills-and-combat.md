@@ -20,6 +20,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   The checks use raw inputs on an unascended character; spell/bow contact rules and RNG order have automated coverage.
   A parsed 200-damage critical hit against 400 Life generates 14 Fortification from the same resolved multiplier.
   Removing the unarmed bonus gives 150 damage and 12 stacks; cannot-crit gives 100 damage and 10 stacks.
+  The issue #75 review now shares one critical roll across a gem use's area targets, volley, pierce/return hits
+  and existing impact callbacks. Gem luck is captured at admitted use; each hit samples current chance/prohibition
+  and confirms attack accuracy independently. Twenty-two new cases and four updated parsed use-time-luck controls
+  cover the changed lifecycle. This correction is automated, not part of the older native captures.
+  Ordinary attack luck admission timing and special repeat/skill rules remain open.
   Successful paid ascendancy refunds and Focus/curse lifecycles remain separate integration work.
   See [11-skills.md](../docs/protocol/11-skills.md), conditional critical policy.
 
@@ -172,7 +177,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Misses pass through without spending pierce budget, triggering impacts/on-hit effects or reserving the
   target for the volley. One shared forward exclusion prevents repeated simultaneous direct hits.
   Twenty-four added cases cover actual gems/supports, return scaling, budgets, volley sharing and queued admission;
-  29 focused checks pass. Per-use critical-roll correlation, other conditional/more accuracy, remaining projectile
+  29 focused checks pass. Gem uses now share critical rolls across their contacts. Other conditional/more accuracy, remaining projectile
   geometry/skill exceptions and native checks remain open.
   See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
   Ten native checks used connected ordinary paths and actual mastery selection requests.

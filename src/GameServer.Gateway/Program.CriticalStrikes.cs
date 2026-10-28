@@ -52,15 +52,22 @@ partial class Program
     // The original per-type damage draws still precede the original critical Next(10000). Conditional luck adds
     // at most one following draw. This RNG order is a local policy, not evidence of the official server's sequence.
     internal static bool RollCriticalStrike(ClientState conn, int chance, IReadOnlyDictionary<uint, int>? own = null,
-        bool attack = true)
+        bool attack = true, SkillCriticalRoll? skillRoll = null)
     {
         if (chance <= 0) return false;
         lock (conn.Monsters)
         {
             var player = CharacterPlayerStats(conn);
-            return CriticalStrikePolicy.Roll(CriticalProhibitedBy(player, attack, own) ? 0 : chance,
-                conn.CriticalRandom, CriticalExtraRollsFor(conn, player, own));
+            int allowedChance = CriticalProhibitedBy(player, attack, own) ? 0 : chance;
+            return skillRoll is not null ? skillRoll.Check(allowedChance, conn.CriticalRandom)
+                : CriticalStrikePolicy.Roll(allowedChance, conn.CriticalRandom, CriticalExtraRollsFor(conn, player, own));
         }
+    }
+
+    static SkillCriticalRoll CaptureSkillCriticalRoll(ClientState conn, ushort skillId)
+    {
+        lock (conn.Monsters)
+            return new(CriticalExtraRollsFor(conn, CharacterPlayerStats(conn), SupportedSkill(conn, skillId).Stats));
     }
 
     internal static int AttackCriticalMultiplier(ClientState conn, IReadOnlyDictionary<uint, int> player,

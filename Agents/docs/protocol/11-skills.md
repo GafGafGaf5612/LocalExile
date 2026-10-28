@@ -629,10 +629,26 @@ A nonzero signed extra adds exactly one following `Next(10000)` even if the firs
 Positive luck combines with OR, negative luck with AND, and zero luck uses only the original draw.
 This ordering is LocalExile's local RNG policy, not an established official-server RNG sequence.
 Cannot-crit flags take precedence and consume no critical draws, including under lucky conditions.
-The default attack, supported attack/spell projectiles and area hits share this policy at accepted contact.
+The default attack uses this policy at accepted contact. Supported skills now retain a shared `SkillCriticalRoll`:
+luck is captured when their cost/admission commits, and all area targets, volley projectiles, piercing/return hits
+and existing impact-area callbacks compare the same roll against their current critical chance/prohibition.
+Channelled attack cycles start separate contexts. A blocked/evaded contact does not consume a critical draw.
 Ordinary bow arrows keep their existing released damage/chance/multiplier snapshot and sample conditional luck
-and cannot-crit flags from the live owner at impact.
+and cannot-crit flags from the live owner at impact; ordinary luck timing still needs alignment with use admission.
 No additional packet, accuracy or impale draw is introduced by the policy.
+
+[Mark_GGG's mechanics answer](https://www.pathofexile.com/forum/view-thread/1676002/filter-account-type/staff/page/1)
+distinguishes the per-use random roll from each hit's critical-chance comparison (Abyssal Cry answer), and says
+luck acts when that roll is made (Diamond Flask answer). This corrects the prior assumption that each accepted
+gem hit should reroll luck. Native extra-roll getter evidence establishes the source formula, not its lifetime.
+Decision: retain one sampled number rather than caching a critical/noncritical boolean; changed chances and
+later prohibition must still affect each hit. Capture gem luck at admitted use rather than its first target.
+Random numbers are allocated lazily on the first admitted, non-prohibited positive-chance hit; this preserves
+the existing cancelled/missed-action RNG behavior without asserting an official allocation sequence.
+Critical accuracy confirmation remains a separate random test for each landed attack hit.
+Twenty-two new cases cover shared area/volley/pierce/return/impact-area rolls, signed luck, independent confirmation,
+separate uses and chance/prohibition changes between targets. Four parsed gem controls now verify use-time
+luck across a later Life change. Native and broader repeat/skill exceptions remain open.
 
 `unarmed_melee_attack_critical_strike_multiplier_+` adds points to the ordinary multiplier only for an active
 empty-hand melee Attack context without Spell; an inactive-set weapon cannot arm that context.
@@ -1312,7 +1328,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   miss-continuation policy rather than consuming a collision as a zero-damage hit, which would stop the flight
   and trigger impacts. Do not mark remaining flight rules complete: pierce-budget terminal positioning,
   return-from-target exclusion, return terrain/endpoint sampling, secondary explosions, sequential volleys,
-  per-use critical-roll correlation and native parity require further work.
+  special repeat rules and native parity require further work. Ordinary gem volleys and return hits now share
+  the original per-use critical roll; see the conditional critical policy above.
   Twenty-four added automated cases cover real Burning Arrow/Fireball/support contacts, returning damage,
   simultaneous volley exclusion, missed/blocked budgets and delayed admission. The expanded focused run passes
   29 cases. This is automated validation, not a fresh native flight capture.
@@ -2235,7 +2252,7 @@ Decision: weight the critical bonus by both landing and confirmation, rather tha
 to the old critical mean or applying critical luck to the confirmation check. Keep the established normal
 reference enemy and full-precision formatter instead of guessing target conditions or rounding intermediate
 percentages. Selected gem attacks consume their own profile for both gameplay and these estimates;
-per-use critical-roll correlation and remaining source conditions still require review.
+per-use critical rolls are shared as documented above. Remaining source conditions and special repeats still require review.
 [Damage §2g](20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation) records the source evidence,
 snapshot/admission decisions, alternatives, parsed-contact controls and remaining native work.
 

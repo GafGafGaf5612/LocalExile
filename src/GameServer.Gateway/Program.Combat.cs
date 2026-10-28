@@ -427,6 +427,7 @@ partial class Program
             return await ToggleAura(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Name, reservation,
                 SupportedSkill(conn, skillId).Level, SupportedSkill(conn, skillId).Quality);
         }
+        SkillCriticalRoll? criticalRoll = null;
         if (gem.Name is not null)
         {
             uint cost;
@@ -435,6 +436,7 @@ partial class Program
             {
                 if (!Current()) return false;
                 paid = PayMana(conn, skillId, out cost);
+                if (paid) criticalRoll = CaptureSkillCriticalRoll(conn, skillId);
             }
             if (!paid)
             {
@@ -467,7 +469,7 @@ partial class Program
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else
             await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId, sequence: sequence,
-                actionToken: actionToken, cooldownUse: cooldownUse);
+                actionToken: actionToken, cooldownUse: cooldownUse, criticalRoll: criticalRoll);
         return true;
     }
 
@@ -633,11 +635,12 @@ partial class Program
     // (SkillCatalog.HitDamage, after conversion). It explodes there; then the object is removed.
     static async Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0,
-        int? actionToken = null, CooldownUseTicket? cooldownUse = null)
+        int? actionToken = null, CooldownUseTicket? cooldownUse = null, SkillCriticalRoll? criticalRoll = null)
     {
         int action = actionToken ?? cooldownUse?.ActionToken ?? conn.ActionCount;
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
         if (gem.Name is null) { Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4}: no gem skill"); return; }
+        criticalRoll ??= CaptureSkillCriticalRoll(conn, skillId);
         // An attack gem keeps its swing through a later move order: the client attack-moves while the mouse button is
         // held (C→S 0x25 with bit 0 clear), sending a new Move that used to cancel the release — the mana was paid and
         // no projectile appeared (live 2026-10-26, Kinetic Blast while walking). Spells still stop on a new action.
@@ -647,7 +650,7 @@ partial class Program
         {
             // Not a projectile skill (strikes, slams, areas): its hit lands on the monsters around the aimed point.
             await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence,
-                actionToken: actionToken, cooldownUse: cooldownUse);
+                actionToken: actionToken, cooldownUse: cooldownUse, criticalRoll: criticalRoll);
             return;
         }
         var projectileHitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
@@ -720,7 +723,7 @@ partial class Program
             }
             var hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
-            bool critical = RollCriticalStrike(conn, chance, own, attack: !spell)
+            bool critical = RollCriticalStrike(conn, chance, own, attack: !spell, skillRoll: criticalRoll)
                 && (!attack || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
             var impaleSources = ImpaleStats.From(stats, Stats, attack, own, weaponLocal, critical);
             int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
@@ -737,10 +740,10 @@ partial class Program
         Func<SpawnedMonster, int, (int Damage, bool Critical)> damageTo = (m, chance) => DamageTo(m, 1, chance);
         Func<(int X, int Y), uint, Task>? explosion = kineticBlast
             ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
-                immediate: true, melee: false, excludeMonster: exclude)
+                immediate: true, melee: false, excludeMonster: exclude, criticalRoll: criticalRoll)
             : fireball
                 ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
-                    immediate: true, melee: false, excludeMonster: exclude)
+                    immediate: true, melee: false, excludeMonster: exclude, criticalRoll: criticalRoll)
                 : null;
         // Fireball's explosion art is a standalone effect object: replacing the projectile's Animated component did not
         // draw it. Kinetic Blast's cluster_burst is the same case.
@@ -750,7 +753,7 @@ partial class Program
         bool returnPierce = SumStat("returning_projectiles_always_pierce") != 0;
         Func<SpawnedMonster, int, (int Damage, bool Critical)> returnDamageTo = (m, chance) => DamageTo(m, returnMore, chance);
         Func<(int X, int Y), uint, Task>? returnExplosion = kineticBlast ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
-            immediate: true, melee: false, damageMore: returnMore, excludeMonster: exclude) : null;
+            immediate: true, melee: false, damageMore: returnMore, excludeMonster: exclude, criticalRoll: criticalRoll) : null;
         var returnShotgunned = new System.Collections.Concurrent.ConcurrentDictionary<uint, byte>();
         // The player's extra projectiles (passives, wand mastery, supports) and the skill's: one object each, spread
         // around the aim. The client fires none of its own (every projectile is a server object), so without this only
@@ -836,7 +839,7 @@ partial class Program
     static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
         bool immediate = false, ushort sequence = 0, int? actionToken = null, CooldownUseTicket? cooldownUse = null, bool? melee = null,
-        double damageMore = 1, uint excludeMonster = 0)
+        double damageMore = 1, uint excludeMonster = 0, SkillCriticalRoll? criticalRoll = null)
     {
         bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || conn.ActionCount == actionToken);
         if (!Current()) return;
@@ -847,6 +850,7 @@ partial class Program
         if (Stat("base_deal_no_damage") != 0) return;
         var hitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!hitPlan.CanHit) return;
+        criticalRoll ??= CaptureSkillCriticalRoll(conn, skillId);
         bool spell = hitPlan.Kind == SkillHitKind.Spell;
         var weapon = WeaponFor(conn);
         int? castDuration = spell ? CastMs(conn, gem.Effect, skillId) : 0;
@@ -904,7 +908,8 @@ partial class Program
                         }
                         if (MonsterBlocks(m, Random.Shared, spell)) return Blocked;
                         rolled = SupportedHit(conn, skillId).Roll(Random.Shared);
-                        critical = RollCriticalStrike(conn, SupportedCriticalChance(conn, skillId), skillStats, attack: !spell)
+                        critical = RollCriticalStrike(conn, SupportedCriticalChance(conn, skillId), SupportedSkill(conn, skillId).Stats,
+                            attack: !spell, skillRoll: criticalRoll)
                             && (spell || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
                         int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
                         criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);

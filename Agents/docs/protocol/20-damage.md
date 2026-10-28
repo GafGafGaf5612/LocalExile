@@ -509,8 +509,16 @@ channelled/ordinary area attacks, real support inputs, misses, confirmation, can
 and independent targets; the expanded focused run passes 267. Native checks remain pending.
 Decision: resolve contact rolls under the existing admission lock, rather than consuming random/target state
 before discovering that an action is cancelled. Preserve explicit rejection results instead of converting a
-miss/block into a zero-damage accepted hit, which would still trigger callbacks. Per-use critical-roll correlation,
-broader scope/conditions and native parity remain open.
+miss/block into a zero-damage accepted hit, which would still trigger callbacks. Broader scope/conditions and native parity remain open.
+
+Gem uses now capture signed luck at cost/admission and retain one `SkillCriticalRoll` across their area targets,
+volley, piercing/return contacts and existing impact-area callbacks. Each hit compares that sampled value with
+its current critical chance and prohibition; attack accuracy confirmation remains independent for every hit.
+Decision: keep the random value, not a cached boolean, so changes between targets still matter. Capture luck
+at admitted use rather than first impact. Allocate the values lazily to preserve the no-RNG behavior of rejected
+contacts; this is a local allocation policy. [Skills conditional critical policy](11-skills.md) records the primary
+GGG distinction and 22 new cases. Ordinary attack luck admission timing, special repeats
+and native parity remain open; the native virtual getter alone does not certify a roll's lifetime.
 
 Gem projectile forward/piercing/return contacts now consume the selected profile under admitted sweeps.
 Evaded targets continue the flight without spending pierce budget, triggering impact/impale/on-hit effects or

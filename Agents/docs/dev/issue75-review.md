@@ -329,6 +329,35 @@ alternatives, the official tooltip statement and pinned PoB's separate confirmat
 This is an expected-damage reference, not native 3.29.3b rounding certification. Integer-roll expectation,
 dual-hand/multi-hit/secondary output, cooldown/DoT, other source conditions and native validation remain open.
 
+## Shared critical rolls within a gem use
+
+Area targets, volley projectiles, pierced/returning targets and existing impact explosions previously rerolled
+critical chance independently. They now share one random value through `SkillCriticalRoll`, while each hit compares
+its current chance/prohibition and independently confirms attack accuracy. Signed luck is captured when the gem's
+cost/admission commits. The fallback direct area/projectile entry points capture at their own admission.
+
+The [GGG mechanics answers](https://www.pathofexile.com/forum/view-thread/1676002/filter-account-type/staff/page/1)
+distinguish the action's shared roll from chance calculated for each hit, and the Diamond Flask answer places
+luck at the time of that roll. This corrects the earlier assumption that gem luck should be resampled at contact.
+Native extra-roll getter evidence establishes the source formula, not its lifetime. Ordinary attack admission
+timing remains the next correction; its existing contact/impact luck behavior is not certified by this change.
+
+Twenty-two added cases cover shared area/volley/pierce/return/explosion rolls, signed luck, separate uses,
+independent confirmation and changing chance/prohibition between targets. Four existing parsed-use controls now
+verify admission-time luck across a Life change. Two reflection helpers were corrected after the full suite
+caught their old `LaunchProjectile` argument count. The final focused run passes 28 cases, including those two
+spell-impact controls (`skill-critical-final-focused.trx`). The previous accuracy/DPS correction is local
+commit `acf2feb`. The final solution build has zero warnings/errors. Core 561, Data 18 and Gateway 4,324 pass,
+with no skips, 4,903 total. Receipts are `core-skill-critical-final.trx`, `data-skill-critical-final.trx` and
+`gateway-skill-critical-final.trx`; the preceding `gateway-skill-critical.trx` preserves the two reflection failures.
+
+Decision: retain the random value rather than a critical boolean, because later chance/prohibition can differ
+per target. Keep lazy allocation at the first eligible hit so cancellation, misses and prohibited hits consume
+no critical randomness; eagerly drawing at admission was the alternative and lacks server RNG-sequence evidence.
+This is an allocation policy, not a claim about the official random stream. The [skills module](../protocol/11-skills.md)
+and [damage module](../protocol/20-damage.md) record these choices and alternatives. Special repeats, skill-specific
+exceptions and native validation remain open. No live processes were started or stopped.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

@@ -497,7 +497,7 @@ public class SpellNoDamageTests
     {
         using var f = new Fixture("Fireball", targetX: 100);
         f.Set(Flag, releaseFlag);
-        var launch = f.Invoke("LaunchProjectile", f.Skill, (32, 32), (100, 32), 42u, (ushort)7, null, null);
+        var launch = f.Invoke("LaunchProjectile", f.Skill, (32, 32), (100, 32), 42u, (ushort)7, null, null, null);
         // Read through the actual glide packet before changing the source; the projectile is already in flight.
         int create = InstanceEntities.CreateObject(0x3000, 0,
             new ProjectileObject("fireball", 0, 0, Height: 0).Blob()).Length;

@@ -124,12 +124,12 @@ public partial class ConditionalCriticalGatewayTests
             var gem = Assert.Single(gems, g => g.Id == Skill);
             return ((Task)Method("AreaSkillHit").Invoke(null,
                 ["accuracy-area-contact-test", writer.GetStream(), ciphers, Conn, Skill, gem, (32, 32), (34, 32),
-                    false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u])!).WaitAsync(TimeSpan.FromSeconds(5));
+                    false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u, null])!).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
         public Task Launch((int X, int Y)? aim = null) => ((Task)Method("LaunchProjectile").Invoke(null,
             ["accuracy-gem-projectile-test", writer.GetStream(), ciphers, Conn, Skill,
-                (32, 32), aim ?? Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds), 42u, (ushort)0, Conn.ActionCount, null])!)
+                (32, 32), aim ?? Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds), 42u, (ushort)0, Conn.ActionCount, null, null])!)
             .WaitAsync(TimeSpan.FromSeconds(10));
 
         public async Task Refund(ushort node)
@@ -264,7 +264,7 @@ public partial class ConditionalCriticalGatewayTests
     [InlineData("IceNova", null)]
     [InlineData("Fireball", null)]
     [InlineData("BurningArrow", "Crude Bow")]
-    public async Task Parsed_supported_area_and_projectile_hits_share_luck_and_context_multiplier(string gem, string? weapon)
+    public async Task Parsed_supported_hits_keep_skill_use_luck_and_use_the_context_multiplier(string gem, string? weapon)
     {
         var random = new Draws(9000, 0);
         using var f = new Contact(random, gem, weapon);
@@ -279,9 +279,9 @@ public partial class ConditionalCriticalGatewayTests
             ? "main_hand_critical_strike_multiplier" : "spell_critical_strike_multiplier")!.Value;
         Assert.Contains((multiplierKey, multiplier), panel.Stats!);
         Assert.Contains((Program.Stats.Key("virtual_extra_critical_rolls")!.Value, 1), panel.Stats!);
-        f.Conn.PlayerLife = 51;
-        await f.Use();
         f.Conn.PlayerLife = 50;
+        await f.Use();
+        f.Conn.PlayerLife = 51; // Luck belongs to the admitted skill use, not later changes before contact.
         await f.HitLands();
         Assert.Equal(2, random.Calls);
         Assert.InRange((int)(f.Target.MaxLife - f.Target.Life),
