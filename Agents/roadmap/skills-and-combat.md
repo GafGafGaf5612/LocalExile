@@ -205,6 +205,8 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   support, contact and idle-refresh controls; do not add overlapping displayed scopes or substitute regeneration for leech.
   Attack-only ES overleech now preserves instance origin and the shared cap; ordinary Life retention now honors zero.
   Continue other Life-retention virtual sources and native validation; do not broaden the attack-only item scope.
+  Claw mastery/Weapon Master instant sources and Life-instant conversion now have real-source controls. Continue
+  remaining conditional instant sources and verify native mixed converted/native ES composition before certification.
   Native conversion/prohibition interaction remains unverified; the conservative source-plus-destination policy
   and the alternative are recorded in damage §5b and the review report.
   Ward and unsupported conditional mechanics still need their own systems and evidence.

@@ -8,12 +8,13 @@ sealed class LeechSession
     bool keepLife, keepEnergyShield, keepAttackEnergyShield;
     bool convertLifeToEnergyShield;
     public bool ConvertsLifeToEnergyShield => convertLifeToEnergyShield;
-    double lifeInstant, manaInstant, shieldInstant;
+    double lifeInstant, manaInstant, shieldInstant, convertedLifeInstant;
     bool recoverLife = true, recoverEnergyShield = true;
     public bool InstantLifeChanged, InstantManaChanged;
     public double LifeInstantCarry, ManaInstantCarry;
 
-    public void Configure(double now, LeechLimits.Snapshot value, Func<string, int> get, Func<string, int?> replacement)
+    public void Configure(double now, LeechLimits.Snapshot value, Func<string, int> get, Func<string, int?> replacement,
+        int equippedClaws = 0)
     {
         limits = value;
         convertLifeToEnergyShield = replacement("virtual_leech_energy_shield_instead_of_life") is int converted
@@ -25,7 +26,17 @@ sealed class LeechSession
         keepAttackEnergyShield = get("energy_shield_leech_from_attacks_does_not_stop_on_full_energy_shield") != 0;
         recoverLife = get("cannot_recover_life") == 0;
         recoverEnergyShield = get("cannot_recover_energy_shield") == 0;
-        lifeInstant = Instant("life"); manaInstant = Instant("mana"); shieldInstant = Instant("energy_shield");
+        equippedClaws = Math.Clamp(equippedClaws, 0, 2);
+        double commonInstant = (double)get("leech_%_is_instant")
+            + (equippedClaws > 0 ? get("leech_%_is_instant_while_wielding_claw") : 0);
+        lifeInstant = Math.Clamp(replacement("virtual_life_leech_%_is_instant")
+            ?? commonInstant + get("life_leech_%_is_instant")
+                + (double)equippedClaws * get("life_leech_%_is_instant_per_equipped_claw"), 0, 100);
+        manaInstant = Math.Clamp(replacement("virtual_mana_leech_%_is_instant") ?? commonInstant, 0, 100);
+        shieldInstant = Math.Clamp(replacement("virtual_energy_shield_leech_%_is_instant") ?? commonInstant, 0, 100);
+        // GGG 3.22.1d explicitly preserves Life-instant sources through Ghost Reaver. Keep that source scope:
+        // native ES grants do not inherit a Life-only bonus. An explicit final ES replacement still wins.
+        convertedLifeInstant = Math.Clamp(replacement("virtual_energy_shield_leech_%_is_instant") ?? lifeInstant, 0, 100);
         foreach (var resource in value.Resources)
         {
             var state = State(resource.Pool);
@@ -38,8 +49,6 @@ sealed class LeechSession
             state.Configure(now, new(total, resource.MaximumPerSecond, recovery));
             if (resource.CannotLeech) state.Clear(now);
         }
-        double Instant(string pool) => Math.Clamp(replacement($"virtual_{pool}_leech_%_is_instant")
-            ?? (double)get("leech_%_is_instant") + get($"{pool}_leech_%_is_instant"), 0, 100);
     }
 
     public (double Life, double Mana, double EnergyShield) Hit(double now,
@@ -56,10 +65,10 @@ sealed class LeechSession
             return recover && !full ? value : 0;
         }
         // Life and ES source categories create independent ES instances under Ghost Reaver, each with its own cap
-        // and duration. They share the ES recovery rate/cap; Life-specific rate, instant and recovery modifiers do not act.
+        // and duration. They share the ES recovery rate/cap, retaining the Life source's instant fraction.
         bool keepShield = keepEnergyShield || attack && keepAttackEnergyShield;
         double convertedShield = convertLifeToEnergyShield && !limits.Resources[0].CannotLeech
-            ? Grant(2, amounts.Life, shieldFull, keepShield, shieldInstant, recoverEnergyShield) : 0;
+            ? Grant(2, amounts.Life, shieldFull, keepShield, convertedLifeInstant, recoverEnergyShield) : 0;
         return (convertLifeToEnergyShield ? 0 : Grant(0, amounts.Life, lifeFull, keepLife, lifeInstant, recoverLife),
             Grant(1, amounts.Mana, manaFull, false, manaInstant, true),
             convertedShield + Grant(2, amounts.EnergyShield, shieldFull, keepShield, shieldInstant, recoverEnergyShield));

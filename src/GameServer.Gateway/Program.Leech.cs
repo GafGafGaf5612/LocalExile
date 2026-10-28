@@ -32,8 +32,11 @@ partial class Program
         int? Replacement(string name) => Stats.Key(name) is uint key && replacements.TryGetValue(key, out int value) ? value : null;
         lock (conn.Monsters)
         {
+            int claws = (ActiveMainHand(conn)?.Type?.Class == "Claw" ? 1 : 0)
+                + (ActiveOffHand(conn)?.Type?.Class == "Claw" ? 1 : 0);
             LeechOf(conn).Configure(conn.Clock.Elapsed.TotalSeconds,
-                LeechLimits.Resolve(get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield, Replacement, onLowLife), get, Replacement);
+                LeechLimits.Resolve(get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield, Replacement, onLowLife),
+                get, Replacement, claws);
             TrimLeechLocked(conn);
         }
     }

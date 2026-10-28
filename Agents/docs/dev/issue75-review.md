@@ -482,8 +482,9 @@ parsed refund across four hit paths, zero replacement, separate caps and source/
 
 The keystone now doubles the total ES recovery cap without changing per-instance capacity and prevents recharge.
 The plain conversion source changes neither cap nor recharge. Converted Life-source grants and native ES grants
-create separate ES instances sharing the one total cap. ES pool/caps, total recovery, generic recovery and instant
-percentage apply; Life-specific recovery modifiers do not replace those. Existing instances retain their type when
+create separate ES instances sharing the one total cap. ES pool/caps, total recovery and generic recovery apply;
+Life-specific rate modifiers do not replace those. The original instant-percentage assumption is corrected in
+"Instant leech sources and Ghost Reaver correction" below. Existing instances retain their type when
 the source is removed. A virtual conversion override of zero suppresses conversion independently of the other
 keystone effects. Target ES-leech immunity gates both converted and native ES while leaving Mana available.
 
@@ -582,6 +583,51 @@ session and Ghost Reaver controls. No production pool behavior was changed to sa
 Final validation: clean solution build (`build-overleech.log`), Core 561, Data 18 and Gateway 4,474 pass with no
 skips (`core-overleech.trx`, `data-overleech.trx`, `gateway-overleech.trx`): 5,053 total. The exact 357-row audit
 still reports 82 partial/275 pending; the supporting retention fixes do not certify the unresolved stat families.
+
+## Instant leech sources and Ghost Reaver correction
+
+Eight initial controls reproduce six failures (`instant-conversion-reproduced.trx`): the actual Claw mastery has
+no effect with one/two claws, with or without Ghost Reaver, and Life-only percentages disappear on conversion.
+[GGG's 3.22.1d patch notes](https://www.pathofexile.com/forum/view-thread/3439509/filter-account-type/staff)
+explicitly establish that Life-instant sources work with Ghost Reaver. Correct the earlier implementation and the
+test that incorrectly expected a 100% Life-instant source to be ignored. Its independent ES pool/rate/recovery
+assertion remains, with the unrelated instant source removed; new tests verify the corrected instant interaction.
+
+The runtime now counts usable claws in active hands for the actual Claw mastery (effect 4516, 10% per claw).
+Weapon Master (passive 52575) applies its 20% all-resource instant source once while any claw is wielded; Gore
+Dancer (29630) applies its 30% Life source. Common and qualified Life percentages add before clamping. Mastery
+removal, inactive weapon sets, switching back, requirement-disabled claws, the two real ascendancy sources,
+conversion and native ES controls exercise accepted spell contacts, not just a helper projection. These fixtures
+seed actual passive sources directly; they do not certify allocation legality or a native client session.
+
+Decision: carry the Life instant fraction into the separate converted Life-source ES instance while retaining
+the ordinary fraction on native ES grants. The alternative of broadening Life percentages to all ES grants has no
+specific primary support; adding Life and ES final percentages would count the common percentage twice. Preserve
+explicit final ES overrides for both ES categories, including zero. The exact mixed-source rule remains a local
+interpretation pending native confirmation. The module records the same limitation and alternative. No new raw
+Mana/ES instant stat names or one-value virtual projection were invented to imply unsupported composition.
+
+The first focused run passes 32 cases (`instant-conversion-focused.trx`), including existing Ghost Reaver controls.
+The first full Gateway run passes 4,500 and fails one older overleech condition assertion
+(`gateway-instant-conversion.trx`). The retained-instance assertion already passes, but the short instance can
+legitimately expire before the subsequent wall-clock condition query. Remove that redundant query from the
+full-pool retention test; preserve accepted-hit retention, spell exclusion, raw source removal and clearing checks.
+Explicit-time recovery/session tests and dedicated condition tests retain the expiry/flag contract. The alternative
+of lengthening instances or changing production expiry to satisfy an unrelated assertion would obscure that contract.
+No gameplay timing was changed. The next default-parallel run passes 4,500 and times out in the unrelated
+death/resurrection case `Swing_epoch_is_captured_before_first_await_and_stale_work_cannot_land("dead")`
+(`gateway-instant-conversion-verified.trx`). No lifecycle implementation or assertion was changed. Running the
+same build with `-- xUnit.MaxParallelThreads=4` passes all 4,501 Gateway cases
+(`gateway-instant-conversion-bounded.trx`). This bounds this task's worker load on the shared host rather than
+raising timeouts, disabling tests or changing repository-wide runner defaults. The default-parallel timeout is
+retained as an intermittent validation limitation, not claimed fixed by a passing rerun.
+
+Final validation: clean solution build, zero warnings/errors (`build-instant-conversion-verified.log`), Core 561
+and Data 18 (`core-instant-conversion.trx`, `data-instant-conversion.trx`), plus the bounded Gateway run above:
+5,080 passing tests, no skips, including 27 new cases. The 357-row inventory remains 82 partial/275 pending;
+these source corrections do not certify the remaining families or native recovery parity. No live server/client
+was started or stopped. Follow-up doubling regressions use a separate artifact directory and are not part of
+this commit's 4,501-case Gateway binary.
 
 ## Autonomous decisions and shared validation resources
 

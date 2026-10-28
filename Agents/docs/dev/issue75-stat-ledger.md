@@ -76,6 +76,9 @@ bonuses, with qualified support, contact and periodic refresh controls; other co
 Attack-only ES overleech now retains qualified attack instances under the same total cap, with real item-source,
 mixed-instance, expiry and Ghost Reaver controls. Ordinary Life-overleech projection and zero replacement are fixed;
 the other conversion/conditional/native requirements remain open.
+Claw mastery/Weapon Master instant sources now respect usable active claws, and Life-instant sources follow
+Ghost Reaver conversion. Real-source and override controls establish this bounded correction; mixed converted/native
+ES composition still requires native evidence ([review](issue75-review.md#instant-leech-sources-and-ghost-reaver-correction)).
 
 ## Leech limits and prohibitions
 

@@ -34,10 +34,10 @@ public class GhostReaverLeechTests
     }
 
     [Fact]
-    public void Converted_instances_use_ES_pool_caps_speed_recovery_and_instant_percentage()
+    public void Converted_instances_use_ES_pool_caps_speed_and_recovery()
     {
         var s = Session(new() { ["keystone_ghost_reaver"] = 1,
-            ["life_leech_%_is_instant"] = 100, ["life_leech_speed_+%"] = 500,
+            ["life_leech_speed_+%"] = 500,
             ["energy_shield_leech_speed_+%"] = 100, ["energy_shield_recovery_rate_+%"] = 50 }, life: 1);
         Assert.Equal(default, s.Hit(0, (500, 0, 0), true, false, false));
         Assert.Equal((0d, 0d, 300d), s.TakeRecovery(10)); // ES cap 100, five seconds at 20 * 2 * 1.5.

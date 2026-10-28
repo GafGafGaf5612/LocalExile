@@ -794,8 +794,9 @@ Decisions and alternatives:
 
 Ghost Reaver now converts each Life-source grant into its own ES instance, separate from native ES leech from the
 same hit. [Mark_GGG explicitly confirms separate instances](https://www.reddit.com/r/PathOfExileBuilds/comments/mrgqh3/comment/gxksr13/?context=3).
-Converted instances use ES maximum pool, instance cap, total recovery, instant percentage and generic recovery;
-Life-specific values do not substitute for them. All ES instances share the same total cap. The actual extracted
+Converted instances use ES maximum pool, instance cap, total recovery and generic recovery; Life-specific rate
+modifiers do not substitute for them. Life-instant percentages follow the converted source, as detailed below.
+All ES instances share the same total cap. The actual extracted
 passive 24426 supplies `keystone_ghost_reaver`; `ReminderTextKeystoneGhostReaver` and pinned PoB's 3.29 tree agree
 that this also doubles the total ES cap and disables recharge. The plain `leech_energy_shield_instead_of_life`
 source only converts. The virtual conversion flag publishes/clears, preserving explicit developer replacements.
@@ -846,7 +847,33 @@ attacks and excluded spells, plus source removal; model controls cover mixed cap
 Validation here is direct code review plus automated controls. The review skill's dedicated Bugbot tool was
 unavailable; continuing those checks was chosen over waiting for the owner. No independent tool review is claimed.
 
-Still open: other conversions, conditional/weapon-family sources and instant percentages,
+Instant leech now includes Life-specific percentages, the actual Claw mastery (effect 4516 / `Claw4`, Stats 18613),
+and Weapon Master's all-resource percentage while wielding a claw (passive 52575, Stats 20745). Count usable claws
+in the active hands only: the per-claw Life source scales with one/two claws, while Weapon Master applies once.
+Gore Dancer's Life percentage (passive 29630, Stats 19735) and the common percentage add before a 0..100 clamp.
+The split is fixed when an instance is created; later source changes do not retroactively split existing recovery.
+The actual Stats catalog has no raw `mana_leech_%_is_instant` or `energy_shield_leech_%_is_instant`; resource virtual
+replacements retain their existing final-override semantics, including zero.
+
+[GGG's 3.22.1d patch notes](https://www.pathofexile.com/forum/view-thread/3439509/filter-account-type/staff)
+explicitly fix Life-instant sources with Ghost Reaver. This supersedes the earlier assumption that conversion drops
+Life-specific instant bonuses. The pinned PoB calculation is not sufficient evidence to contradict that correction.
+Decision: retain the Life instant fraction on the converted Life-source instance; native ES leech keeps its own
+fraction. Count the common percentage once per instance, and let an explicit ES virtual replacement govern both
+ES instance categories. The alternative would propagate a Life-only percentage to all native ES leech or add two
+already-composed percentages, broadening scope or double-counting the common source. This mixed-source rule is a
+conservative local interpretation; the patch notes establish conversion compatibility, not its exact composition
+with native ES leech or developer overrides. Native confirmation remains required. Actual source/contact tests
+cover mastery removal, active-set switches, requirement-disabled claws and both conversion states; model controls
+cover clamps, split duration, resource scopes and explicit replacements.
+The full-pool source/contact control asserts retained instances at the hit; it does not assume they remain active
+through a later wall-clock query. Such a short instance can legitimately expire. Dedicated condition tests and
+explicit-time session/recovery tests cover that contract instead of lengthening production duration for the fixture.
+The full validation passes with four xUnit workers. An unchanged death/resurrection case timed out under default
+parallelism; its failed receipt is retained in the report. Bounding this run's worker count preserves all assertions
+and shared-machine resources; it does not establish that the intermittent default-parallel timeout is fixed.
+
+Still open: other conversions, remaining conditional/weapon-family sources and instant percentages,
 skill-specific recovery-speed ownership, legacy instant flags, speed/defence/ailment/DoT leech-state consumers,
 remaining cap conditions and current-branch native recovery/prediction/lifecycle parity. These are explicit follow-up
 requirements, not completed by the ordinary engine. No current-branch client/server was launched for these controls.

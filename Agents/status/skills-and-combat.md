@@ -434,6 +434,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Attack-only ES overleech retains attack instances (including Ghost Reaver conversion) while removing spell
   instances at full ES, preserving original expiry and one shared cap. Actual mod/contact and source-removal
   controls pass. Ordinary Life-overleech projection now respects explicit zero replacements; other sources remain open.
+  Claw mastery instant leech counts active usable claws, Weapon Master applies its claw condition once, and
+  Gore Dancer's Life instant source survives Ghost Reaver conversion. Real-source contacts and split/override
+  controls pass; exact native mixed Life/ES instant composition remains unverified (damage §5b records the policy).
   Code: `LeechLimits.cs`, `LeechSources.cs`, `LeechRecoveryState.cs`, `LeechSession.cs`, Gateway (`Program.Leech`, resource writer).
   Docs: [20](../docs/protocol/20-damage.md) §5b.
 - Ordinary Life/Mana regeneration: flat and maximum-pool percentage sources receive regeneration and recovery increases.
