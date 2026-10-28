@@ -527,6 +527,8 @@ and can require explicit recipes.
   See [11](../docs/protocol/11-skills.md) §4, §5 and §12.
 - **Projectiles.** One chronological runtime drives production gem/bow flight, contacts and continuation.
   It runs at 30 Hz boundaries with subtick contacts and commits damage/rewards before network output.
+  Native gem skill records derive projectile count, pierce, chain and fork totals from the same resolved profile.
+  These display-only projections respect prohibitions and refresh after support removal without changing release inputs.
   Release captures position and offense; target movement, evasion, defenses and impales resolve on contact.
   Pause freezes the game horizon, transfer/retirement invalidates epochs, and released shots survive later actions.
   Real-input held-output, moving-target, wall, evasion, pierce, return, pause, transfer, impale and actor-scale checks
