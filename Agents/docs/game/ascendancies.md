@@ -74,6 +74,28 @@ The existing ordinary passive stat aggregation also sees allocated ascendancy st
 No Ward, Rage, charge, minion, granted-skill, passive-buff, presence or other new gameplay engine is imported here.
 Choosing a class is not evidence that its signature gameplay works.
 
+### Forest Tracking attack damage
+
+Daughter of Oshabi node 6281, Forest Tracking, grants `attack_damage_+%_per_450_evasion` = 3 (client key 2434).
+The common final-stat calculation adds three increased attack-damage points for each complete 450 final evasion.
+449 gives zero, 450/899 gives three, and 900 gives six.
+The source value is a signed coefficient, not a boolean.
+It uses the resolved rating after defence modifiers, Iron Reflexes and explicit final-rating replacements.
+An Iron Reflexes character with zero final evasion receives no Forest Tracking contribution.
+
+`ArmourAttackDamage.Total` preserves the existing Steel Willed entry point and adds optional evasion inputs.
+Both defence contributions and raw increased attack damage sum in wide arithmetic before one final clamp.
+This preserves signed cancellation and avoids turning the new bonus into a final damage multiplier.
+It applies once to weapon and added attack damage through the existing ordinary/supported/attack-gem paths.
+Spells receive no attack-only increase; conversion, support effectiveness and final Rage scaling keep their order.
+Repeated builds and source removal operate on fresh raw inputs without cached increases.
+As with Steel Willed, an explicit attack-damage input remains additive with the derived contribution.
+
+Automated checks cover the real node, complete-group boundaries, signed overflow/cancellation, final defence conversion,
+ordinary and supported damage, spell isolation, allocation, paid refund, reload and reallocation.
+The lifecycle fixture does not open a Phrecia connection.
+Full Daughter of Oshabi gameplay and Phrecia client admission remain separate work.
+
 ## Validation and limits
 
 Automated tests cover catalog ownership, family separation, native class packing and graph stat, implicit starts,

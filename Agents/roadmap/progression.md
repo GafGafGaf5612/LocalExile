@@ -27,5 +27,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
   Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
+- **Known:** Forest Tracking derives attack damage from complete groups of final evasion (#243).
+  It composes with Steel Willed; allocation/refund/reload, Iron Reflexes and supported damage have automated coverage.
+  Other Daughter of Oshabi mechanics and Phrecia client admission remain separate work.
 - **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
   Implementing all 19 Phrecia classes' special gameplay is separate from this selection lifecycle.
