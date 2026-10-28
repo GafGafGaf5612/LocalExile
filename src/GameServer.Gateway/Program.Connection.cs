@@ -101,6 +101,8 @@ partial class Program
                 // Anything after the opening was already encrypted by the client.
                 var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
                 left = conn;
+                // Another connection's requests (a trade, a party invite) reach this client through its own send gate.
+                conn.Outbox = (bytes, log) => Send(remote, stream, ciphers, bytes, log);
                 conn.Commands = Commands(remote, stream, ciphers, conn);
                 conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || HideoutCatalog.ByArea(layout.Hash) is not null;
                 conn.ArriveAt = SpotArrivals.TryRemove(ticket, out var spot) ? spot : null;
@@ -151,6 +153,9 @@ partial class Program
                     }
                     inbox.Complete();
                     await handlers;
+                    // An open trade ends with its owner: the other side gets its items back in view and the window closes.
+                    try { await CancelPlayerTrade(conn, "disconnected"); }
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
                 }
             }
         }

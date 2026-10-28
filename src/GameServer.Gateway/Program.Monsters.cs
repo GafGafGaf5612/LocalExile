@@ -7,6 +7,11 @@ using DamagePacket = GameServer.Core.World.DamagePacket;
 
 partial class Program
 {
+    // Monster basic Melee skills are weapon-polymorphic, just like the player's default attack.
+    internal static bool MonsterAttackIsRanged(MonsterCatalog.Variety variety) =>
+        variety.GrantedEffects is [int first, ..] && (Skills.IsRangedAttack(first)
+            || variety.RangedWeapon && Skills.IsAttack(first));
+
     // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
@@ -39,7 +44,10 @@ partial class Program
         // affixes' increased damage, attack speed and extra elemental / chaos damage (MonsterModEffects.Hit).
         var (baseMin, baseMax) = Monsters.BaseDamage(variety, level) ?? (1, 1);
         var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
-            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)));
+            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)))
+        {
+            Ranged = MonsterAttackIsRanged(variety)
+        };
         var skill = variety.GrantedEffects is [int effect, ..]
             ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
         // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
@@ -323,6 +331,9 @@ partial class Program
                     int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
                     value = PlayerHitMitigation.AfterResistance(conn.Pools, type, value,
                         reduction.Physical, reduction.Elemental, armour.EffectiveArmour);
+                    if (type == DamageType.Physical)
+                        value = AntiquarianEffects.RangedPhysical(value, a.Ranged,
+                            name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0);
                     value = (int)Math.Round(value * shockFactor);
                     ailmentTaken = ailmentTaken.Add(type, new(value, value));
                     if (type == DamageType.Chaos) chaosDamage += value;
@@ -334,18 +345,21 @@ partial class Program
                 manaBefore = conn.PlayerMana;
                 int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
                 int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
-                conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
+                conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - DamagePlayerHit(conn, damage - chaosDamage, chaosDamage, now, stats) + gainedLife));
                 conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
                 ApplyPlayerAilmentsLocked(conn, a.Damage, ailmentTaken.Select((_, r) =>
                     new(FortificationDamageTaken(conn, (int)r.Min), FortificationDamageTaken(conn, (int)r.Max))),
                     monsterCritical, blocked, now, stats);
                 conn.RecentEnemyHits.Record(now);
                 ChargesWhenHit(conn, blocked);
-                if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
+                if (conn.PlayerLife == 0) { conn.InvalidateIncomingHits(); ClearAntiquarianOnDeath(conn); }
                 life = conn.PlayerLife;
                 mana = conn.PlayerMana;
-                if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+                if (!blocked && !a.Ranged && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
                     recovery = CommitPlayerHitRecoveryLocked(conn, damage, now);
+                else if (Stats.Key(AntiquarianEffects.StunRecoverySource) is uint turtle && stats.GetValueOrDefault(turtle) > 0)
+                    Console.WriteLine($"[gateway] Turtle Shell hit ineligible: block={blocked}, ranged={a.Ranged}, "
+                        + $"alive={life > 0}, types={string.Join(',', a.Damage.Components.Select(c => c.Type))}");
                 RageWhenHitLocked(conn);
                 break;
             }

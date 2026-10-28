@@ -347,6 +347,14 @@ sealed class SkillCatalog(string folder = "data")
 
     public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
     public bool IsProjectile(int effectRow) => _projectileEffects.Value.Contains(effectRow);
+    // Generic monster Melee also carries Projectile. Actual melee classification takes precedence.
+    public bool IsRangedAttack(int effectRow) => IsAttack(effectRow) && IsProjectile(effectRow) && !IsMelee(effectRow);
+
+    /// <summary>Classify the gem's base-item row from GemTags/SkillGems metadata, not its display name.</summary>
+    public bool FamilyStatRaises(string stat, int gemRow) =>
+        _stats.Key(stat) is uint key && _families.Value.Raises((int)key - 1, gemRow);
+
+    readonly Lazy<SkillGemFamilies> _families = new(() => new(folder));
 
     /// <summary>Whether a GrantedEffects row's ActiveSkill has the Warcry type.</summary>
     public bool IsWarcry(int effectRow) => _warcryEffects.Value.Contains(effectRow);

@@ -26,11 +26,11 @@ static class PowerOfPurpose
     public static (uint Mana, int Armour) Pools(long rawFlatManaTwice, CharacterStats.Bonus b)
     {
         var converted = ConvertFlatMana(rawFlatManaTwice, b.ManaPct, b.ArmourPct, b.ArmourMorePct);
-        BigInteger armour = (BigInteger)b.Armour * (100L + b.ArmourPct) * (100L + b.ArmourMorePct) * 100;
+        BigInteger armour = (BigInteger)(b.Armour * 100) * (100L + b.ArmourPct) * (100L + b.ArmourMorePct);
         if (b.IronReflexes)
-            armour += (BigInteger)(CharacterStats.BaseEvasion + (long)b.Evasion)
+            armour += (BigInteger)((CharacterStats.BaseEvasion + b.Evasion) * 100)
                 * (100L + b.ArmourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct)
-                * (100L + b.EvasionMorePct) * (100L + b.ArmourMorePct);
+                * (100L + b.EvasionMorePct) * (100L + b.ArmourMorePct) / 100;
         return ((uint)RoundNative(converted.Mana), RoundNative(armour + converted.Armour));
     }
 }

@@ -331,6 +331,28 @@ partial class Program
                 _ = Resurrect(remote, stream, ciphers, conn, InstanceProtocol.ReadResurrectInTown(bytes));
             else if (id == InstanceNpcs.DialogueClosedId)
                 await CloseNpcDialogue(remote, stream, ciphers, conn);
+            else if (id == InstanceNpcs.TradeOfferId && conn.Trade is { } offerTrade)
+            {
+                var offer = InstanceNpcs.ReadTradeOffer(bytes);
+                await PlayerTradeOffer(remote, conn, offerTrade, offer.InventoryId, offer.ItemId, offer.X, offer.Y);
+            }
+            else if (id is InstanceNpcs.TradeTakeBackId or InstanceNpcs.TradeMoveAllId && conn.Trade is { } moveTrade)
+            {
+                var (item, inventory) = InstanceNpcs.ReadTradeMove(bytes);
+                await PlayerTradeOffer(remote, conn, moveTrade, inventory, item);
+            }
+            else if (id == InstanceNpcs.TradeAcceptId && conn.Trade is { } acceptTrade)
+                await PlayerTradeAccept(remote, conn, acceptTrade, InstanceNpcs.ReadTradeAccept(bytes));
+            else if (id == InstanceNpcs.TradeUnacceptId && conn.Trade is { } unacceptTrade)
+                await PlayerTradeUnaccept(conn, unacceptTrade);
+            else if (id == InstanceNpcs.TradeAnswerId && conn.Trade is not null)
+                await CancelPlayerTrade(conn, "cancelled");
+            else if (id == InstanceNpcs.TradeAnswerId && conn.TradeRequestTo != 0)
+                await CancelTradeRequest(conn);
+            else if (id == InstanceNpcs.TradeAnswerId && InstanceNpcs.ReadTradeAnswer(bytes).Other != 0 && conn.Sale is null)
+                await DeclineTradeRequest(conn, InstanceNpcs.ReadTradeAnswer(bytes).Other);
+            else if (id == InstanceSocial.TradeRequestAcceptId)
+                await AcceptTradeRequest(remote, conn, InstanceSocial.ReadTradeRequestAccept(bytes));
             else if (id == InstanceNpcs.TradeOfferId)
             {
                 var offer = InstanceNpcs.ReadTradeOffer(bytes);
@@ -482,6 +504,12 @@ partial class Program
             }
             else if (id == InstanceWaypoints.TravelId)
                 _ = TravelByWaypoint(remote, stream, ciphers, conn, InstanceWaypoints.ReadTravel(bytes));
+            else if (id == InstanceSocial.TradeRequestId)
+                await RequestTrade(remote, stream, ciphers, conn, InstanceSocial.ReadTradeRequest(bytes));
+            else if (id == InstanceSocial.PartyInviteId)
+                Console.WriteLine($"[gateway] {remote} <= 0x0093 party invite to \"{InstanceSocial.ReadPartyInvite(bytes)}\" (not handled yet)");
+            else if (id == InstanceSocial.FriendAddId)
+                Console.WriteLine($"[gateway] {remote} <= 0x0080 add friend \"{InstanceSocial.ReadFriendAdd(bytes).Name}\" (not handled yet)");
             else if (id == InstanceProtocol.AreaGeneratedId)
             {
                 Console.WriteLine($"[gateway] {remote} <= 0x007d area generated: {Convert.ToHexString(bytes)}");

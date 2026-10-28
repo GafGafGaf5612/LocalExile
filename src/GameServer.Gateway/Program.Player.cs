@@ -141,6 +141,7 @@ partial class Program
             FortificationOf(conn).Clear();
             ClearRageOnDeath(conn);
             ChargesOnDeath(conn);
+            ClearAntiquarianOnDeath(conn);
         }
         await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
@@ -385,6 +386,7 @@ partial class Program
                 ailments = nextAilments;
                 await SendCharacterStats(remote, stream, ciphers, conn, "elemental ailments changed");
             }
+            await SendAntiquarian(remote, stream, ciphers, conn);
             await SendRecentEnemyHits(remote, stream, ciphers, conn);
             await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
@@ -478,6 +480,7 @@ partial class Program
                     lifeCarry = manaCarry = burnCarry = 0;
                     FortificationOf(conn).Clear();
                     conn.EnergyShield.Empty();
+                    ClearAntiquarianOnDeath(conn);
                     lifeAfter = lifeBefore;
                     manaAfter = manaBefore;
                 }
@@ -489,7 +492,8 @@ partial class Program
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
                     double fortificationLife = FortificationOf(conn).TakeRecovery(conn.Clock.Elapsed.TotalSeconds);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
-                        life + lifeRate * seconds + fortificationLife - lifeBurn, ref lifeCarry, minimum: 1);
+                        life + lifeRate * seconds + fortificationLife + conn.Antiquarian.TakeRecovery(now)
+                            + conn.EnduringCryRecovery.Take(now) - lifeBurn, ref lifeCarry, minimum: 1);
                     AdvancePlayerAilmentsLocked(conn, recoveryFrom, now, recoveryStats);
                     lifeAfter = conn.PlayerLife;
                     if (lifeAfter == 0) ailmentDeathEpoch = conn.IncomingHitEpoch;
@@ -678,6 +682,7 @@ partial class Program
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.HitRecovery.Clear();
+            conn.Ward.SetMaximum(conn.Pools.Ward); conn.Ward.Restore();
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
@@ -717,6 +722,9 @@ partial class Program
         var cls = Skills.ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
         RestoreRage(conn);
+        RestoreAntiquarian(conn);
+        conn.Ward.SetMaximum(conn.Pools.Ward);
+        pools = conn.Pools;
         var stats = CharacterPlayerStats(conn);
         var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:

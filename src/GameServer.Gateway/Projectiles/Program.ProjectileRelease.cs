@@ -101,6 +101,7 @@ partial class Program
             ImpaleChance = spell ? 0 : Get("impale_on_hit_%_chance"),
             AccuracyMoreUnique = conn.Pools.AccuracyMoreVsUniquePct,
             AccuracyMoreClose = conn.Pools.AccuracyMoreInCloseRangePct,
+            AlwaysHits = Get("global_always_hit") != 0, FarShot = Get("player_far_shot") != 0,
             ReturnMultiplier = ProjectileReturn.DamageMore(Get)
         };
         var use = new ProjectileUse(profile, new(PlayerId, conn.ProjectileEpoch), new(PlayerId, conn.ProjectileEpoch), 1, origin, target)

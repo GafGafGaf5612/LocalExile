@@ -37,7 +37,7 @@ partial class Program
         int? weaponClass = weapon is null ? null : Items.ByHash(weapon.Item.TypeHash)?.ClassRow;
         var supports = Supports.Resolve(selected.Effect, candidates, Skills, weaponClass);
         int Value(string stat) => Stats.Key(stat) is uint k ? supports.Sum(s => s.Stats.Where(v => v.Key == k).Sum(v => v.Value)) : 0;
-        int level = Math.Max(1, Items.GemLevel(selected.Place.Gem) + Value("supported_active_skill_gem_level_+"));
+        int level = EffectiveGemLevel(conn, selected.Place.Gem, Value("supported_active_skill_gem_level_+"));
         int quality = Quality(selected.Place.Socket, selected.Place.Gem) + Value("supported_active_skill_gem_quality_%");
         var own = Skills.EffectStats(selected.Effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         foreach (var support in supports)

@@ -353,6 +353,7 @@ partial class Program
     static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
     {
         if (!conn.TryBeginAreaChange(t, out var projectiles)) return;
+        await CancelPlayerTrade(conn, "left the area");
         // Remove outstanding visuals while the old world still exists, before 0x2b2. If Auth refuses the transfer,
         // their canceled tasks must not leave permanent projectile/explosion objects in the retained world.
         foreach (uint id in projectiles)
@@ -384,6 +385,7 @@ partial class Program
         }
         CarryCharges(conn, r.Ticket);
         CarryFortification(conn, r.Ticket);
+        CarryAntiquarian(conn, r.Ticket);
         CarryRage(conn, r.Ticket);
         conn.InvalidateIncomingHits(); // Recent enemy contacts never cross an area connection.
         if (t.AtWaypoint) WaypointArrivals[r.Ticket] = 0;
