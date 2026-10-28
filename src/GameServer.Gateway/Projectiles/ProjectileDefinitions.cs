@@ -11,6 +11,7 @@ partial class Program
         public Func<ClientState, string?>? Unavailable { get; init; }
         public Func<ProjectileReleaseContext, ProjectileUse, ProjectileUse>? SpecializeRelease { get; init; }
         public Func<ProjectileEntity, ProjectilePresentation>? Presentation { get; init; }
+        public Action<ProjectileProfile, Dictionary<uint, int>>? PanelStats { get; init; }
     }
 
     internal sealed record ProjectileReleaseContext(ClientState Conn, ProjectileSession Session, ushort SkillId,

@@ -64,12 +64,19 @@ must use `Pierce`, never that cap.
 ## Skill definitions and presentation
 
 `ProjectileSkillDefinition` supplies metadata, profile resolution, optional terrain admission, windup
-cancellation, release specialization and presentation. Paid attacks normally survive Move; spells and
-definitions with release-time resources retain action cancellation. Cooldown tickets, death, recovery and
+cancellation, release specialization, presentation and native panel-stat projection.
+Paid attacks normally survive Move; spells and definitions with release-time resources retain action cancellation.
+Cooldown tickets, death, recovery and
 epoch restrictions still apply. Specialization runs once in the simulation commit and may provide frozen
 per-initial-projectile payloads; continuation children inherit their parent's payload.
 Accepted hit recovery permanently cancels unreleased paid attacks, even after recovery expires;
 already released flights continue independently.
+
+Gem skill records resolve the same profile for native projectile-count, pierce, chain and fork description inputs.
+Prohibitions override displayed continuation grants; unlimited pierce uses the native all-targets flag.
+Final display values modify only the outgoing skill record, never raw supported stats or later release calculations.
+A definition may project specialized stage counts through `PanelStats`; an unavailable recipe omits this projection
+without blocking the remaining skill list. Native description templates choose the wording and visibility.
 
 `ProjectilePresentation` supplies flight mesh/clip, second-form clip and event effects. Non-gem sources may
 supply presentation directly through `ProjectileOffense`. The common host owns object lifecycle, terrain
