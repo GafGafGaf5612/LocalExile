@@ -21,6 +21,10 @@ partial class Program
         Put("projectile_number_of_targets_to_pierce", profile.CannotPierce || profile.Pierce < 0 ? 0 : profile.Pierce);
         Put("virtual_always_pierce", !profile.CannotPierce && profile.Pierce < 0 ? 1 : 0);
         Put("virtual_projectiles_cannot_pierce", profile.CannotPierce ? 1 : 0);
+        // The native generic pierce rows require both competing arrow aliases to be zero.
+        // Their applicable contributions are already included in the profile's combined budget.
+        Put("arrow_number_of_targets_to_pierce", 0);
+        Put("arrows_always_pierce", 0);
         Put("virtual_number_of_chains_for_projectiles", profile.CannotChain ? 0 : profile.Chain);
         Put("virtual_number_of_forks_for_projectiles_final", profile.CannotFork ? 0 : profile.Fork);
         Put("virtual_projectiles_cannot_chain", profile.CannotChain ? 1 : 0);
