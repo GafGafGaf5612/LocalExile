@@ -92,8 +92,8 @@ partial class Program
         var shot = new ProjectileOffense(SupportedProjectileHit(conn, skillId, area: false), spell, conn.Pools.Accuracy,
             SupportedReleaseCriticalChance(conn, skillId), SupportedCriticalMultiplier(conn, skillId), gem.Name)
         {
-            AreaHit = profile.EndArea is not null || profile.ContactArea is not null || profile.Pulse is not null
-                ? SupportedProjectileHit(conn, skillId, area: true) : null,
+            // Child stages and release specialization can introduce areas after this root is resolved.
+            AreaHit = SupportedProjectileHit(conn, skillId, area: true),
             Effect = gem.Effect, Level = gem.Level, Quality = gem.Quality,
             SkillStats = new Dictionary<uint, int>(own),
             Penetration = Penetration.Of(player, Stats, !spell, own), ResistanceMods = HitResistMods(player, own),

@@ -17,7 +17,8 @@ death/retirement and connection closure invalidate the appropriate owner epochs 
 
 Release captures position, offensive stats, speed and critical inputs. Evasion, block, resistance, impale state,
 conditional critical restrictions and the actual caster's spell-damage prohibition resolve at contact.
-Direct and area stages can retain separate damage packets. Area increases and area-only support multipliers
+Gem release always retains separate direct and area damage packets, including for initially direct-only roots
+whose children or release specialization introduce areas. Area increases and area-only support multipliers
 apply to the area packet once; stage multipliers and projectile/form/return multipliers compose at impact.
 Non-projectile damage callers retain their own classification.
 
@@ -28,6 +29,8 @@ Finite pierce consumes one grant per admitted contact, then hands off to the nex
 Boolean fork sources establish one base generation; explicit additional-fork counts add generations.
 Raw and resolved aliases are combined without counting the same source twice. Count conversions declare
 their consumer so an extra projectile cannot expand both primary emission and a secondary stage.
+A declared non-primary consumer retains quantity when a competing split conversion is prohibited by the
+profile or modifiers. Competing viable conversions remain an error; primary count conversion is unchanged.
 
 The common player defaults share direct-hit admission by emission, separately for outbound and return phases.
 Denied siblings pass through that victim. An evaded contact keeps flying without consuming continuation.

@@ -164,14 +164,17 @@ public class ProjectileModifierBoundaryTests
         Assert.Equal(4, profile.GroundChains);
     }
 
-    [Fact]
-    public void Generic_split_conversion_adds_extra_count_once_and_keeps_existing_split_grants()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Generic_split_conversion_adds_extra_count_once_and_keeps_existing_split_grants(bool cannotSplit)
     {
-        var profile = Resolve(new("synthetic") { Count = 3, Split = 2 }, Stats(
+        var profile = Resolve(new("synthetic") { Count = 3, Split = 2, CannotSplit = cannotSplit }, Stats(
             ("number_of_additional_projectiles", 4), ("projectile_number_to_split", 3),
             ("modifiers_to_number_of_projectiles_instead_apply_to_splitting", 1)));
         Assert.Equal(1, profile.Count);
         Assert.Equal(9, profile.Split);
+        Assert.Equal(cannotSplit, profile.CannotSplit);
     }
 
     [Theory]
@@ -194,6 +197,25 @@ public class ProjectileModifierBoundaryTests
     {
         Assert.Throws<InvalidOperationException>(() => Resolve(new("synthetic") { CountConsumer = consumer },
             Stats(("modifiers_to_number_of_projectiles_instead_apply_to_splitting", 1))));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Intrinsic_area_count_keeps_extra_projectiles_when_competing_split_is_prohibited(bool profileProhibition)
+    {
+        var profile = Resolve(new("synthetic")
+        {
+            CountConsumer = ProjectileCountConsumer.ContactAreas,
+            ContactArea = new("clusters", 5, Count: 3),
+            CannotSplit = profileProhibition
+        }, Stats(("number_of_additional_projectiles", 4),
+            ("projectiles_cannot_split", profileProhibition ? 0 : 1),
+            ("modifiers_to_number_of_projectiles_instead_apply_to_splitting", 1)));
+        Assert.Equal(1, profile.Count);
+        Assert.Equal(7, profile.ContactArea!.Count);
+        Assert.Equal(0, profile.Split);
+        Assert.True(profile.CannotSplit);
     }
 
     [Fact]

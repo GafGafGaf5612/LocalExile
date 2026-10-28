@@ -36,8 +36,12 @@ static class GatewayProjectileModifiers
             CannotSplit = get("projectiles_cannot_split") != 0,
             CannotReturn = get("skill_projectiles_cannot_return") != 0
         };
+        // A declared non-primary consumer keeps quantity when the competing split is prohibited.
+        bool intrinsicCountOwnsQuantity = p.CountConsumer != ProjectileCountConsumer.Primary
+            && (p.CannotSplit || modifiers.CannotSplit);
         // An intrinsic split budget owns this conversion even when the generic stat also enables it.
-        if (!intrinsicSplitCount && get("modifiers_to_number_of_projectiles_instead_apply_to_splitting") != 0)
+        if (!intrinsicSplitCount && !intrinsicCountOwnsQuantity
+            && get("modifiers_to_number_of_projectiles_instead_apply_to_splitting") != 0)
         {
             if (p.CountConsumer != ProjectileCountConsumer.Primary)
                 throw new InvalidOperationException("Unresolved competing projectile count conversions: " + p.Id);
