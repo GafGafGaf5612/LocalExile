@@ -37,6 +37,12 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- **Dev tab fill (`/item_tab <tab name> <count>`).** It adds up to `count` more, at most 1000 per command, of every item type that
+  has its own slot on a currency, essence, fragment, delve, blight, delirium or divination tab, as far as each slot holds.
+  An item that doesn't stack gets one. Tabs without a slot per type are refused with the reason.
+  Automated tests cover the caps, growing stacks in place, reloads, refused tabs and tab lookup; the real client is not checked yet.
+  See protocol/18-stash.md §7.
+
 - **Crafting cells.** Delve crafting cells accept equipment, support swaps and retain their contents after reload.
   Lioneye's Watch now creates a guild stash beside its personal stash.
   Persistence checks pass; the real client opened the city guild stash and loaded its guild tab.

@@ -496,6 +496,62 @@ sealed class AccountStash
         return new(changed, added, left);
     }
 
+    /// <summary>What <see cref="FillSlots"/> did: grown and new stacks, how many item types had no room left in their slot
+    /// and how many the server could not create.</summary>
+    public sealed record SlotFill(IReadOnlyList<InventoryItem> Changed, IReadOnlyList<InventoryItem> Added, int Full, int Skipped);
+
+    /// <summary>
+    /// The /item_tab command: up to <paramref name="amount"/> more of every item type that has a slot of its own in a
+    /// slotted tab (currency, essence, fragment, delve, blight, delirium, divination), each into that slot only and as far
+    /// as the slot holds (<see cref="StashRules.MaxStack"/>; one of an item that doesn't stack), in one save.
+    /// <paramref name="create"/> makes an item of a type, or null when the server can't write it. Null with the reason
+    /// when the tab has no slots of its own.
+    /// </summary>
+    public SlotFill? FillSlots(int tab, int amount, Func<uint, Item?> create, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
+    {
+        var changed = new List<InventoryItem>();
+        var added = new List<InventoryItem>();
+        int full = 0, skipped = 0;
+        lock (_lock)
+        {
+            why = "";
+            if (tab < 0 || tab >= _tabs.Count) { why = "no such tab"; return null; }
+            var t = _tabs[tab];
+            if (StashRules.NotShown(t.Saved.Type)) { why = $"the server doesn't show items on the {TypeName(t)} tab yet"; return null; }
+            if (!_rules.Slotted(t.Saved.Type))
+            {
+                why = $"the {TypeName(t)} tab has no slot for each item type (a currency, essence, fragment, delve, blight, delirium or divination tab has)";
+                return null;
+            }
+            foreach (var (type, slot) in _rules.Slots(t.Saved.Type).OrderBy(s => s.Value))
+            {
+                // A cell's x is a byte: the divination tab's later rows (our slot guess) have no cell to go to.
+                if (slot > byte.MaxValue || create(type) is not { } item || shapeOf(item) is not { } shape) { skipped++; continue; }
+                int at = t.Items.FindIndex(i => i.X == slot && i.Y == 0);
+                // Another type in the slot (two layout rows naming one slot): leave it.
+                if (at >= 0 && t.Items[at].Item.TypeHash != type) { skipped++; continue; }
+                int max = shape.MaxStack <= 1 ? 1 : MaxStack(t, item, shape, -1, -1);
+                int room = max - (at >= 0 ? t.Items[at].Item.StackSize : 0);
+                if (room <= 0) { full++; continue; }
+                int take = Math.Min(amount, room);
+                if (at >= 0)
+                {
+                    var grown = t.Items[at] with { Item = t.Items[at].Item with { StackSize = (ushort)(t.Items[at].Item.StackSize + take) } };
+                    t.Items[at] = grown;
+                    changed.Add(grown);
+                }
+                else
+                {
+                    var placed = new InventoryItem(_nextItemId++, (byte)slot, 0, item with { StackSize = (ushort)take });
+                    t.Items.Add(placed);
+                    added.Add(placed);
+                }
+            }
+        }
+        if (changed.Count + added.Count > 0) Persist(tab);
+        return new(changed, added, full, skipped);
+    }
+
     /// <summary>Replaces an item in a tab with a changed copy (same id and cell), saved; null when it is not there (currency
     /// used on an item in the stash, e.g. the currency tab's crafting slot).</summary>
     public InventoryItem? Change(int tab, uint itemId, Func<Item, Item> change)

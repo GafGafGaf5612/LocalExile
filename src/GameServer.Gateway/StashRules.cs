@@ -66,6 +66,11 @@ sealed class StashRules
     /// <summary>Whether the tab type gives each item type its own slot.</summary>
     public bool Slotted(byte tabType) => _slots.ContainsKey(tabType);
 
+    /// <summary>The item types that have a slot of their own in a slotted tab type, with their slot (empty for other types).</summary>
+    public IReadOnlyDictionary<uint, int> Slots(byte tabType) => _slots.TryGetValue(tabType, out var s) ? s : NoSlots;
+
+    static readonly Dictionary<uint, int> NoSlots = [];
+
     /// <summary>The item type's slot in a slotted tab type, or null.</summary>
     public int? SlotOf(byte tabType, uint itemType) =>
         _slots.TryGetValue(tabType, out var s) && s.TryGetValue(itemType, out int slot) ? slot : null;
