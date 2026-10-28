@@ -490,9 +490,16 @@ existing relocation gate.
 Raw `global_always_hit` from the owner/default skill, or `local_always_hit` from the qualified attacking weapon,
 bypasses both accuracy checks. Inactive/off-hand weapon sources and final hand aliases cannot grant this flag.
 This batch establishes ordinary gameplay, not all source conditions or selected publication: gem attacks still
-need first-hit evasion, critical confirmation and correct projectile continuation; selected accuracy supports,
-other cannot-evade conditions, off-hand execution, chance/always-hit aliases and accuracy-weighted averages/DPS
+need first-hit evasion, critical confirmation and correct projectile continuation; other cannot-evade conditions,
+off-hand execution, complete chance/always-hit aliases and accuracy-weighted averages/DPS
 remain open. Spell hits continue without attack accuracy. Native revalidation remains pending.
+
+Selected flat/increased accuracy sources now use `SupportedAccuracy` and the exact original pool base.
+Additional Accuracy's real flat/quality contributions update the selected rating/reference chance rows;
+raw commands replace all corresponding actor contributions, including Precision, and refresh pools.
+Decision: preserve the original base instead of reversing a floored final value, and apply support inputs before
+the final floor. The alternative would mis-scale flat support values and lose fractional boundaries.
+[Skills §4](11-skills.md) records source evidence, actual support/command tests and the still-open gem consumers.
 
 [Mark_GGG's entropy explanation](https://www.pathofexile.com/forum/view-thread/11707/filter-account-type/staff/page/10)
 establishes per-defender state, independent critical confirmation, inactivity resets and separate block checks.

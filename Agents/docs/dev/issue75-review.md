@@ -217,6 +217,35 @@ evaded gem arrows as zero-damage impacts. These decisions, primary GGG/pinned Po
 source/panel/native work are also in [damage §2g](../protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
 Parent Gateway 39900/Auth 45972/Patch 56752 remain active and were left alone.
 
+## Accuracy sources and selected support inputs
+
+The next review found raw accuracy commands did not rebuild/replace the pool inputs, and selected attack rows
+inherited actor accuracy while ignoring Additional Accuracy's flat and quality contributions. `AccuracyRating`
+now shares wide flat/increased source collection and an exact single-floor calculation. Pool builds retain the
+signed original base; `SupportedAccuracy` combines skill/support sources before final rounding without repeating
+the weapon's local flat rating. Three main-hand selected rating/chance aliases use that profile. Raw commands
+rebuild pools, replace complete sources (including Precision) and restore them with `off`.
+
+Twelve added tests cover actual 0/20-quality Additional Accuracy, link/removal, changed attributes, unaffected
+actor/unrelated skills, real commands with Precision/zero/source restoration, fractional boundaries, signed
+suppression and wide sums. The expanded focused run passes 30 (`selected-accuracy-expanded.trx`). The initial
+diagnostic receipts are retained: their first numeric expectation used the stale zero-override baseline, and
+the first qualification expectation incorrectly assumed level-one support failed at 14 Dexterity. Those are
+corrected controls, not numeric before-fix proof. Source inspection independently identified the omissions.
+The solution build has no warnings/errors; Core 561, Data 18 and Gateway 4,245 pass without skips,
+for 4,824 total. Final receipts are `core-selected-accuracy.trx`, `data-selected-accuracy.trx` and
+`gateway-selected-accuracy.trx`. The ordinary attack contact correction is local commit `67b58fb`.
+The inventory was refreshed: 387 panel rows, 491 unique dependencies, 357 virtual stats and 82 tracked Markdown
+files. Counts alone remain insufficient to mark a stat complete.
+
+Decision: keep the exact actor base instead of adding support flat values to an already increased result or
+reconstructing a lost base from a floored result. Apply the existing whole-source override policy, instead of
+stacking a developer value on top of Precision/equipment. [Skills §4](../protocol/11-skills.md) and
+[damage §2g](../protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation) record these decisions,
+alternatives and pinned PoB/native-catalog evidence. Gem attack evasion/confirmation must next consume the
+selected profile; remaining conditional/more accuracy, off-hand sources, complete always-hit/DPS publication
+and native validation remain open. This work does not certify those entire rows.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

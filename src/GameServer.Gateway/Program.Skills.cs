@@ -413,6 +413,15 @@ partial class Program
                 {
                     stats[StatKeys.MainHandAttackSpeedPct] = (int)Math.Round((WeaponFor(conn).AttackMs / (seconds * 1000) - 1) * 100);
                     stats[StatKeys.HundredTimesAttacksPerSecond] = (int)Math.Round(100 / seconds);
+                    var accuracy = SupportedAccuracy(conn, id);
+                    foreach (var (field, value) in new[]
+                    {
+                        ("main_hand_accuracy_rating", accuracy.Rating),
+                        ("main_hand_chance_to_hit_%", accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false)),
+                        ("main_hand_chance_to_hit_evasive_monsters_%", accuracy.Chance(Monsters.BaseEvasiveEvasion(conn.Pools.Level) ?? 0, false, false)),
+                    })
+                        if (Stats.Key(field) is uint key)
+                            stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
                 }
                 if (Stats.Key(Skills.IsAttack(effect) ? "main_hand_critical_strike_chance" : "spell_critical_strike_chance") is uint ck)
                     stats[ck] = criticalChance;

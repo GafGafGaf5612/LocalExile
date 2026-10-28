@@ -56,6 +56,7 @@ partial class Program
             }
             // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
+                || AccuracyRating.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
                 || rebuildLife || rebuildMana || rebuildDefences || rawAttribute
                 || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)

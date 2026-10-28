@@ -159,7 +159,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   both checks. Failed critical confirmation keeps a normal hit and normal impale storage. Rejected melee contacts
   do not consume entropy; ordinary bow block is checked after evasion. Deterministic parsed-contact, pass-through,
   source-freeze/removal and target-condition tests pass. Current native validation, gem accuracy/confirmation,
-  selected support composition, off-hand sources/execution and accuracy/always-hit/DPS publication remain open.
+  off-hand sources/execution and complete accuracy/always-hit/DPS publication remain open.
+  Unconditional selected flat/increased accuracy now joins the original unrounded pool base before the final
+  floor, updating main-hand rating and normal/evasive reference chances. Real Additional Accuracy at 0/20 quality
+  covers link/removal, attribute changes and unrelated skills. Raw accuracy commands rebuild pools with complete
+  source replacement, including Precision and explicit zero; `off` restores sources without relog.
+  Wide signed sums and exact flooring prevent intermediate overflow and fractional drift. Gem combat still
+  needs to consume the selected profile; other conditional/more accuracy and native checks remain open.
   See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
   Ten native checks used connected ordinary paths and actual mastery selection requests.
   The panel stayed at 711 while target rolls used 995 against Unique, 1066 in close range and 1493 when both held.

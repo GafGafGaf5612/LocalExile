@@ -233,6 +233,12 @@ partial class Program
         int RawCritical(string name) => (int)Math.Clamp(RawCriticalSum(name), int.MinValue, int.MaxValue);
         long attackIncrease = AttackBaseCriticalStrike.IncreasedSum(activeWeapon, RawCriticalSum);
         long spellIncrease = RawCriticalSum("critical_strike_chance_+%") + RawCriticalSum("spell_critical_strike_chance_+%");
+        long RawAccuracy(string name)
+        {
+            if (Stats.Key(name) is not uint key) return 0;
+            if (devStats.TryGetValue(key, out int value)) return value;
+            return (long)sources.GetValueOrDefault(key) + (name == "accuracy_rating" ? aura.Accuracy : 0);
+        }
         bonus = bonus with
         {
             FireResistance = bonus.FireResistance + aura.FireResistance,
@@ -243,7 +249,13 @@ partial class Program
             ColdMaxResistance = bonus.ColdMaxResistance + aura.ColdMaxResistance,
             LightningMaxResistance = bonus.LightningMaxResistance + aura.LightningMaxResistance,
             ChaosMaxResistance = bonus.ChaosMaxResistance + aura.ChaosMaxResistance,
-            Accuracy = bonus.Accuracy + aura.Accuracy,
+            Accuracy = AccuracyRating.Flat(activeWeapon, RawAccuracy),
+            AccuracyPct = AccuracyRating.Increased(activeWeapon, RawAccuracy),
+            AccuracyPerLevel = (int)RawAccuracy("accuracy_rating_per_level"),
+            DexterityAccuracyTriple = RawAccuracy("dexterity_accuracy_bonus_grants_accuracy_rating_+3_per_dexterity_instead") != 0,
+            AccuracyEqualsIntelligence = RawAccuracy("gain_accuracy_rating_equal_to_intelligence") != 0,
+            AccuracyMoreVsUniquePct = (int)RawAccuracy("accuracy_rating_+%_final_vs_unique_enemies_from_mastery"),
+            AccuracyMoreInCloseRangePct = (int)RawAccuracy("accuracy_rating_+%_final_vs_enemies_in_close_range_from_mastery"),
             Armour = bonus.Armour + aura.Armour,
             Evasion = bonus.Evasion + aura.Evasion,
             // Discipline is a global flat ES source, added after equipment ES-to-Life conversion.
@@ -397,27 +409,8 @@ partial class Program
         // Mastery's conversions, plus its two target-conditional "more" effects (below; TargetAccuracy applies them to
         // the hit's own target at the roll). Other conditional accuracy stays unmodelled. Unarmed attacks count as dual
         // wielding, as they do for attack speed.
-        int accuracyFlat = Get("accuracy_rating") + weapons.LocalAccuracy
-            + (weapons.Sword ? Get("sword_accuracy_rating") : 0)
-            + (weapons.Axe ? Get("axe_accuracy_rating") : 0)
-            + (weapons.Mace ? Get("mace_accuracy_rating") : 0)
-            + (weapons.Claw ? Get("claw_accuracy_rating") : 0)
-            + (weapons.Dagger ? Get("dagger_accuracy_rating") : 0)
-            + (weapons.Wand ? Get("wand_accuracy_rating") : 0)
-            + (weapons.Staff ? Get("staff_accuracy_rating") : 0)
-            + (weapons.Bow ? Get("bow_accuracy_rating") : 0);
-        int accuracyPct = Get("accuracy_rating_+%")
-            + ((weapons.DualWield || weapons.Unarmed) ? Get("accuracy_rating_while_dual_wielding_+%") : 0)
-            + (weapons.OneHandMelee ? Get("one_handed_melee_accuracy_rating_+%") : 0)
-            + (weapons.TwoHandMelee ? Get("two_handed_melee_accuracy_rating_+%") : 0)
-            + (weapons.Axe ? Get("axe_accuracy_rating_+%") : 0)
-            + (weapons.Sword ? Get("sword_accuracy_rating_+%") : 0)
-            + (weapons.Mace ? Get("mace_accuracy_rating_+%") : 0)
-            + (weapons.Claw ? Get("claw_accuracy_rating_+%") : 0)
-            + (weapons.Dagger ? Get("dagger_accuracy_rating_+%") : 0)
-            + (weapons.Wand ? Get("wand_accuracy_rating_+%") : 0)
-            + (weapons.Staff ? Get("staff_accuracy_rating_+%") : 0)
-            + (weapons.Bow ? Get("bow_accuracy_rating_+%") : 0);
+        long accuracyFlat = AccuracyRating.Flat(weapons, name => Get(name));
+        long accuracyPct = AccuracyRating.Increased(weapons, name => Get(name));
         // The Accuracy Mastery's two target-conditional effects (11-skills.md panels): final "more" accuracy for a hit's
         // own target, which TargetAccuracy applies at the roll. Kept out of the additive pools, so the panel and
         // /accuracy keep showing only the unconditional rating and never claim a target condition statically.

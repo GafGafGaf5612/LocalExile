@@ -124,6 +124,14 @@ partial class Program
         return new SkillDamageContext(plan.Kind, caster).Hit(hit);
     }
 
+    static AttackAccuracyProfile SupportedAccuracy(ClientState conn, ushort skillId)
+    {
+        var own = SupportedSkill(conn, skillId).Stats;
+        long Own(string name) => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
+        return AttackAccuracyProfile.From(conn.Pools, CharacterPlayerStats(conn), Stats, own, MainHandLocalSources(conn))
+            with { Rating = AccuracyRating.Selected(conn.Pools, WeaponProfileFor(conn, activeSet: true), Own) };
+    }
+
     static int SupportedCriticalChance(ClientState conn, ushort skillId)
     {
         var gem = SupportedSkill(conn, skillId);

@@ -37,7 +37,7 @@ static class CharacterStats
         int SpellCriticalStrikeMultiplier = DamageModel.BaseCriticalStrikeMultiplier,
         int AttackCriticalStrikeChance = 0,
         int SpellCriticalStrikeChance = DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
-        int AccuracyPct = 0,
+        long AccuracyPct = 0,
         // The Accuracy Mastery's target-conditional "more" effects, kept out of Accuracy: they only apply to a hit's
         // own target (TargetAccuracy), so the panel must not show them as the character's accuracy.
         int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
@@ -51,6 +51,8 @@ static class CharacterStats
         internal long FortificationRevision { get; init; }
         // Calculated zero attributes are valid; legacy partial pool records may still need class defaults.
         internal bool AttributesResolved { get; init; }
+        // Real pool builds retain the signed base before the one final floor; legacy partial pools use their rating.
+        internal long AccuracyBase { get; init; } = Accuracy;
     }
 
     /// <summary>What allocated passives and equipped base items add to the pools: attributes, flat and increased life,
@@ -73,7 +75,7 @@ static class CharacterStats
         int AttackSpeedPct = 0, int AttackSpeedMorePct = 0,
         long CriticalStrikeChancePct = 0, long SpellCriticalStrikeChancePct = 0,
         int CriticalStrikeMultiplier = 0, int SpellCriticalStrikeMultiplier = 0,
-        int Accuracy = 0, int AccuracyPct = 0, int AccuracyPerLevel = 0,
+        long Accuracy = 0, long AccuracyPct = 0, int AccuracyPerLevel = 0,
         bool DexterityAccuracyTriple = false, bool AccuracyEqualsIntelligence = false,
         int AccuracyMoreVsUniquePct = 0, int AccuracyMoreInCloseRangePct = 0,
         int ManaReservationEfficiencyPct = 0, int LifeReservationEfficiencyPct = 0,
@@ -173,9 +175,9 @@ static class CharacterStats
         // Accuracy Mastery can replace the 2 per level and 2 per dexterity, and add Accuracy equal to Intelligence.
         long accuracyPerLevel = 2L + b.AccuracyPerLevel;
         int accuracyPerDex = b.NoDexterityBonuses ? 0 : b.DexterityAccuracyTriple ? 3 : 2;
-        long accuracyBase = Math.Max(0, accuracyPerLevel * level + (long)accuracyPerDex * dex + b.Accuracy
-            + (b.AccuracyEqualsIntelligence ? intel : 0));
-        int accuracy = (int)Math.Clamp(Math.Floor(accuracyBase * (1 + b.AccuracyPct / 100.0)), 0, int.MaxValue);
+        long accuracyBase = accuracyPerLevel * level + (long)accuracyPerDex * dex + b.Accuracy
+            + (b.AccuracyEqualsIntelligence ? intel : 0);
+        int accuracy = AccuracyRating.Calculate(accuracyBase, b.AccuracyPct);
         // PoB CalcDefence: armour and evasion are flat defences raised by their increased modifiers. Evasion keeps the
         // character's 15 base and gains 1% per 5 dexterity; armour has no base outside items and passives. The
         // overcapped cold resistance's increase is one of the evasion increases (it applies before the conversion, so
@@ -286,7 +288,7 @@ static class CharacterStats
             AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct,
             ColdOvercapEvasionPct: b.ColdOvercapEvasionPct, LightningOvercapCritPct: b.LightningOvercapCritPct,
             ArmourAppliesToChaosDamage: b.ArmourAppliesToChaosDamage)
-            { AttributesResolved = true };
+            { AttributesResolved = true, AccuracyBase = accuracyBase };
     }
 
     private static readonly Lazy<uint[]> Experience = new(() => LoadExperience("data"));

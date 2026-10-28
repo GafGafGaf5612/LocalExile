@@ -34,8 +34,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 Ordinary melee/bow now share defender evasion entropy and independent critical confirmation, with target
 evasion modifiers/Blind, target Masteries, qualified raw cannot-evade flags and evaded-arrow continuation.
-Complete gem attack evasion/confirmation with correct forward/piercing/return collision behavior; compose
-selected accuracy supports and other conditions, correct off-hand sources, and publish matching chance,
+Selected flat/increased accuracy supports and raw actor overrides now compose before the final floor.
+Complete gem attack evasion/confirmation with correct forward/piercing/return collision behavior using that
+profile; implement remaining conditions, correct off-hand sources, and publish all matching chance,
 always-hit and accuracy-weighted average/DPS rows. Validate these paths natively when shared resources are free.
 See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
 

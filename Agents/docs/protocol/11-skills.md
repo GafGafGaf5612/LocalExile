@@ -373,6 +373,32 @@ Hit rows are sent directly as `main_hand_chance_to_hit_%` / `off_hand_chance_to_
 variants), against a reference monster of the character's level; `character_sheet_reference_evasion` and
 `..._high_dex_evasion` carry that monster's evasion. `/accuracy` states the mastery's per-target values.
 
+**Accuracy source and selected-support correction (issue #75 review).** `AccuracyRating` now collects the
+unconditional flat/increased generic and weapon-source buckets with wide signed sums. Pool builds replace
+each complete raw source with its developer override, including zero, before deriving accuracy; Precision's
+flat contribution participates once and is also removed by an explicit zero. `/set_stat ... off` restores the
+underlying source and all implemented accuracy inputs trigger a pool rebuild. Per-level/mastery replacements
+follow the same override rule. The exact nonnegative product floors once and saturates at `int.MaxValue`.
+
+`CharacterStats.Pools.AccuracyBase` retains the signed, unrounded base before increased accuracy. A selected
+attack's own flat/increased inputs join those original buckets, without adding weapon-local accuracy twice.
+`SupportedAccuracy` supplies that profile and the selected main-hand rating, normal hit chance and evasive-target
+hit chance. Actual level-one Additional Accuracy contributes 74 flat; quality contributes 1% increased per point.
+Linking, unlinking, removing the support or changing the character's attributes rebuilds those three aliases.
+Ordinary attack and unrelated spell records retain their own values. Explicit final alias overrides retain the
+existing display policy; raw accuracy overrides affect the calculation. Target-conditional Masteries stay out
+of the reference-monster estimates. Cannot-evade flags yield 100% in these selected chance estimates.
+
+Decision: retain the original base and combine supported inputs before rounding, rather than adding 74 to an
+already increased final rating or dividing that floored rating to reconstruct a lost base. Use the established
+whole-source replacement policy for commands, instead of adding a second developer contribution on top of
+Precision/items. Pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02`, `CalcOffence.lua` accuracy section
+and `Data/Skills/sup_dex.lua` `SupportAdditionalAccuracy`, supplies the formula and support values; native
+catalog support/quality controls match them. This is the accepted 3.29.x reference, not exact 3.29.3b certification.
+Automated source/command/Precision restoration, real support lifecycle, flooring, signed and overflow checks pass.
+Gem combat accuracy/confirmation still needs to consume this profile. Off-hand scope/execution, conditional/more
+accuracy, complete always-hit publication and accuracy-weighted averages/DPS/native checks remain open.
+
 Armour and evasion are summed from the passive tree and the **base types** of the equipped body armour, helmet, gloves
 and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `base_evasion_rating` are flat, while
 `physical_damage_reduction_rating_+%`, `evasion_rating_+%`, `evasion_and_physical_damage_reduction_rating_+%`
@@ -460,8 +486,8 @@ No generator output changes are needed: the multiplier is already extracted.
    `AttackTiming.ContactDelay`), because that attack cancels a hit still waiting. The chance is PoB's `calcs.hitChance`: `accuracy / (accuracy + (evasion / 5)^0.9) × 125`,
    rounded and clamped to 5..100, with the monster's `DefaultMonsterStats.Evasion` at its level. The player's accuracy
    for this roll is the pools' rating raised by the Accuracy Mastery's target conditions under
-   `TargetAccuracy.AgainstTarget` at the target's own rarity and position at that moment (§4); the gateway logs the
-   value whenever a condition changes it. A miss is logged and
+   `TargetAccuracy.AgainstTarget` at the target's own rarity and position at that moment (§4). Ordinary attacks now
+   use the defender's entropy and independent critical confirmation ([20 §2g](20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation)). A miss is logged and
    sends no life update; spells do not roll accuracy and always hit.
 4. Any later player action (0x25 move, another 0x24) cancels steps 2 and 3 (`ClientState.ActionCount`).
 5. Pacing: one swing per attack time. While the button is held the client sends one 0x24 per swing; a swing may
@@ -1447,8 +1473,10 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   A release paused before contact created nothing while paused, then created ~1.03 s after resume and hit once
   for 11. Paused raw ground/object requests were ignored and resume remained processable.
   A shot with 100 added cold captured at release still dealt 112 after those raw stats were cleared in flight:
-  one killing hit and one 4-XP award. Loot was not measured. Live accuracy was not forced to 100%; the existing
-  `/set_stat accuracy_rating` path does not refresh `conn.Pools.Accuracy` used by ordinary combat.
+  one killing hit and one 4-XP award. Loot was not measured. Live accuracy was not forced to 100%; at that source
+  revision `/set_stat accuracy_rating` did not refresh `conn.Pools.Accuracy` used by ordinary combat.
+  The issue #75 source correction above now rebuilds that pool, with command tests; this old native run does not
+  establish the corrected behavior.
   Combined-only Frostblink checks: actual right-click then actual Q after release preserved one 13-damage hit.
   Actual right-click then a timed framed `0x190` before release moved the native player to (312,221); the arrow
   was created at (313,221) with the original aim (363,224), ending at the wall. This verifies local composition,
