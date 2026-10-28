@@ -94,6 +94,8 @@ public sealed record ProjectileProfile(string Id)
     public ProjectileHitRule? ReturnHitRule { get; init; }
     public ProjectileAreaRecipe? EndArea { get; init; }
     public IReadOnlySet<ProjectileEndReason>? EndAreaReasons { get; init; }
+    /// <summary>Emit an allowed end area before a successful return turnaround; end emissions stay deferred.</summary>
+    public bool EndAreaOnReturnTurnaround { get; init; }
     public ProjectileAreaRecipe? ContactArea { get; init; }
     public bool ContactAreaOnReturn { get; init; } = true;
     /// <summary>Suppress outbound terminal areas after actor contacts, including terrain contact areas.</summary>

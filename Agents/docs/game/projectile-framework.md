@@ -45,6 +45,9 @@ placement distance and skipped terrain-obstructed sectors. Radius, placement rad
 are separate inputs. Sector sampling and simultaneous area timing are deterministic approximations, not
 measurements of client timing or official random distributions.
 
+`EndAreaOnReturnTurnaround` lets a recipe emit an allowed endpoint area before a successful return starts.
+It respects the selected end reasons and leaves child emissions deferred; the default keeps terminal areas deferred.
+
 Return preserves remaining split/pierce/fork/chain counts and the original lifetime. An expired projectile
 cannot start another flight. Returning children retain their phase and cannot return a second time.
 `returning_projectiles_always_pierce` explicitly grants unlimited return piercing; ordinary return does not.
