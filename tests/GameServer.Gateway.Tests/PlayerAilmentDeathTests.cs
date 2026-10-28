@@ -85,4 +85,3 @@ public partial class OwnAuraGatewayTests
         }
     }
 }
-
