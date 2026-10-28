@@ -641,7 +641,11 @@ and can require explicit recipes.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
   Maximum-mana added lightning has original-head native checks and resolved automated checks.
   Not yet: exposure, aura-dependent penetration, other added damage,
-  increased/more support modifiers, ailment application/duration ([20](../docs/protocol/20-damage.md)).
+  increased/more support modifiers and outgoing ailment application/duration ([20](../docs/protocol/20-damage.md)).
+  Incoming ordinary monster melee ailments now have runtime and Gateway coverage: critical fire ignite, cold chill/freeze
+  and critical lightning shock, with avoidance, expiry, immunity, lethal ignite/ES and freeze action cancellation.
+  Native acceptance is pending; alternative ailments and hostile spell/projectile sources remain unimplemented.
+  See [Gambler](../docs/game/gambler.md) for the exact bounded scope.
   Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
   attack-only variants, the cannot-penetrate flag; DoT and physical take none).
   Player and skill contributions to the same raw penetration stat add without overwriting either source.

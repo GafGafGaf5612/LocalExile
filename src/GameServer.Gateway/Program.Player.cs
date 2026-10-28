@@ -212,7 +212,8 @@ partial class Program
         var own = skillId == 0 ? new Dictionary<uint, int>() : SupportedSkill(conn, skillId).Stats;
         int speed = CastSpeedPct(CharacterPlayerStats(conn));
         if (Stats.Key("base_cast_speed_+%") is uint k) speed += own.GetValueOrDefault(k);
-        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds;
+        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds is int duration
+            ? (int)Math.Min(int.MaxValue, Math.Ceiling(duration / PlayerActionFactor(conn))) : null;
     }
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
@@ -348,6 +349,7 @@ partial class Program
         double last = conn.Clock.Elapsed.TotalSeconds;
         int suppression = Suppression(conn).Chance;
         var criticalContext = CriticalContext(conn);
+        var ailments = conn.ElementalAilments.Snapshot(last);
         while (!conn.Closed)
         {
             await Task.Delay(PlayerTickMs);
@@ -362,6 +364,11 @@ partial class Program
             {
                 criticalContext = currentCritical;
                 await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
+            }
+            if (conn.ElementalAilments.Snapshot(tickNow) is var nextAilments && nextAilments != ailments)
+            {
+                ailments = nextAilments;
+                await SendCharacterStats(remote, stream, ciphers, conn, "elemental ailments changed");
             }
             await SendRecentEnemyHits(remote, stream, ciphers, conn);
             await PushOutOfCollision(remote, stream, ciphers, conn);
@@ -460,13 +467,15 @@ partial class Program
                 }
                 else
                 {
-                    burnCarry += (InGracePeriod(conn) ? 0 : burnPerSecond) * seconds;
+                    burnCarry += (InGracePeriod(conn) ? 0 : burnPerSecond * conn.ElementalAilments.DamageTakenFactor(now)) * seconds;
                     int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
                     int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
                     double fortificationLife = FortificationOf(conn).TakeRecovery(conn.Clock.Elapsed.TotalSeconds);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
                         life + lifeRate * seconds + fortificationLife - lifeBurn, ref lifeCarry, minimum: 1);
+                    AdvancePlayerAilmentsLocked(conn, recoveryFrom, now, recoveryStats);
+                    lifeAfter = conn.PlayerLife;
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
                         mana + manaRate * seconds, ref manaCarry);
                 }

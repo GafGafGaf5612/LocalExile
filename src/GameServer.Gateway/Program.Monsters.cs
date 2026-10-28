@@ -300,26 +300,32 @@ partial class Program
                     return;
                 }
                 // Roll the whole monster-mod packet, then mitigate each component with this hit's one armour decision.
-                var rolled = a.Damage.Roll(conn.IncomingHitRandom);
+                var gambler = GamblerFor(stats);
+                var rolled = gambler.RollIncomingHit(a.Damage, conn.IncomingHitRandom);
+                var ailmentBase = rolled;
                 rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, conn.IncomingHitRandom, out monsterCritical,
                     () => SelfCriticalReduction(conn));   // its crit, Executioner's
-                var mitigated = DamageModel.Mitigate(rolled, type =>
-                    new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
+                var mitigated = gambler.MitigateIncomingHit(rolled, type =>
+                    new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)), conn.IncomingHitRandom);
                 var immune = PlayerImmunities(conn);
                 // This remains the original next RNG draw when the feature is absent. Blocking never
                 // consumes an armour draw; one lazy decision is shared by the whole rolled packet.
-                blocked = DamageModel.Blocks(conn.Pools.BlockChance, conn.IncomingHitRandom.NextDouble() * 100, conn.Pools.AttackBlockLucky);
+                blocked = DamageModel.Blocks(conn.Pools.BlockChance, conn.IncomingHitRandom.NextDouble() * 100, conn.Pools.AttackBlockLucky, conn.Pools.AttackBlockUnlucky);
                 bool armourRelevant = mitigated.Components.Any(c => !immune.Contains(c.Type)
                     && Math.Round(c.Range.Min) > 0 && (c.Type == DamageType.Physical
                         || c.Type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage));
                 armour = IncomingArmourLocked(conn, !blocked && armourRelevant, priorContacts, stats);
                 rawDamage = (int)Math.Round(rolled[DamageType.Physical].Min);
                 damage = 0;
+                var ailmentTaken = DamagePacket.Empty;
+                double shockFactor = conn.ElementalAilments.DamageTakenFactor(now);
                 foreach (var (type, range) in mitigated.Components)
                 {
                     int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
                     value = PlayerHitMitigation.AfterResistance(conn.Pools, type, value,
                         reduction.Physical, reduction.Elemental, armour.EffectiveArmour);
+                    value = (int)Math.Round(value * shockFactor);
+                    ailmentTaken = ailmentTaken.Add(type, new(value, value));
                     if (type == DamageType.Chaos) chaosDamage += value;
                     damage += value;
                 }
@@ -331,6 +337,9 @@ partial class Program
                 int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
                 conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
                 conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
+                ApplyPlayerAilmentsLocked(conn, ailmentBase, ailmentTaken.Select((_, r) =>
+                    new(FortificationDamageTaken(conn, (int)r.Min), FortificationDamageTaken(conn, (int)r.Max))),
+                    monsterCritical, blocked, now, stats);
                 conn.RecentEnemyHits.Record(now);
                 ChargesWhenHit(conn, blocked);
                 if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();

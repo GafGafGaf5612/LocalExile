@@ -423,6 +423,8 @@ partial class Program
             + Get("combined_armour_and_evasion_rating_+%");
         int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
         int evasionPct = Get("evasion_rating_+%") + defencesPct;
+        long attackBlockLuck = (long)Get("base_block_luck") + Get("attack_block_luck") + Get("base_attack_block_luck");
+        long spellBlockLuck = (long)Get("base_block_luck") + Get("spell_block_luck") + Get("base_spell_block_luck");
         return new CharacterStats.Bonus(
             Attributes: attributes,
             Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
@@ -460,8 +462,8 @@ partial class Program
             SpellBlockPer5AttackBlock: Get("spell_block_%_per_5_attack_block"),
             LifeGainedOnBlock: Get("life_gained_on_block"), ManaGainedOnBlock: Get("mana_gained_on_block"),
             VersatileCombatant: Get("keystone_versatile_combatant") != 0,
-            AttackBlockLucky: Get("base_block_luck") != 0 || Get("attack_block_luck") != 0 || Get("base_attack_block_luck") != 0,
-            SpellBlockLucky: Get("base_block_luck") != 0 || Get("spell_block_luck") != 0 || Get("base_spell_block_luck") != 0,
+            AttackBlockLucky: attackBlockLuck > 0, AttackBlockUnlucky: attackBlockLuck < 0,
+            SpellBlockLucky: spellBlockLuck > 0, SpellBlockUnlucky: spellBlockLuck < 0,
             AttackSpeedPct: attackSpeed, AttackSpeedMorePct: attackSpeedMore,
             CriticalStrikeChancePct: criticalChance, SpellCriticalStrikeChancePct: spellCriticalChance,
             CriticalStrikeMultiplier: criticalMultiplier, SpellCriticalStrikeMultiplier: spellCriticalMultiplier,

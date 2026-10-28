@@ -25,7 +25,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   graph connectivity now have automated coverage; see [scope and limitations](../docs/game/ascendancies.md).
   Ordinary command selection, refunds, relog and a Gateway restart are verified with a native Duelist/Slayer smoke.
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
-  Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
+  Gambler's full node consumers and ordinary incoming elemental ailment avoidance now have automated coverage.
+  Complete native acceptance and composed-head verification before marking its PR ready; see [Gambler](../docs/game/gambler.md).
+  Phrecia play stays gated by default; Gambler's explicit opt-in verifies the separately installed graph read-only.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
 - **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
   Implementing all 19 Phrecia classes' special gameplay is separate from this selection lifecycle.

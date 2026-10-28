@@ -8,7 +8,7 @@ using GameServer.Core.Protocol.Instance;
 /// second); ComponentCharges its charges. A use puts the buff on the player for the duration and its stats count on the
 /// character until it ends (<see cref="Apply"/>, <see cref="RawStats"/>), as do the flask's "during effect" mods
 /// (<see cref="DuringEffect"/>). How each stat counts is <see cref="SupportOf"/>: modelled, shown on the character panel
-/// only (ailments, stun and curses on the player, which nothing here inflicts), or waiting for Ward (PR #206).
+/// only (unsupported ailment sources and curses), or waiting for Ward (PR #206).
 /// </summary>
 static class UtilityFlasks
 {
@@ -32,8 +32,7 @@ static class UtilityFlasks
     {
         /// <summary>It counts: the pools, the walk speed, the damage code or another mechanic use it.</summary>
         Modelled,
-        /// <summary>It goes to the client for the character panel only: ailments, stun and curses on the player do not
-        /// exist here (monsters only hit), so it changes nothing yet.</summary>
+        /// <summary>It goes to the client for the character panel only; its gameplay source/consumer is unsupported.</summary>
         PanelOnly,
         /// <summary>Ward, which PR #206 brings (<see cref="Ward"/> is the one place to connect it).</summary>
         Ward,
@@ -44,11 +43,11 @@ static class UtilityFlasks
     /// <summary>The stats only the character panel reads (<see cref="Support.PanelOnly"/>).</summary>
     static readonly IReadOnlySet<string> PanelOnly = new HashSet<string>(StringComparer.Ordinal)
     {
-        "base_frozen_effect_on_self_+%", "stun_threshold_+%",
-        "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%", "base_avoid_shock_%", "base_avoid_stun_%",
-        "base_stun_recovery_+%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
-        "curse_effect_on_self_+%", "chance_to_freeze_shock_ignite_%", "base_immune_to_freeze", "base_immune_to_chill",
-        "base_immune_to_shock", "base_immune_to_ignite", "immune_to_poison", "immune_to_bleeding",
+        "stun_threshold_+%",
+        "base_avoid_stun_%",
+        "base_stun_recovery_+%",
+        "curse_effect_on_self_+%", "chance_to_freeze_shock_ignite_%",
+        "immune_to_poison", "immune_to_bleeding",
     };
 
     /// <summary>How a flask effect's stat counts here.</summary>
@@ -95,6 +94,9 @@ static class UtilityFlasks
     /// stats (<see cref="RawStats"/>), or both.</summary>
     public static readonly IReadOnlySet<string> Modelled = new HashSet<string>(StringComparer.Ordinal)
     {
+        "base_frozen_effect_on_self_+%", "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%",
+        "base_avoid_shock_%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
+        "base_immune_to_freeze", "base_immune_to_chill", "base_immune_to_shock", "base_immune_to_ignite",
         "base_fire_damage_resistance_%", "base_cold_damage_resistance_%", "base_lightning_damage_resistance_%",
         "base_chaos_damage_resistance_%", "base_resist_all_elements_%",
         "base_maximum_fire_damage_resistance_%", "base_maximum_cold_damage_resistance_%",

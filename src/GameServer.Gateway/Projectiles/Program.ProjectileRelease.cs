@@ -53,10 +53,10 @@ partial class Program
             // Paid attacks survive Move unless their recipe opts into cancellable windup (e.g. release-time costs).
             // Spells and cooldown tickets retain action cancellation.
             // Epoch, death and hit recovery still cancel unreleased attacks.
-            () => conn.ProjectileActive(epoch) && conn.HitRecovery.Generation == recoveryGeneration
+            () => conn.ProjectileActive(epoch) && conn.ActionInterruptionGeneration == recoveryGeneration
                 && (ticket?.Current(conn) ?? (cancelOnNewAction
                 ? PlayerActionCurrent(conn, action)
-                : conn.PlayerLife > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds)))
+                : conn.PlayerLife > 0 && conn.ElementalAilments.ActionFactor(conn.Clock.Elapsed.TotalSeconds) > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds)))
                 && GemSkillInstanceDisabled(conn, gem.Effect, skillId) is null,
             () => CaptureGemProjectile(conn, session, skillId, gem, aim));
         return Task.CompletedTask;

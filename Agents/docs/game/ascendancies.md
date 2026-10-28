@@ -11,7 +11,9 @@ The server can list the 21 ordinary and 19 Phrecia definitions from the exact 3.
 Each choice is identified by family, stable table Id and revision; two families can share a class number and start node.
 Only one main ascendancy is selected at a time, and it must belong to the character's base class.
 
-**Phrecia play is explicitly gated.**
+**Phrecia play is explicitly gated by default.**
+Gambler has an explicit read-only installed-graph opt-in; see [its checklist and scope](gambler.md).
+The exception is limited to that identity and the exact pinned graph bytes.
 The shipped alternate graph contains older ordinary-tree topology.
 A separately agreed client-compatible graph is required before Phrecia can be enabled in an actual game connection.
 The command rejects a Phrecia choice before saving it, and login refuses an existing Phrecia save before inventory
