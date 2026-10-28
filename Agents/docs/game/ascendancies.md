@@ -74,6 +74,32 @@ The existing ordinary passive stat aggregation also sees allocated ascendancy st
 No Ward, Rage, charge, minion, granted-skill, passive-buff, presence or other new gameplay engine is imported here.
 Choosing a class is not evidence that its signature gameplay works.
 
+### Family gem levels
+
+The common active-gem calculation consumes four Phrecia family-level sources:
+
+| Node | Source | Bonus |
+|---|---|---|
+| Herald 40058 | `herald_skill_gem_level_+` | +3 |
+| Architect of Chaos 45399 | `vaal_skill_gem_level_+` | +3 |
+| Paladin 34448 | `link_skill_gem_level_+` | +5 |
+| Puppeteer 18817 | `raise_zombie_gem_level_+` | +5 |
+
+`SkillGemFamilies` reads the target client's GemTags stat columns and SkillGems minion-level column.
+Membership belongs to the gem, not its display name or one granted effect.
+The Vaal bonus raises both skills of a Vaal gem; transfigured Raise Zombie retains its family.
+`SkillGemLevel` combines intrinsic level, linked-support level bonus and matching family sources before clamping.
+Explicit family `/set_stat` replacements win over passive/equipment sources; `off` restores the source total.
+Support gems receive no active-family bonus, even when their tags match.
+
+The effective level feeds supported skill stats, cost, reservation, damage and native skill records.
+Repeated reads do not alter gem experience, quality or intrinsic requirement checks.
+The item UI still shows its intrinsic gem level; an inactive host remains inactive.
+Automated checks allocate each real connected class path, reload, pay the notable refund and reallocate it.
+These lifecycle fixtures do not open Phrecia game connections.
+Family-specific Herald, Link, minion and Vaal execution engines remain separate, as does Phrecia client admission.
+This slice does not implement global active-gem levels/quality, additional support-level bonuses or item-local gem levels.
+
 ## Validation and limits
 
 Automated tests cover catalog ownership, family separation, native class packing and graph stat, implicit starts,
