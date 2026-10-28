@@ -104,6 +104,8 @@ Native selected Antiquarian with 272 final Strength recovers for 3.175 seconds r
 The paired paid-refund control and resource totals are recorded in [Antiquarian](antiquarian.md#native-evidence).
 It does not extend minions' own skills or buffs, charge duration or flask duration.
 Additional skill/summon lifetime engines need their own elapsed-time acceptance.
+A current-main ordinary-client regression also checks duration together with Ward publication, explicit zero
+replacement and clearing developer inputs on relog; this does not replace whole-class native acceptance.
 
 ### Family gem levels
 
