@@ -78,8 +78,13 @@ damage adapter targets monsters. Live hostile projectile adapters remain unimple
 Area event effects use the actual event radius and the selected art's exported radius to set uniform native scale.
 Both callback and payload effects use this conversion; art without a known radius keeps its native scale.
 Endpoint logs include the stop reason, position and projectile-grid state; area logs include art, radius and scale.
-Without a captured height grid, flights use the client's terrain sampling, without the five-step torso offset.
-This avoids guessed absolute world heights but does not solve ground clipping or platform/doodad surfaces.
+Straight flights use `(captured terrain height ?? 0) + Game_PROJECTILE_HEIGHT` as their fixed height marker.
+The integer setting defaults to 5 steps (39.0625 world units upward), including for an invalid setting.
+Creation, glide and stop retain the same signed height. Missing captures use the bare offset as a provisional
+absolute height, preserving the main flight contract; this is not client-sampled terrain plus a relative offset.
+Lobbed arcs use the configured lift for the initial start when both ground endpoints are known; later bounces
+start at ground level. Without both endpoints they retain client terrain sampling instead of a guessed parabola.
+Independent area effects still follow client terrain. Ground clipping and platform/doodad surfaces remain unverified.
 
 Automated checks exercise the production runtime and session, including held-output gameplay, moving
 targets, walls, evasion, continuation combinations, real item stat sources and lifetime boundaries.
