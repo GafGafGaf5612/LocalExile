@@ -159,7 +159,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   both checks. Failed critical confirmation keeps a normal hit and normal impale storage. Rejected melee contacts
   do not consume entropy; ordinary bow block is checked after evasion. Deterministic parsed-contact, pass-through,
   source-freeze/removal and target-condition tests pass. Current native validation,
-  off-hand sources/execution and complete accuracy/always-hit/DPS publication remain open.
+  off-hand sources/execution and complete accuracy/always-hit publication remain open.
   Unconditional selected flat/increased accuracy now joins the original unrounded pool base before the final
   floor, updating main-hand rating and normal/evasive reference chances. Real Additional Accuracy at 0/20 quality
   covers link/removal, attribute changes and unrelated skills. Raw accuracy commands rebuild pools with complete
@@ -775,14 +775,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   Final selected spell records use the supported combat packet for spell and inherited main-hand ranges.
   The issue #75 review correction now weights ordinary/supported average damage and DPS with current critical
   chance/multiplier and signed luck, retaining exact action duration and clamping the native integer bounds.
-  Six before-fix regressions reproduce the missing critical weighting; native revalidation, accuracy, multi-hit,
+  Attack estimates also include normal-reference landing probability and separate critical confirmation, using
+  the ordinary/selected accuracy profile. Raw global/local cannot-evade updates estimates and both ordinary
+  main-hand chance aliases; final diagnostic chances do not feed back into estimates. Nineteen added cases
+  cover six reproduced omissions, spell controls, actual support link/removal, bypass, luck and bounds;
+  the expanded focused run passes 55. Native revalidation, integer-roll expectation, multi-hit,
   dual-hand, cooldown and DoT calculations remain open. See [11](../docs/protocol/11-skills.md).
   This includes explicit zero ranges after spell damage suppression, without changing attack displays.
   Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
   Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.
   A conversion/gain control split Fireball into fire and chaos rows and dealt a noncritical 14-damage server hit.
   Scorching Ray cleared inherited hit ranges and weapon DPS, including after added spell damage refreshed its record.
-  Ranges use server floors; averages retain packet fractions and exclude crit weighting, target mitigation,
+  Ranges use server floors; corrected averages retain packet fractions and exclude target mitigation,
   per-type integer-roll expectation and cooldown/downtime.
   Beam/DoT displays, conditional damage rules and broader conversion semantics remain outside this slice.
   Code: `SpellHit.cs`, `SpellPanelStats.cs`, Gateway (`GemSkills`, `LaunchProjectile`, `AreaSkillHit`).

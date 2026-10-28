@@ -38,8 +38,9 @@ Selected flat/increased accuracy supports and raw actor overrides now compose be
 Area attacks consume that profile inside admitted contact, with miss/critical-confirmation and callback controls.
 Gem projectile forward/piercing/return evasion and critical confirmation are implemented with missed-contact
 continuation, budget and volley-exclusion controls. Complete per-use critical-roll correlation, remaining
-conditions, correct off-hand sources, and publish all matching chance,
-always-hit and accuracy-weighted average/DPS rows. Validate these paths natively when shared resources are free.
+conditions, correct off-hand sources, and publish all matching chance/always-hit rows. Ordinary/selected main-hand
+average/DPS now includes normal-reference landing and critical-confirmation probabilities; dual-hand/multi-hit,
+integer-roll expectation and other sources remain open. Validate these paths natively when shared resources are free.
 See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
 
 Impale now has a shared actual-contact implementation for ordinary and supported hits, scoped chance/effect
@@ -79,7 +80,8 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
 - **Spell hit panel (#188):** selected-spell ranges now share combat's converted packet and hitless spells clear
   inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
   DPS now includes the current critical chance/multiplier and signed luck, with exact action duration and
-  bounded native integers. Reference accuracy/confirmation weighting, integer-roll expectation,
+  bounded native integers. Attack averages/DPS now include reference accuracy and independent critical confirmation.
+  Integer-roll expectation,
   cooldowns and DoT/beam displays remain separate work. Quality conversion and existing modifier precedence
   are unchanged. Selected attack-gem main-hand ranges and critical-weighted averages share the combat packet.
   Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.

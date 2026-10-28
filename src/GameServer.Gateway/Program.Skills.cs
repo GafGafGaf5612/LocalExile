@@ -66,8 +66,10 @@ partial class Program
     {
         var conversion = DamageStats.Conversion(stats, Stats, attack: true);
         var mainHit = AttackHitConverted(weapon, stats, MeleeAttack(conn), conversion);
+        var accuracy = OrdinaryAccuracy(conn, stats, weapon.LocalSources);
         double damageFactor = CriticalStrikePolicy.DamageFactor(CriticalProhibitedBy(stats, attack: true, own: null)
-            ? 0 : conn.Pools.AttackCriticalStrikeChance, AttackCriticalMultiplier(conn, stats), CriticalExtraRollsFor(conn, stats));
+            ? 0 : conn.Pools.AttackCriticalStrikeChance, AttackCriticalMultiplier(conn, stats), CriticalExtraRollsFor(conn, stats),
+            accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false));
         var list = weapon.Stats(stats, mainHit, damageFactor).ToList();
         AddHand(mainHit, "main_hand");
         if (OffhandWeaponFor(conn) is { } off)
@@ -88,6 +90,14 @@ partial class Program
                     else list.Add((key, value));
                 }
         }
+    }
+
+    static AttackAccuracyProfile OrdinaryAccuracy(ClientState conn, IReadOnlyDictionary<uint, int> stats,
+        IReadOnlyDictionary<string, int>? local)
+    {
+        int effect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } id ? Skills.EffectRow(id) : -1;
+        var own = Skills.EffectStats(effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+        return AttackAccuracyProfile.From(conn.Pools, stats, Stats, own, local);
     }
 
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
@@ -187,6 +197,14 @@ partial class Program
         foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;
         if (Stats.Key("main_hand_critical_strike_multiplier") is uint multiplier)
             stats[multiplier] = AttackCriticalMultiplier(conn, stats);
+        var accuracy = OrdinaryAccuracy(conn, stats, mainLocal);
+        foreach (var (name, evasion) in new[]
+        {
+            ("main_hand_chance_to_hit_%", Monsters.BaseEvasion(conn.Pools.Level) ?? 0),
+            ("main_hand_chance_to_hit_evasive_monsters_%", Monsters.BaseEvasiveEvasion(conn.Pools.Level) ?? 0),
+        })
+            if (Stats.Key(name) is uint key && !devSet.Contains(key))
+                stats[key] = accuracy.Chance(evasion, false, false);
         if (Stats.Key("virtual_on_low_life") is uint lowLife)
             stats[lowLife] = CriticalOnLowLife(conn, stats) ? 1 : 0;
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
@@ -400,9 +418,11 @@ partial class Program
                 var finalPlan = SkillHitPlan.ForSkill(Skills, effect, supported.Level, supported.Quality);
                 int criticalChance = SupportedCriticalChance(conn, id);
                 int criticalMultiplier = SupportedCriticalMultiplier(conn, id);
+                var accuracy = Skills.IsAttack(effect) ? SupportedAccuracy(conn, id) : default;
                 double damageFactor = CriticalStrikePolicy.DamageFactor(
                     CriticalProhibitedBy(characterInputs, Skills.IsAttack(effect), own) ? 0 : criticalChance,
-                    criticalMultiplier, CriticalExtraRollsFor(conn, characterInputs, own));
+                    criticalMultiplier, CriticalExtraRollsFor(conn, characterInputs, own),
+                    Skills.IsAttack(effect) ? accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false) : 100);
                 var ranges = Skills.IsAttack(effect)
                     ? AttackPanelStats.Compute(finalPlan, supportedHit, 1 / seconds, damageFactor)
                     : SpellPanelStats.Compute(finalPlan, supportedHit, 1 / seconds,
@@ -413,7 +433,6 @@ partial class Program
                 {
                     stats[StatKeys.MainHandAttackSpeedPct] = (int)Math.Round((WeaponFor(conn).AttackMs / (seconds * 1000) - 1) * 100);
                     stats[StatKeys.HundredTimesAttacksPerSecond] = (int)Math.Round(100 / seconds);
-                    var accuracy = SupportedAccuracy(conn, id);
                     foreach (var (field, value) in new[]
                     {
                         ("main_hand_accuracy_rating", accuracy.Rating),

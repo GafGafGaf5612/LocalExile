@@ -401,7 +401,8 @@ Misses do not consume impales, roll critical chance or trigger on-hit effects. S
 Fourteen additional cases cover Cyclone/Heavy Strike, a real Additional Accuracy support, independent targets,
 cannot-evade, spells, cancelled actions and rejected-contact side effects. Gem projectiles now consume the same
 profile with forward/piercing/return continuation (see §10). Off-hand scope/execution, conditional/more
-accuracy, complete always-hit publication and accuracy-weighted averages/DPS/native checks remain open.
+accuracy, complete always-hit publication and native checks remain open. Ordinary/selected main-hand
+average/DPS estimates now include reference accuracy and critical confirmation as described in §14.
 
 Armour and evasion are summed from the passive tree and the **base types** of the equipped body armour, helmet, gloves
 and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `base_evasion_rating` are flat, while
@@ -2191,11 +2192,17 @@ game has a spell form).
 sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
 the main hand is filled, since the server attacks with it; an empty packet adds no rows.
 
-**Critical-weighted hit averages (issue #75 review correction).** Ordinary main-hand attacks and selected
+**Critical- and accuracy-weighted hit averages (issue #75 review correction).** Ordinary main-hand attacks and selected
 supported attacks/spells now weight `display_hundred_times_damage_per_skill_use` (2044) and
 `hundred_times_damage_per_second` (679) by their current critical chance and multiplier. They use the same signed
-luck policy as combat: probability `p`, `1-(1-p)^2` when lucky, or `p^2` when unlucky. The mean multiplier is
-`1-p + p*criticalMultiplier/100`. Critical prohibition supplies zero probability. Low-life/Focus/raw luck changes
+luck policy as combat: probability `p`, `1-(1-p)^2` when lucky, or `p^2` when unlucky. Given that resulting critical
+probability `c` and chance to land `h`, the mean multiplier per attempt is
+`h * (1-c*h + c*h*criticalMultiplier/100)`. The inner `h` is independent critical confirmation; luck applies to
+the critical roll before confirmation. Spells use `h=1`. Attacks use the normal reference monster's evasion at
+the player's level and their ordinary/selected accuracy profile, including qualified raw cannot-evade sources.
+Target Masteries stay out of this unconditional estimate. Ordinary main-hand normal/evasive chance aliases
+also now respect cannot-evade. Explicit diagnostic chance aliases remain display replacements, not inputs to
+this calculation. Critical prohibition supplies zero critical probability. Low-life/Focus/raw luck changes
 therefore update the means without changing the noncritical minimum/maximum ranges. Hitless/suppressed packets
 remain zero. Each supported skill uses its own critical support contributions, not the ordinary attack's values.
 
@@ -2211,16 +2218,23 @@ the alternative of retaining precritical means continues to ignore real critical
 continuous packet estimates, not the expectation of every integer damage-roll/rounding path.
 [Mark_GGG's mechanics answer](https://www.pathofexile.com/forum/view-thread/1676002/filter-account-type/staff/page/1)
 confirms tooltip DPS includes critical strikes and accuracy (the Lacerate/Double Strike answer). This correction
-covers critical weighting; reference-target accuracy/confirmation weighting, dual-hand and
+covers critical and reference-target accuracy/confirmation weighting; dual-hand and
 multi-hit counts, cooldown/downtime, conditional more critical sources and damage-over-time DPS remain open.
 Native validation is pending. The historical numeric observations below are precritical values from the older
 implementation, not evidence for the corrected averages. Automated before-controls reproduce six omissions
 across ordinary melee/bow, Cyclone, Caustic Arrow, Fireball and Ice Nova; source/luck/prohibition, actual rate,
 hitless/support removal, fractional and overflow checks pass.
 
-Ordinary melee/bow combat now uses defender entropy followed by independent critical confirmation, with
-current target evasion/Blind and qualified cannot-evade flags. The averages above still need that probability
-weighting. Selected gem attacks now consume their own accuracy/support profile for evasion and confirmation;
+Pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02`, `CalcOffence.lua:3146` applies hit chance after the
+critical/luck calculation, and lines 3788–3801 weight the critical mean by landing chance and actual action rate.
+This is an expected-damage reference, not native 3.29.3b rounding certification. Six additional before-fix
+regressions reproduce missing attack weighting while a spell control passes. Nineteen added cases include
+luck/bounds, real Additional Accuracy link/removal, local/global cannot-evade, diagnostic alias isolation and
+unchanged spell/range outputs. The expanded focused run passes 55.
+Decision: weight the critical bonus by both landing and confirmation, rather than applying accuracy only once
+to the old critical mean or applying critical luck to the confirmation check. Keep the established normal
+reference enemy and full-precision formatter instead of guessing target conditions or rounding intermediate
+percentages. Selected gem attacks consume their own profile for both gameplay and these estimates;
 per-use critical-roll correlation and remaining source conditions still require review.
 [Damage §2g](20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation) records the source evidence,
 snapshot/admission decisions, alternatives, parsed-contact controls and remaining native work.

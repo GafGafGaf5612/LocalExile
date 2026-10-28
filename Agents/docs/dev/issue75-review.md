@@ -305,6 +305,30 @@ rules for pierce-budget terminal positioning, return-from-target exclusion, retu
 secondary explosions and sequential/skill-specific exceptions. Do not treat this correction as completing them.
 Parent-checkout Patch/Gateway/Auth processes remain active; this task launched or stopped no live processes.
 
+## Accuracy-weighted attack averages and DPS
+
+The ordinary and selected attack averages still assumed every attack landed after the combat corrections.
+Six new before-fix cases reproduced inflated estimates; the spell control passed (`accuracy-damage-reproduced.trx`).
+`CriticalStrikePolicy.DamageFactor` now uses `h * (1-c*h + c*h*multiplier/100)`, where `h` is normal-reference hit
+chance and `c` is critical probability after signed luck. Landing and critical confirmation use separate factors;
+spells use `h=1`. Raw cannot-evade sources bypass both factors. The ordinary main-hand normal/evasive chance
+aliases also now respect global and qualified local cannot-evade, including removal.
+
+Nineteen added cases cover the reproduced defects, luck/bounds, real Additional Accuracy link/removal, local/global
+bypass, final diagnostic alias isolation, target-condition exclusion and unchanged spell/range outputs. The focused
+run passes 55. The solution builds with zero warnings/errors; Core 561, Data 18 and Gateway 4,302 pass, no skips,
+4,881 total. Receipts: `accuracy-damage-expanded.trx`, `core-accuracy-damage.trx`, `data-accuracy-damage.trx`
+and `gateway-accuracy-damage.trx`. The preceding projectile correction is local commit `5a59764`.
+
+Decision: apply accuracy independently to landing and critical confirmation, rather than multiplying the old
+critical mean by accuracy only once or applying critical luck to the confirmation check. Preserve normal-reference
+evasion, source profiles and the exact final formatter rather than guessing target conditions or rounding
+intermediate percentages. Explicit final chance overrides remain diagnostic display replacements, not gameplay
+inputs. [Skills §14](../protocol/11-skills.md) and [damage](../protocol/20-damage.md) record these choices and
+alternatives, the official tooltip statement and pinned PoB's separate confirmation/landing calculations.
+This is an expected-damage reference, not native 3.29.3b rounding certification. Integer-roll expectation,
+dual-hand/multi-hit/secondary output, cooldown/DoT, other source conditions and native validation remain open.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
@@ -341,8 +365,9 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
    The twelve duration/effect coefficients are corrected; prove other omissions using real sources before expanding
    the selected alias set. `SupportImpale` chance and ordinary/gem impale contact behavior are now corrected as
    described above. Conditional impale sources, application/consumption overrides and native validation remain.
-3. Hit averages/DPS: ordinary critical weighting now follows the combat policy; reference accuracy, attack
-   critical confirmation, conditional more crit, off-hand/multi-hit/secondary averages and DoT remain open.
+3. Hit averages/DPS: ordinary/selected main-hand critical and reference accuracy/confirmation weighting now
+   follows the combat policy. Integer-roll expectation, remaining conditional critical sources, off-hand/multi-hit/
+   secondary averages, cooldown/downtime and DoT remain open.
 4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.
    Protocol 20 section 3 documents helpers, but also the missing execution paths.
 5. Ward, defence estimates, remaining regeneration/recharge conversions, active leech, special charges,

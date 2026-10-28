@@ -491,7 +491,7 @@ Raw `global_always_hit` from the owner/default skill, or `local_always_hit` from
 bypasses both accuracy checks. Inactive/off-hand weapon sources and final hand aliases cannot grant this flag.
 This establishes ordinary, area and gem projectile accuracy, not all source conditions or selected publication:
 other cannot-evade conditions,
-off-hand execution, complete chance/always-hit aliases and accuracy-weighted averages/DPS
+off-hand execution and complete chance/always-hit aliases
 remain open. Spell hits continue without attack accuracy. Native revalidation remains pending.
 
 Selected flat/increased accuracy sources now use `SupportedAccuracy` and the exact original pool base.
@@ -614,13 +614,23 @@ state unchanged. Current-branch native validation remains pending; historical na
 ## 4. What the server uses now
 
 The issue #75 publication review now includes current critical chance/multiplier and signed luck in ordinary
-and supported hit average/DPS rows. These are fractional outgoing estimates before reference accuracy/target
+and supported hit average/DPS rows. These are fractional outgoing estimates before target
 mitigation; the direct packet ranges remain noncritical. Initial creation and refresh share the same publication
 path. Exact action duration is retained until the hundredths formatter, with zero/overflow bounds.
 Decision and alternative: keep that existing precise-rate behavior rather than introduce an extra rounding at
 the displayed APS/CPS boundary; remove the duplicate rounded-then-overwritten calculation instead.
 See [skills module, critical-weighted hit averages](11-skills.md) for the formula, primary evidence, regression
-controls and remaining accuracy/multi-hit/DoT/native work. This does not certify either DPS row as complete.
+controls and remaining multi-hit/DoT/native work. This does not certify either DPS row as complete.
+
+Attack estimates now include normal-reference landing probability `h` and independent critical confirmation:
+the mean factor is `h * (1-c*h + c*h*multiplier/100)`, where `c` is the probability after signed critical luck.
+Spells supply `h=1`. Ordinary/selected accuracy includes raw global/qualified local cannot-evade; the ordinary
+main-hand normal/evasive chance aliases now agree with that bypass too. Final diagnostic chance replacements
+do not replace combat inputs, and target Masteries stay outside unconditional reference estimates.
+Decision: apply accuracy separately to landing and confirmation rather than once to the old critical mean,
+and keep luck on the critical roll rather than the accuracy draw. [Skills §14](11-skills.md) records pinned
+PoB lines, primary tooltip evidence, six reproduced failures and the 55-case focused run. Full integer-roll
+expectation, dual-hand/multi-hit/cooldown/DoT and native certification remain separate work.
 
 The shared critical chance now also applies the four evidenced unconditional MORE/LESS sources before final
 rounding/capping, including actual Controlled Destruction support and the unique -40% chance modifier.

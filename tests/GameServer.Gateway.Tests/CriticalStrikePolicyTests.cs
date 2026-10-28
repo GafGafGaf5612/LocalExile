@@ -17,6 +17,19 @@ public class CriticalStrikePolicyTests
         int chance, int multiplier, int extra, double expected) =>
         Assert.Equal(expected, CriticalStrikePolicy.DamageFactor(chance, multiplier, extra), 10);
 
+    [Theory]
+    [InlineData(5000, 300, 0, 50, .75)]
+    [InlineData(5000, 300, 1, 50, .875)]
+    [InlineData(5000, 300, -1, 50, .625)]
+    [InlineData(10000, 300, 1, 50, 1)]
+    [InlineData(0, 300, 1, 50, .5)]
+    [InlineData(5000, -100, 0, 50, .375)]
+    [InlineData(5000, 300, 1, -100, 0)]
+    [InlineData(5000, 300, 1, 200, 2.5)]
+    public void Attack_estimates_apply_hit_probability_twice_only_to_the_critical_contribution(
+        int chance, int multiplier, int luck, int hitChance, double expected) =>
+        Assert.Equal(expected, CriticalStrikePolicy.DamageFactor(chance, multiplier, luck, hitChance), 10);
+
     sealed class CountRandom(params int[] values) : Random
     {
         public int Calls { get; private set; }
