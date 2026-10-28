@@ -321,6 +321,7 @@ static class UtilityFlasks
             LightningMaxResistance = b.LightningMaxResistance + Get("base_maximum_lightning_damage_resistance_%"),
             ChaosMaxResistance = b.ChaosMaxResistance + Get("base_maximum_chaos_damage_resistance_%"),
             Armour = b.Armour + Get("base_physical_damage_reduction_rating"),
+            Ward = b.Ward + Get("base_ward"), WardPct = b.WardPct + Get("ward_+%"),
             Evasion = b.Evasion + Get("base_evasion_rating"),
             ArmourPct = b.ArmourPct + Get("physical_damage_reduction_rating_+%"),
             EvasionPct = b.EvasionPct + Get("evasion_rating_+%"),

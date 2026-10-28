@@ -109,6 +109,7 @@ partial class Program
 
     static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond)
     {
+        EnsureAntiquarianPools(conn);
         EnsureOwnAuraPools(conn);
         Dictionary<uint, int> stats;
         lock (conn.Monsters) stats = new(conn.PlayerStats);
@@ -143,6 +144,10 @@ partial class Program
         baselineLifePerSecond = PanelStats.LifePerMinute(Get, conn.Pools.Life) / 60;
         lock (conn.Monsters)
         {
+            // Turtle Shell's exact one-second integral is consumed separately by the resource writer.
+            if (Stats.Key("base_life_regeneration_rate_per_minute") is uint turtle)
+                stats[turtle] = (int)Math.Clamp(stats.GetValueOrDefault(turtle)
+                    + conn.Antiquarian.RecoveryPerSecond(conn.Clock.Elapsed.TotalSeconds) * 60, 0, int.MaxValue);
             var session = FortificationOf(conn);
             var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
             AddFortificationCounts(stats, value);
@@ -187,7 +192,16 @@ partial class Program
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
             stats[rolls] = CriticalExtraRollsFor(conn, stats);
         stats[OwnAuraRestriction.Disabled] = OwnAuraRestrictionValue(conn);
-        lock (conn.Monsters) AddRecentEnemyHitStatsLocked(conn, stats);
+        if (Get("global_always_hit") != 0)
+            foreach (string name in new[] { "main_hand_chance_to_hit_%", "off_hand_chance_to_hit_%",
+                "main_hand_chance_to_hit_evasive_monsters_%", "off_hand_chance_to_hit_evasive_monsters_%" })
+                if (Stats.Key(name) is uint hit) stats[hit] = 100;
+        lock (conn.Monsters)
+        {
+            AddRecentEnemyHitStatsLocked(conn, stats);
+            if (Stats.Key("ward") is uint ward) stats[ward] = (int)conn.Ward.Maximum;
+            if (Stats.Key("ward_broken") is uint broken) stats[broken] = conn.Ward.Broken ? 1 : 0;
+        }
         return stats;
     }
 
@@ -739,7 +753,8 @@ partial class Program
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
             RefreshSingleUseCooldowns(conn);
-            EnsureOwnAuraPools(conn);
+            EnsureAntiquarianPools(conn);
+        EnsureOwnAuraPools(conn);
             foreach (var id in conn.Auras.Keys.ToList())
             {
                 var gem = SupportedSkill(conn, id);

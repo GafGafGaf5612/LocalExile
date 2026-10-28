@@ -22,6 +22,7 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
 sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
+    public bool Ranged { get; init; }
     /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
     /// These also go on the monster's Stats component.</summary>
     public IReadOnlyList<(uint, int)> Stats()
@@ -324,6 +325,13 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
     public int ActionCount;
     public readonly PlayerHitRecovery HitRecovery = new();
+    public readonly WardState Ward = new();
+    public readonly AntiquarianCombatState Antiquarian = new();
+    public bool AppliedAdrenaline;
+    public (uint Maximum, bool Broken)? SentWard;
+    public double SentAdrenalineUntil = double.NaN;
+    public double SentStunRecoveryUntil = double.NaN;
+    public ushort WardBuff, AdrenalineBuff;
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];

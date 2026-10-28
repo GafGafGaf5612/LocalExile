@@ -180,7 +180,7 @@ partial class Program
             evasion = m.Mods.Effects.Evasion(Monsters.BaseEvasion(m.Level) ?? 0);
         }
         int hitChance = DamageModel.AccuracyHitChance(conn.FlaskGrounds.Evasion(use.TargetId, evasion), accuracy);   // blinded in smoke
-        if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
+        if (!PlayerAlwaysHits(conn) && !DamageModel.Hits(hitChance, Random.Shared.Next(100)))
         {
             Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} missed: accuracy {accuracy} vs evasion {evasion}, " +
                 $"{hitChance}% chance");
@@ -1012,6 +1012,7 @@ partial class Program
         float seconds = PlayerHitRecovery.Duration(Get);
         if (seconds <= 0 || Random.Shared.NextDouble() * 100 >= chance
             || conn.Closed || conn.PlayerLife == 0 || !conn.HitRecovery.Begin(now, seconds)) return null;
+        conn.Antiquarian.Stunned(now, conn.PlayerMaxLife, Get(AntiquarianEffects.StunRecoverySource));
         int action = Interlocked.Increment(ref conn.ActionCount);
         conn.ChannelSkill = 0; conn.NextAttackAt = now;
         var at = conn.Walk.Position(now); conn.Walk.Teleport(at.X, at.Y, now);

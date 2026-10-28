@@ -45,6 +45,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 ## Partly working
 
 - Phrecia identities, graph ownership and the point/save lifecycle have automated coverage.
+  Antiquarian's class branch connects all nine notables in three legal builds; native acceptance is pending.
+  See the [whole-class audit and explicit models](../docs/game/antiquarian.md).
   Phrecia game connections/selection remain explicitly gated pending an agreed client-compatible graph.
   Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.
   The native Labyrinth/Altar flow is separate (#151); special class gameplay is outside this slice.

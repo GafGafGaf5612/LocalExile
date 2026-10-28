@@ -39,7 +39,10 @@ partial class Program
         // affixes' increased damage, attack speed and extra elemental / chaos damage (MonsterModEffects.Hit).
         var (baseMin, baseMax) = Monsters.BaseDamage(variety, level) ?? (1, 1);
         var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
-            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)));
+            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)))
+        {
+            Ranged = variety.GrantedEffects is [int first, ..] && Skills.IsAttack(first) && Skills.IsProjectile(first)
+        };
         var skill = variety.GrantedEffects is [int effect, ..]
             ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
         // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
@@ -320,6 +323,9 @@ partial class Program
                     int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
                     value = PlayerHitMitigation.AfterResistance(conn.Pools, type, value,
                         reduction.Physical, reduction.Elemental, armour.EffectiveArmour);
+                    if (type == DamageType.Physical)
+                        value = AntiquarianEffects.RangedPhysical(value, a.Ranged,
+                            name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0);
                     if (type == DamageType.Chaos) chaosDamage += value;
                     damage += value;
                 }
@@ -329,14 +335,14 @@ partial class Program
                 manaBefore = conn.PlayerMana;
                 int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
                 int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
-                conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
+                conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - DamagePlayerHit(conn, damage - chaosDamage, chaosDamage, now, stats) + gainedLife));
                 conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
                 conn.RecentEnemyHits.Record(now);
                 ChargesWhenHit(conn, blocked);
-                if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
+                if (conn.PlayerLife == 0) { conn.InvalidateIncomingHits(); ClearAntiquarianOnDeath(conn); }
                 life = conn.PlayerLife;
                 mana = conn.PlayerMana;
-                if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+                if (!blocked && !a.Ranged && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
                     recovery = CommitPlayerHitRecoveryLocked(conn, damage, now);
                 RageWhenHitLocked(conn);
                 break;

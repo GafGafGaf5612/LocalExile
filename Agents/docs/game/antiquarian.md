@@ -1,0 +1,114 @@
+# Antiquarian completion
+
+The delivery unit is the selected Antiquarian class, with legal connected eight-point builds and gameplay consumers.
+The implementation branch is `codex/antiquarian-completion`, based on main `fc5f4b17`, tracked in issue #98.
+Native whole-class acceptance is still pending; passing source or isolated consumer tests is not completion.
+Behemoth is delivered separately in PR #328; its Rampage/Vaal engines are not imported here.
+
+## Admission and client data
+
+Set `Game_VERIFIED_ANTIQUARIAN=1` for the Gateway and choose `/ascendancy phrecia Antiquarian` on a Marauder.
+The explicit opt-in requires the already installed compatible 3.29.3b graph.
+Admission reads both PSG files directly from `Client/Content.ggpk` using the normal Node extraction decoder.
+It checks ordinary SHA-256 `82D82CD3CD2DAD81606AF0DA9D18FCD53B2E92CF006550947D65A4F7E102DC32`
+and combined alternate SHA-256 `F2766B5A4618CDBE7E2993973B4D653F155F71BDFE0E5D063A425196CC93D638`.
+Missing/different bytes or an unavailable decoder refuse before changing the save.
+There is no JSON-only bypass and no archive-writing code.
+Other Phrecia classes retain the default gate; ordinary characters do not invoke this preflight.
+Compatible graph installation remains separately reviewed maintenance; native Labyrinth acquisition remains #151.
+Read-only graph extraction manifest v4 accepts either the original or the exact maintained graph.
+
+## Actual class nodes
+
+Use Phrecia graph membership, not the shared `AscendancyKey`, which also identifies ordinary Chieftain nodes.
+All nine small nodes grant 10 Strength and 10% increased global defences.
+
+| Node | Effect |
+|---|---|
+| 24105 Kalguuran Armour | Half of body armour's local Armour/Evasion becomes base Ward |
+| 18893 Starlight Reflector | +100% Ward restoration recovery and +100% global defences |
+| 34762 Runic Tablet | 20-second Adrenaline on an actual Ward break |
+| 8636 Goliath Knuckle | +200 Strength; Intelligence becomes zero |
+| 27339 Whaletooth Bangle | +1% skill duration per complete ten final Strength |
+| 43431 Turtle Shell | +1000% stun recovery; regenerate 8% Life over one second when stunned |
+| 36978 Lioneye's Hair | Always hit; 50% reduced Dexterity |
+| 55407 Lioneye's Bow | Far Shot on projectile attacks |
+| 45368 Lioneye's Shield | Equipped shield base block becomes 60%; -100 physical ranged attack damage taken |
+
+Three builds cover every notable and small node without exceeding the eight-point budget:
+
+| Build | Allocated nodes |
+|---|---|
+| Ward | 23940, 24105, 48353, 18893, 34223, 34762, 62851, 8636 |
+| Strength and stun | 62851, 8636, 40664, 27339, 61085, 43431, 34708, 36978 |
+| Lioneye | 34708, 36978, 5913, 55407, 31396, 45368, 23940, 24105 |
+
+Production mutation tests cover allocation, paid full refund costing 40 points, reallocation and durable reload.
+
+## Ward and Adrenaline
+
+Body conversion uses the active item's rolled local defences after local modifiers and multiplicative quality.
+Keep half points until the final global rating; conversion does not consume helmet, gloves, boots or shield defences.
+Remaining Armour/Evasion use their ordinary increases; converted Ward uses Ward/global-defence increases once.
+Ward item bases/local modifiers and the existing Iron Flask Ward bonuses feed the same authoritative pool.
+
+After block and mitigation, one hit consumes up to the available Ward before Energy Shield.
+Any positive absorption breaks ordinary Ward, even if it absorbs the whole hit.
+Broken Ward restores fully after two game seconds, divided by its restoration recovery multiplier.
+Starlight Reflector therefore makes the normal delay one second.
+Ward does not absorb damage over time; bypass and unbreakable Ward remain explicit stat controls.
+Mixed hits consume the non-chaos portion first so remaining chaos still bypasses Energy Shield.
+The actual native Ward/broken stats and broken-Ward buff are sent from committed state at the send gate.
+
+Only a real unbroken-to-broken transition grants Runic Tablet's Adrenaline.
+BuffTemplates row 503 / BuffDefinitions row 1090 supplies its six effects:
+100% increased damage, 25% increased attack speed, cast speed and movement, and 10% physical damage reduction.
+Repeated breaks while Adrenaline is active do not refresh its deadline.
+Source removal and death cancel it; expiry recomputes pools, movement, skills and native stats.
+
+## Strength, duration and stun
+
+Goliath's zero Intelligence wins after all flat/increased attribute contributions.
+Equipment activation, gem requirements, mana, ES scaling and native requirement attributes use that same final zero.
+Lioneye's reduced Dexterity shares the normal attribute calculation before requirements, evasion and accuracy.
+Whaletooth's derived duration is added once from complete groups of final Strength to a fresh stat snapshot.
+It reaches supported owner skill-duration consumers; it does not change a minion's own skill duration.
+The prerequisite implementation is composed from PR #323 head `8b681aef`.
+
+Turtle Shell runs only after the existing supported physical melee stun is accepted.
+The common stat projection already maps base stun recovery to the final recovery stat; never add it twice.
+Recovery uses the existing rounded native TakeHit interval and invalidates pending player actions.
+LocalExile v1 uses one one-second recovery interval; another accepted stun refreshes it without stacking rates.
+The resource writer integrates exact elapsed game time and consumes each earned fraction once.
+Source removal stops future recovery, preserving only already earned recovery; death clears all debt.
+The native regeneration projection is excluded from the writer's baseline to avoid double recovery.
+Unsupported global stun thresholds/immunities and non-melee stun engines retain their existing boundaries.
+
+## Projectile and shield consumers
+
+Always-hit bypasses the accuracy roll on supported ordinary melee and attack-projectile paths, retaining target block.
+Projectile flags are captured at release, consistent with the offensive snapshot; melee reads accepted contact state.
+Far Shot uses cumulative projectile travel rather than the owner's current location.
+The pinned PoB `16de4b8` CalcOffence ramp is 0.8 through distance 10, 1 at 25 and 1.6 at 70 and beyond.
+Interpolation is linear in the existing server combat-distance units.
+It applies to attack projectiles before critical/mitigation/impale, never spells, melee or damage over time.
+Fork/split continuations retain the runtime's existing travelled distance.
+Unknown zero-size area bounds no longer erase projectiles when a walk capture is absent.
+
+Only the active usable shield supplies the replacement base block; no shield gives no replacement.
+Additional block modifiers and the normal cap remain in their existing stages.
+The ranged flat physical reduction follows per-type armour/reduction and precedes Fortification and Ward.
+It never affects elemental components, melee, spells or damage over time and cannot make damage negative.
+Monster attacks classify ranged eligibility from actual attack/projectile skill metadata.
+The existing monster contact engine is retained; this does not add global enemy projectile flight/parity.
+`/hit physical 150 ranged` exercises the same bounded incoming ranged classification for diagnostics.
+
+## Lifecycle and acceptance
+
+All deadlines use the connection's pausable game clock.
+Successful ticket transfer carries remaining Ward delay, Adrenaline and earned/pending stun recovery once.
+Destination loading freezes the remaining durations; old-area actors and pending attacks are not carried.
+Relog and Gateway restart clear transient effects while retaining the class and paid passive progress.
+The whole-class native run must check all three builds, actual combat, refunds, pause, death, travel and restart.
+Record the tested source/base, embedded Gateway/Core/Host versions, DLL hash and listener working directory.
+Then restore the accepted normal Gateway and leave the single client at login.

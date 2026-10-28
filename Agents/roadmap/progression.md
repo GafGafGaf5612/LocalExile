@@ -28,6 +28,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   Allocation/refund/reload have automated coverage; Phrecia client admission remains gated.
   Executable skill/summon lifetime consumers and their native elapsed-time checks remain separate work.
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
+  Antiquarian whole-class acceptance is tracked in #98; finish its native matrix before starting another class.
+  The [Antiquarian audit](../docs/game/antiquarian.md) covers every node and pending acceptance.
   Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
 - **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
