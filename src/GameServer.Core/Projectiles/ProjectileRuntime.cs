@@ -294,7 +294,7 @@ public sealed partial class ProjectileRuntime(IProjectileWorld world)
     }
 
     IEnumerable<ProjectileActor> Nearby(ProjectileEntity p, IReadOnlyList<ProjectileActor> actors) => actors
-        .Where(a => a.Team != p.Use.Team && !p.Contacts.Contains(a.Key) && a.Key != p.Use.Owner
+        .Where(a => a.Team != p.Use.Team && !p.Contacts.Contains(a.Key) && a.Key != p.Use.Owner && a.Key != p.TurnaroundTarget
             && (a.Position(Now) - p.Position).Length <= p.Profile.ChainRange)
         .OrderBy(a => (a.Position(Now) - p.Position).Length).ThenBy(a => a.Key.Id).ThenBy(a => a.Key.Generation);
 

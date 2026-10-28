@@ -372,6 +372,7 @@ partial class Program
         int? actionToken = null, CooldownUseTicket? cooldownUse = null, bool locationInstant = false)
     {
         int action = actionToken ?? conn.ActionCount;
+        int recoveryGeneration = 0;
         lock (conn.Monsters)
             if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
@@ -470,6 +471,8 @@ partial class Program
             {
                 if (!Current()) return false;
                 paid = PayMana(conn, skillId, out cost);
+                // Capture at paid admission, before output or release scheduling can catch up other hits.
+                recoveryGeneration = conn.HitRecovery.Generation;
             }
             if (!paid)
             {
@@ -505,7 +508,7 @@ partial class Program
         if (gem.Name is not null && IsRighteousFire(gem.Effect))
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else
-            await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, targetId, sequence: sequence,
+            await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, recoveryGeneration, targetId, sequence: sequence,
                 actionToken: actionToken, cooldownUse: cooldownUse);
         return true;
     }
@@ -667,14 +670,14 @@ partial class Program
 
     // Every projectile uses the same scheduler and simulator. Definitions change rules, never execution paths.
     static Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        ushort skillId, (int X, int Y) from, (int X, int Y) to, uint targetId = 0, ushort sequence = 0,
+        ushort skillId, (int X, int Y) from, (int X, int Y) to, int recoveryGeneration, uint targetId = 0, ushort sequence = 0,
         int? actionToken = null, CooldownUseTicket? cooldownUse = null)
     {
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
         if (gem.Name is null) return Task.CompletedTask;
         if (UsesProjectileRuntime(gem.Effect))
             return ScheduleGemProjectile(remote, stream, ciphers, conn, skillId, gem, to,
-                actionToken ?? cooldownUse?.ActionToken ?? conn.ActionCount, cooldownUse);
+                actionToken ?? cooldownUse?.ActionToken ?? conn.ActionCount, recoveryGeneration, cooldownUse);
         return AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, sequence: sequence,
             actionToken: actionToken, cooldownUse: cooldownUse);
     }

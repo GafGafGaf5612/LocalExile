@@ -37,7 +37,7 @@ partial class Program
 
     static Task ScheduleGemProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem,
-        (int X, int Y) aim, int action, CooldownUseTicket? ticket)
+        (int X, int Y) aim, int action, int recoveryGeneration, CooldownUseTicket? ticket)
     {
         var session = ProjectilesFor(remote, stream, ciphers, conn);
         session.Advance();
@@ -53,7 +53,8 @@ partial class Program
             // Paid attacks survive Move unless their recipe opts into cancellable windup (e.g. release-time costs).
             // Spells and cooldown tickets retain action cancellation.
             // Epoch, death and hit recovery still cancel unreleased attacks.
-            () => conn.ProjectileActive(epoch) && (ticket?.Current(conn) ?? (cancelOnNewAction
+            () => conn.ProjectileActive(epoch) && conn.HitRecovery.Generation == recoveryGeneration
+                && (ticket?.Current(conn) ?? (cancelOnNewAction
                 ? PlayerActionCurrent(conn, action)
                 : conn.PlayerLife > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds)))
                 && GemSkillInstanceDisabled(conn, gem.Effect, skillId) is null,
