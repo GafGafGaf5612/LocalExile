@@ -200,7 +200,7 @@ partial class Program
         foreach (var bytes in inbox.Post(messages, unknown, readAt))
         {
             if (conn.Ticks++ % 50 == 0) Console.WriteLine($"[gateway] {remote} <= 0x001b tick #{conn.Ticks}: {Convert.ToHexString(bytes)} (answered with 0x001c)");
-            await Send(remote, stream, ciphers, InstanceProtocol.Pong(serverDelayMs: ClientInbox.ServerDelayMs, ackIndex: inbox.NextAckIndex(), sideChannel: conn.Hnc!.NextIdleU32()), null);
+            await SendPong(stream, ciphers, InstanceProtocol.Pong(serverDelayMs: ClientInbox.ServerDelayMs, ackIndex: inbox.NextAckIndex(), sideChannel: conn.Hnc!.NextIdleU32()));
             var waited = Stopwatch.GetElapsedTime(readAt);
             if (waited > ClientInbox.SlowAfter)
                 Console.WriteLine($"[gateway] {remote} slow tick #{conn.Ticks}: 0x001c sent {waited.TotalMilliseconds:0} ms after the 0x001b was read");
@@ -243,9 +243,9 @@ partial class Program
         reading.Cancel();
     }
 
-    // Monster AI, one tick every 500 ms per connection. A monster within its aggro range (MonsterVarieties MaxAgroRange, in
-    // cells) of the player starts chasing: it walks (Move action 0x1ab, skill 0x2909; the client paths it) to a cell
-    // StopRange from the player, re-ordered when that cell has moved by 3+ cells. Beyond twice the range it gives up and stops.
+    // Monster AI, one tick every MonsterAiTickMs per connection. A monster within its aggro range (MonsterVarieties MaxAgroRange, in
+    // cells) of the player starts chasing: it walks (Move action 0x1ab, skill 0x2909; the client paths it) to its own cell
+    // around the player (MonsterSurround), re-ordered when that cell has moved by 3+ cells. Beyond twice the range it gives up and stops.
     // Positions are the server's estimates (WalkEstimator at MonsterVarieties MovementSpeed cells/s).
     // The server frame clock (Agents/docs/protocol/07 §6): S→C 0x2b6 sets the frame length, then 0x2b5 ends a frame every
     // FrameMs. A lockstep client advances its world by exactly these frames, running the messages of each at its start (it
@@ -310,10 +310,29 @@ partial class Program
             if (log is not null) Console.WriteLine($"[gateway] {remote} => {log}: {Convert.ToHexString(bytes.AsSpan(0, Math.Min(bytes.Length, 96)))}");
             string? trace = MoveTrace && bytes.Length >= 6 && (bytes[0] << 8 | bytes[1]) is 0x01ab or 0x01b7 or 0x01ba
                 ? Convert.ToHexString(bytes) : null;
-            ciphers.Send.Process(bytes);
-            await stream.WriteAsync(bytes);
+            await Write(stream, ciphers, bytes);
             if (trace is not null) Console.WriteLine($"[move-trace] qpc={Stopwatch.GetTimestamp()} send {trace}");
         }
         finally { gate.Release(); }
     }
+
+    // The wire itself: the keystream must be applied and written in one order, so encryption and the write share this
+    // short gate. Send's gate orders the packets and runs their state callbacks; it never holds this one while waiting.
+    static async Task Write(NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes)
+    {
+        var wire = WireGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
+        await wire.WaitAsync();
+        try
+        {
+            ciphers.Send.Process(bytes);
+            await stream.WriteAsync(bytes);
+        }
+        finally { wire.Release(); }
+    }
+
+    // A tick's answer (0x1c) only reports that the server is there: it needs no game state, so it takes the wire alone
+    // and goes out between two other packets instead of waiting behind their state callbacks (combat, Rage, stats).
+    static Task SendPong(NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes) => Write(stream, ciphers, bytes);
+
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, SemaphoreSlim> WireGates = new();
 }

@@ -56,6 +56,7 @@ partial class Program
             spent = done;
             return ([done.Id], [done]);
         }, changed => $"0x00bf flask {slot}: {changed[0].Item.Charges}/{charges.MaxCharges} charges");
+        if (spent is not null) await EndGracePeriod(remote, stream, ciphers, conn, action: true);
         return spent;
     }
 

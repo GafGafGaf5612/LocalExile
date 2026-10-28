@@ -35,6 +35,8 @@ partial class Program
                 double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
                 // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
                 if (InTown(conn) && Skills.ActionName(use.SkillId) != "Move") continue;
+                if (Skills.ActionName(use.SkillId) != "Move")
+                    await EndGracePeriod(remote, stream, ciphers, conn, action: true);
                 bool cast = Skills.IsGemSkill(use.SkillId);
                 var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
                 if (cast && gem.Name is not null && !ProjectilePathAvailable(remote, conn, use.SkillId, gem.Effect)) continue;
@@ -372,33 +374,16 @@ partial class Program
             }
             else if (id == InstanceProtocol.ChannelUpdateId)
             {
-                // A channelled skill (Cyclone) goes on where the player now is: it moves there and, once per attack time, the
-                // skill hits around it (AreaSkillHit).
+                // A channelled skill (Cyclone) goes on where the player now is: it moves there. Its hits run on their own
+                // timer (RunChannel), at the skill's attack rate, wherever the player is.
                 var (cx, cy) = InstanceProtocol.ReadChannelUpdate(bytes);
                 double t = conn.ClockAt(readAt);
-                int channelAction;
                 using (ProjectileMutation(conn))
                 {
                     t = Math.Max(t, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
                     if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
-                    channelAction = conn.ActionCount;
                     conn.Walk.Teleport(cx, cy, t);
-                }
-                var channelled = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == conn.ChannelSkill);
-                if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
-                {
-                    double every;
-                    lock (conn.Monsters) every = SupportedAttackSeconds(conn, conn.ChannelSkill);
-                    conn.NextChannelHitAt = t + every;
-                    if (!PayMana(conn, conn.ChannelSkill, out uint channelCost))
-                    {
-                        conn.ChannelSkill = 0;
-                        await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped: insufficient mana");
-                        continue;
-                    }
-                    if (channelCost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {channelCost}");
-                    _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy),
-                        immediate: true, sequence: conn.ChannelSkillSequence, actionToken: channelAction);
+                    conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
                 }
             }
             else if (id == InstanceProtocol.ChannelEndId)
@@ -539,6 +524,7 @@ partial class Program
                     RecordVisit(conn);
                     await SendPlayer(remote, stream, ciphers, conn);
                     conn.PlayerSent = true;
+                    await StartGracePeriod(remote, stream, ciphers, conn);
                     await SendWaypoints(remote, stream, ciphers, conn);
                     uint gold = PersonalStashOf(conn).Gold;
                     await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
