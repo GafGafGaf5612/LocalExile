@@ -31,6 +31,7 @@ partial class Program
                 { SkillStats = Skills.EffectStats(effect, 1).ToDictionary(s => s.Item1, s => s.Item2),
                     Penetration = captured.Penetration, ResistanceMods = captured.ResistanceMods, ImpaleChance = captured.ImpaleChance,
                     AccuracyMoreUnique = conn.Pools.AccuracyMoreVsUniquePct, AccuracyMoreClose = conn.Pools.AccuracyMoreInCloseRangePct,
+                    AlwaysHits = Get("global_always_hit") != 0, FarShot = Get("player_far_shot") != 0,
                     ReturnMultiplier = ProjectileReturn.DamageMore(Get) };
                 var arrow = Skills.Projectile("Metadata/Projectiles/DefaultArrow");
                 double speed = ProjectileSpeed.CellsPerSecond(arrow?.Speed ?? 3260, Get, _ => 0,

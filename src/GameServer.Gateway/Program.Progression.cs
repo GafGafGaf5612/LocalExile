@@ -96,7 +96,7 @@ partial class Program
         // it many times a second (every monster hit): reuse the last result while none of them changed.
         var sourcesKey = new StatSourcesKey([.. nodes], masteries, worn, dev, conn.ClassRow, conn.God, level ?? conn.Pools.Level, before);
         if (conn.StatSourcesCache is { } cached && cached.Key.Matches(sourcesKey))
-            return (WithFortification(conn, WithCharges(conn, new(cached.Sources))), cached.Attributes);
+            return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, new(cached.Sources)))), cached.Attributes);
         var passives = Passives.Stats(nodes, masteries);
         // Only attributes need a wide source view. Keep each raw key until overrides have replaced its entire total.
         var passiveAttributes = new Dictionary<string, long>();
@@ -142,7 +142,7 @@ partial class Program
         var attributes = AttributeInputs(rawAttributes, dev);
         // Keyed by the inactive set this result produced: a later call sees it as `before` and must still match.
         conn.StatSourcesCache = new(sourcesKey with { Before = inactive }, new(sources), attributes);
-        return (WithFortification(conn, WithCharges(conn, sources)), attributes);
+        return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, sources))), attributes);
     }
 
     /// <summary>The inputs of CharacterStatSources' passive and equipment sum, compared by value (items by reference).</summary>
@@ -183,9 +183,11 @@ partial class Program
         var weapons = WeaponProfileFor(conn);
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons, snapshot.Attributes);
-        var gear = EquippedBaseDefences(conn);
+        int Input(string name) => Stats.Key(name) is uint key
+            ? conn.PlayerStats.TryGetValue(key, out int set) ? set : sources.GetValueOrDefault(key) : 0;
+        var gear = EquippedBaseDefences(conn, Input);
         bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
-            EnergyShield = bonus.EnergyShield + gear.EnergyShield };
+            EnergyShield = bonus.EnergyShield + gear.EnergyShield, Ward = bonus.Ward + gear.Ward };
         List<AuraCatalog.Aura> auras;
         lock (conn.Monsters) auras = [.. conn.Auras.Values];
         var aura = AuraCatalog.Bonus(auras, bonus.AuraEffectPct, Skills, Stats);
@@ -272,7 +274,10 @@ partial class Program
             SpellCriticalStrikeChance = SpellCriticalStrike.Chance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
                 RawCritical, playerIncrease: pools.SpellCriticalStrikeChancePct)
         };
-        int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
+        // Only the active usable shield contributes. The alternate set and unmet requirements cannot grant block.
+        int shieldBlock = ActiveOffHand(conn) is { Type.Class: "Shield" } shield
+            ? Input("block_chance_from_equipped_shield_is_%") is > 0 and var replacement
+                ? replacement : Items.ShieldBlock(shield.Type) : 0;
         int rawAttack = pools.BlockChanceUncapped + shieldBlock;
         double blockFactor = (1 + bonus.BlockChanceInc / 100.0) * (1 + bonus.BlockChanceMore / 100.0);
         int totalAttack = (int)Math.Round(Math.Max(0, rawAttack) * blockFactor);
@@ -302,6 +307,8 @@ partial class Program
                     SpellBlockChance = Math.Min(pools.SpellBlockChance + 2 * overcap, pools.SpellBlockChanceMax)
                 };
         }
+        conn.Ward.SetMaximum(conn.PlayerLife > 0 ? pools.Ward : 0);
+        conn.AppliedAdrenaline = conn.Antiquarian.Adrenaline(conn.Clock.Elapsed.TotalSeconds);
         ConfigureFortificationRecovery(conn, pools.Life);
         return pools with { FortificationRevision = FortificationOf(conn).Revision };
     }
@@ -424,7 +431,7 @@ partial class Program
         int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
         int evasionPct = Get("evasion_rating_+%") + defencesPct;
         return new CharacterStats.Bonus(
-            Attributes: attributes,
+            Attributes: attributes, Ward: Get("base_ward"), WardPct: Get("ward_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
             ManaPerFourStrength: Get(StrengthMana.PerFourStrength),
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
