@@ -64,7 +64,8 @@ public static class InstanceEntities
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
     /// per GrantedStats value when its IsRecovery (+0x7c) is set (<paramref name="values"/>: the caller must give exactly
     /// that many, or the client misreads the message), and a u32-counted list of u32. The buff's visual (BuffVisuals)
-    /// plays while it lasts.
+    /// plays while it lasts. u68 is the raw IEEE-754 f32 duration in seconds (not integer milliseconds);
+    /// f6c is the countdown rate (default 1.0).
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
         IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null, ushort? visual = null,
@@ -654,6 +655,7 @@ public sealed record PetObject(int GridX, int GridY, uint Owner, IReadOnlyList<s
 public sealed record ProjectileObject(string TypePath, int GridX, int GridY, float Rotation = 0, ushort Team = 0,
     int? Height = null)
 {
+    public string? AnimatedObject { get; init; }
     /// <summary>Animated in the object's component order (Positioned, Animated, BaseEvents).</summary>
     public const byte AnimatedComponentIndex = 1;
 
@@ -666,7 +668,8 @@ public sealed record ProjectileObject(string TypePath, int GridX, int GridY, flo
         // made the arrow invisible (it never drew because the blob was 30 bytes and the components no longer lined up).
         w.I32(GridX).I32(GridY).F32(Rotation).U16(Team).U8((byte)(Height is null ? 0 : 0x04)).U8(0);
         if (Height is int h) w.I32(-h).F32(h * 7.8125f);           // h = z / 7.8125 (z points down): i32 -h, f32 z
-        w.U8(0x40);                                                // Animated: the projectile's own art (Projectiles.dat AOFiles)
+        if (AnimatedObject is null) w.U8(0x40);                    // Animated: Projectiles.dat AOFiles
+        else w.U8(1).WStr32(AnimatedObject);                        // Explicit art, the same Animated reader as effects.
         w.U8(0);                                                   // tasks
         return w.ToArray();
     }

@@ -22,6 +22,7 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
 sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
+    public bool Ranged { get; init; }
     /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
     /// These also go on the monster's Stats component.</summary>
     public IReadOnlyList<(uint, int)> Stats()
@@ -174,28 +175,17 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         }
     }
     public int ProjectileEpoch;
+    public Program.ProjectileSession? ProjectileRuntime;
     public readonly HashSet<uint> ProjectileObjects = [];
 
     public bool ProjectileActive(int epoch)
     {
-        lock (Monsters) return !Closed && !LeavingArea && ProjectileEpoch == epoch;
-    }
-
-    // Called inside the send gate. A queued terminal visual must survive pause and retry after resume;
-    // its registry removal cannot commit until that packet is accepted.
-    public bool TryCommitProjectileVisual(int epoch, Action? commit = null)
-    {
-        lock (Monsters)
-        {
-            if (!ProjectileActive(epoch) || Paused) return false;
-            commit?.Invoke();
-            return true;
-        }
+        lock (Monsters) return !Closed && !LeavingArea && !RageRetired && ProjectileEpoch == epoch;
     }
 
     public bool TryBeginAreaChange(PendingTransfer transfer, out uint[] projectiles)
     {
-        lock (Monsters)
+        using (Program.ProjectileMutation(this, advance: false))
         {
             projectiles = [];
             if (Closed || PendingTransfer is not null || LeavingArea) return false;
@@ -204,6 +194,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
             InvalidateIncomingHits(clear: false);
             ProjectileEpoch++;
             projectiles = [.. ProjectileObjects];
+            ProjectileRuntime?.Invalidate();
             ProjectileObjects.Clear();
             return true;
         }
@@ -215,7 +206,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public double ClockAt(long timestamp)
     {
         double now = Clock.Elapsed.TotalSeconds;
-        return timestamp == 0 || Paused ? now : Math.Max(0, now - System.Diagnostics.Stopwatch.GetElapsedTime(timestamp).TotalSeconds);
+        double at = timestamp == 0 || Paused ? now : Math.Max(0, now - System.Diagnostics.Stopwatch.GetElapsedTime(timestamp).TotalSeconds);
+        // A buffered input cannot rewrite motion in history already consumed by projectile collision.
+        return Math.Max(at, ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
     }
     // The server's copy of the client-predicted walk (reported in each 0x1ab): the client's own pathfinder and stepping.
     public PlayerWalk Walk => _walk ??= NewPlayerWalk();
@@ -252,7 +245,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
                 }
             foreach (var peer in Instance?.PlayersExcept(PeerId) ?? [])
                 if (peer.Life > 0) (all ??= [.. fixedOnes]).Add(new(peer.X, peer.Y, LivingCollision.PlayerSize));
-            return all ?? fixedOnes;
+            return all is null ? fixedOnes : new GameServer.Core.World.BlockerSet(all);
         }
     }
 
@@ -266,12 +259,12 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     public void SetBlocker(uint id, int x, int y, int size, double? collisionRadius = null)
     {
-        lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = [.. _blockers.Values]; }
+        lock (_blockers) { _blockers[id] = new(x, y, size) { CollisionRadius = collisionRadius }; _blockerList = new GameServer.Core.World.BlockerSet(_blockers.Values); }
     }
 
     public void RemoveBlocker(uint id)
     {
-        lock (_blockers) if (_blockers.Remove(id)) _blockerList = [.. _blockers.Values];
+        lock (_blockers) if (_blockers.Remove(id)) _blockerList = new GameServer.Core.World.BlockerSet(_blockers.Values);
     }
 
     /// <summary>Applies the passive movement speed to the server's walk estimate; /set_speed is a dev override.</summary>
@@ -288,7 +281,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         var l = Layout;
         Func<int, int, bool>? walkable = l.Walkable is { } w ? (cx, cy) => w(cx, cy) && !Barrier.Contains((cx, cy)) : null;
         return new(l.SpawnX, l.SpawnY, Program.WalkSpeed, walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096,
-            () => Blockers);
+            () => Blockers, stationary: () => StationaryBlockers);
     }
     public bool PlayerSent;
     // Server frames ended so far (0x2b5).
@@ -334,6 +327,16 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Counts the player's actions; an attack's hit lands only if no other action started since (moving cancels it).
     public int ActionCount;
     public readonly PlayerHitRecovery HitRecovery = new();
+    public readonly WardState Ward = new();
+    public readonly AntiquarianCombatState Antiquarian = new();
+    public readonly TimedLifeRecovery EnduringCryRecovery = new();
+    public double SentEnduringCryUntil = double.NaN;
+    public ushort EnduringCryBuff;
+    public bool AppliedAdrenaline;
+    public (uint Maximum, bool Broken)? SentWard;
+    public double SentAdrenalineUntil = double.NaN;
+    public double SentStunRecoveryUntil = double.NaN;
+    public ushort WardBuff, AdrenalineBuff;
     // The stats the server has set on the player after creating it (/set_stat, /set_speed): what the client computes
     // with, so the server can follow it (attack time).
     public readonly Dictionary<uint, int> PlayerStats = [];
@@ -390,6 +393,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public ushort RefundPoints;
     // /god (GodStats) and the running Righteous Fire, if any; buff instance ids (0x1c1) given out on this connection.
     public bool God;
+    public readonly GracePeriod EntryProtection = new();
     public RighteousFireState? RighteousFire;
     /// <summary>The flasks recovering life and mana (C→S 0x70), applied by the player tick.</summary>
     public Flasks.Effects FlaskEffects { get; } = new();
@@ -514,9 +518,13 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (uint Id, int X, int Y)? BackPortal;
     /// <summary>The gem skill being channelled (Cyclone: C→S 0x197 until 0x199), 0 for none, and when it next hits.</summary>
     public ushort ChannelSkill;
+    /// <summary>The last passive and equipment stat sum and its inputs (CharacterStatSources).</summary>
+    public volatile Program.StatSourcesResult? StatSourcesCache;
     /// <summary>The channelled skill's action sequence, so its 0x1af hit result names the action it belongs to.</summary>
     public ushort ChannelSkillSequence;
     public double NextChannelHitAt;
+    /// <summary>When the channel last heard from the client (its start, or a C→S 0x197 update; Clock seconds).</summary>
+    public double LastChannelUpdateAt;
     /// <summary>The instance this connection is in (its number), for a portal back to it.</summary>
     public ulong InstanceNumber { get; init; }
     /// <summary>Arrive at this cell instead of the spawn (back through a town portal).</summary>

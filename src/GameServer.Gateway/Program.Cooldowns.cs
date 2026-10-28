@@ -40,11 +40,11 @@ partial class Program
         Action sideEffects, out CooldownUseTicket? ticket, int? actionToken, bool reserve, double? requestedAt,
         ushort? skillId)
     {
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
             ticket = null;
             SingleUseCooldownState? state = null;
-            if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || conn.Paused
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused
                 || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
             // Soul counters do not enable an executor. Refuse the actual Vaal instance before action/movement,

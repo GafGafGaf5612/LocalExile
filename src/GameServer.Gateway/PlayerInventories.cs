@@ -955,6 +955,45 @@ sealed class PlayerInventories
         return result;
     }
 
+    /// <summary>Whether <paramref name="received"/> fits the main inventory once every offered item is gone (a player
+    /// trade checks both sides before either changes). Nothing changes.</summary>
+    public bool CanExchange(IReadOnlyList<Item> received, Func<Item, Shape?> shapeOf)
+    {
+        lock (_lock)
+        {
+            uint probe = _nextItemId;
+            var after = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
+            foreach (var item in received)
+                if (item.StackSize > 0 && StackInto(MainInventory, after, item, shapeOf, ref probe).Left > 0) return false;
+            return true;
+        }
+    }
+
+    /// <summary>A player trade completed: every offered item is gone and <paramref name="received"/> goes into the main
+    /// inventory, in one save. Unlike <see cref="Sell(IReadOnlyList{Item}, Func{Item, Shape?})"/> either side may be
+    /// empty. Null (nothing changes) when the received items do not fit.</summary>
+    public Stacking? Exchange(IReadOnlyList<Item> received, Func<Item, Shape?> shapeOf)
+    {
+        Stacking result;
+        lock (_lock)
+        {
+            uint probe = _nextItemId;
+            var before = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
+            var after = before.ToList();
+            foreach (var item in received)
+                if (item.StackSize > 0 && StackInto(MainInventory, after, item, shapeOf, ref probe).Left > 0) return null;
+            foreach (var items in _items.Values) items.RemoveAll(i => _offered.ContainsKey(i.Id));
+            _offered.Clear();
+            _items[MainInventory] = after;
+            _nextItemId = probe;
+            var old = before.ToDictionary(i => i.Id);
+            result = new([.. after.Where(i => old.TryGetValue(i.Id, out var previous) && previous != i)],
+                [.. after.Where(i => !old.ContainsKey(i.Id))], 0);
+        }
+        Persist();
+        return result;
+    }
+
     /// <summary>
     /// The class's opening kit from Characters.dat: its start weapon waits on the Strand's ground, while the
     /// skill and support gems are saved as pending tutorial rewards (the biting zombie and large chest).
