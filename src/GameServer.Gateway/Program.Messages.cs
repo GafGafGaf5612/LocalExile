@@ -381,6 +381,7 @@ partial class Program
                     t = Math.Max(t, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
                     if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
                     conn.Walk.Teleport(cx, cy, t);
+                    conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
                 }
             }
             else if (id == InstanceProtocol.ChannelEndId)

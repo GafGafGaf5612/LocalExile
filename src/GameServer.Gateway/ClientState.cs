@@ -492,6 +492,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The channelled skill's action sequence, so its 0x1af hit result names the action it belongs to.</summary>
     public ushort ChannelSkillSequence;
     public double NextChannelHitAt;
+    /// <summary>When the channel last heard from the client (its start, or a C→S 0x197 update; Clock seconds).</summary>
+    public double LastChannelUpdateAt;
     /// <summary>The instance this connection is in (its number), for a portal back to it.</summary>
     public ulong InstanceNumber { get; init; }
     /// <summary>Arrive at this cell instead of the spawn (back through a town portal).</summary>

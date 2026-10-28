@@ -1038,7 +1038,9 @@ u32 BE y, the player's cell) every few frames while the button is held, and **Câ
 The hits run on the server's own timer (`RunChannel`, started with the channel): the first sweep lands as the channel
 starts, then one sweep around the player's current cell every `SupportedAttackSeconds` (the skill's own speed, its
 supports and the player's attack speed, as the tooltip shows), paying the cost each time, until 0x199, any other action,
-running out of mana, death or travel (`ClientState.ChannelSkill`, `NextChannelHitAt`). One sweep resolves its damage
+running out of mana, death or travel, or when the 0x197 updates stop for a second (the client sends them all the
+time while the button is held, so a lost 0x199 cannot keep the channel going: `LastChannelUpdateAt`;
+`ClientState.ChannelSkill`, `NextChannelHitAt`). One sweep resolves its damage
 and multiplier once and rolls them per monster; every monster gets its hit, life update and death packet before the
 sweep's deaths run their loot, experience and quest work (`AreaSkillHit`). Before, a sweep recalculated the whole skill
 per monster and handled each death inline, spreading one sweep over up to 1.4 s in a crowd.

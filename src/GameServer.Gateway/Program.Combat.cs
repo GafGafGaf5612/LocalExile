@@ -457,6 +457,7 @@ partial class Program
         if (gem.Name is not null && Supports.Of(gem.Effect)?.Types.Contains(47) == true)
         {
             conn.NextChannelHitAt = conn.Clock.Elapsed.TotalSeconds + SupportedAttackSeconds(conn, skillId);
+            conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
             _ = RunChannel(remote, stream, ciphers, conn, skillId, gem, action);
         }
         if (gem.Name is not null && SupportedReservation(conn, skillId) is { } reservation)
@@ -690,12 +691,16 @@ partial class Program
     // A channelled skill's hits (Cyclone): one sweep around the player every attack time (SupportedAttackSeconds: the
     // skill's own speed, its supports and the player's attack speed, as the tooltip shows) for as long as the channel
     // runs. The hits used to wait for the client's position updates (C→S 0x197), which do not come at that rate, so a
-    // short channel landed one late sweep. The channel ends with C→S 0x199, any other action, mana, death or travel.
+    // short channel landed one late sweep. The channel ends with C→S 0x199, any other action, mana, death or travel, or
+    // when the client's 0x197 updates stop for ChannelSilenceSeconds (it sends them all the time while the button is held,
+    // so a lost 0x199 cannot keep a channel spinning on its own).
+    const double ChannelSilenceSeconds = 1.0;
+
     static async Task RunChannel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, int action)
     {
         bool Running() => !conn.Closed && !conn.LeavingArea && conn.PlayerLife > 0 && conn.ChannelSkill == skillId
-            && conn.ActionCount == action;
+            && conn.ActionCount == action && conn.Clock.Elapsed.TotalSeconds - conn.LastChannelUpdateAt <= ChannelSilenceSeconds;
         try
         {
             while (true)
