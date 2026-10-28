@@ -107,6 +107,37 @@ Data 18 and Gateway 4,130: 4,703 tests with no reported skips. The three final r
 The exact inventory confirms that these twelve names are virtual dependencies of the panel, including native
 `virtual_frostburn_*` names for the Brittle duration/effect rows. Native checks remain pending.
 
+## Impale review and corrections
+
+The two before-fix damage regressions are preserved in `impale-roll-reproduced.trx`: a 10..20 physical roll at
+its minimum incorrectly stored 2 instead of 1, and direct 10 crit200 plus existing reflected 10 incorrectly dealt 40
+instead of 30. Gem projectile/area hits also omitted both application and consumption, so the selected support
+chance did not describe their combat behavior. The legacy state had an unsupported five-stack cap, no expiry,
+and erased instances on death.
+
+The shared implementation now stores actual pre-mitigation physical damage with source critical/effect inputs,
+captures five-hit/eight-second defaults plus modifiers, and resolves existing instances as one separately mitigated
+reflected hit before adding a new one. Ordinary melee/bow and supported area/projectile attacks/spells participate.
+General, attack, spell, critical-spell and qualified weapon-local chance keep their scope. Actual target avoidance
+prevents new instances; all three selected aliases include raw linked support inputs without creating a general
+chance from attack-only inputs. Killing hits retain state for expiry/removal. Current lifecycle and remaining
+conditional mechanics are detailed in [the damage module](../protocol/20-damage.md#3a-impale-contacts-and-reflected-damage).
+
+The final focused receipt `impale-focused-final.trx` passes 94 with no skips. It includes parsed real contacts,
+independent reflected mitigation on zero-damage hits, target avoidance, rejected-contact state protection,
+actual Impale Support removal/overrides, separate active hand modifiers and frozen ordinary-bow settings.
+Earlier expanded fixture failures (missing test import, paused-clock setter, round-versus-floor expectation and
+absent raw zero key) were corrected; their logs are preserved, not counted as production regression failures.
+The solution build passes without warnings/errors. Core 555, Data 18 and Gateway 4,169 pass with no skips,
+for 4,742 total. Receipts are `core-impale.trx`, `data-impale.trx` and `gateway-impale.trx`.
+
+Decision: correct the damage/state engine now rather than merely displaying support chance or retaining known
+incorrect legacy approximations. Keep existing source sampling and action admission, with mutation under the
+accepted-contact lock; no new global timer. The alternative of rewriting all combat scheduling would expand
+the change beyond this defect. The module records evidence, limits and these alternatives. Parent-checkout
+Gateway 39900/Auth 45972/Patch 56752 were still running at the latest resource check; this task left them alone.
+No current native claim is made, and the goal remains active.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
@@ -141,9 +172,8 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
    Unconditional raw composition and display prohibition now have automated coverage, not native certification.
 2. Selected ailment chances, leech and other aliases whose raw support contributions are not recomputed.
    The twelve duration/effect coefficients are corrected; prove other omissions using real sources before expanding
-   the selected alias set. In particular, `SupportImpale` grants attack chance 60, but gem projectile/area paths
-   currently neither apply new impales nor consume the target's existing ones. Ordinary attacks have a separate
-   legacy implementation whose stored-damage roll, critical interaction, expiry and hand/source scope need review.
+   the selected alias set. `SupportImpale` chance and ordinary/gem impale contact behavior are now corrected as
+   described above. Conditional impale sources, application/consumption overrides and native validation remain.
 3. Hit averages/DPS, critical weighting, effective critical chances, off-hand selection and secondary damage.
    `SpellPanelStats` and `AttackPanelStats` still describe pre-critical averages.
 4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.

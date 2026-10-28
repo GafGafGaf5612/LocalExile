@@ -76,7 +76,7 @@ partial class Program
         var local = ItemWeaponStats.Calculate(item, (ms, min, max, range), Items.Mods);
         var physical = local.Damage[GameServer.Core.World.DamageType.Physical];
         return new SkillCatalog.Unarmed(local.AttackMs, (int)physical.Min, (int)physical.Max, Math.Max(range, unarmed.Range))
-            { LocalDamage = local.Damage, PenetrationSources = ItemModStats.Local(item, Items.Mods).ToFrozenDictionary() };
+            { LocalDamage = local.Damage, LocalSources = ItemModStats.Local(item, Items.Mods).ToFrozenDictionary() };
     }
 
     // The off-hand weapon of a dual-wielded attack (the active set's Offhand1), with the same values WeaponIn gives the main
@@ -93,9 +93,9 @@ partial class Program
     }
 
     // Current attack executors use the main hand. Read only its qualified active item; a shield, an inactive
-    // weapon set or an unqualified weapon cannot supply penetration to this contact.
-    static IReadOnlyDictionary<string, int>? MainHandPenetrationSources(ClientState conn) =>
-        WeaponFor(conn).PenetrationSources;
+    // weapon set or an unqualified weapon cannot supply local modifiers to this contact.
+    static IReadOnlyDictionary<string, int>? MainHandLocalSources(ClientState conn) =>
+        WeaponFor(conn).LocalSources;
 
     // Current actions and passive weapon conditions use only the hands' active rows. A normal weapon swap trades
     // these rows with 14/15 before recomputing pools; an explicit false is reserved for inspecting both stored sets.

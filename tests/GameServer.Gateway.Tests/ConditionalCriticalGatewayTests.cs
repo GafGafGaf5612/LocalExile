@@ -7,7 +7,7 @@ using GameServer.Core.World;
 
 namespace GameServer.Gateway.Tests;
 
-public class ConditionalCriticalGatewayTests
+public partial class ConditionalCriticalGatewayTests
 {
     sealed class Draws(params int[] values) : Random
     {
@@ -36,7 +36,7 @@ public class ConditionalCriticalGatewayTests
         public SemaphoreSlim SendGate => Program.SendGates.GetValue(ciphers, _ => new(1, 1));
 
         public Contact(Draws random, string? gemName = null, string? weaponName = null, int distance = 2,
-            uint targetLife = 100000)
+            uint targetLife = 100000, MonsterModSet? targetMods = null)
         {
             TestSaves.Ensure();
             Conn = new(new(ushort.MaxValue, "CriticalContact", 200, 200, 32, 32, (_, _) => true, []), 1, 1)
@@ -64,7 +64,8 @@ public class ConditionalCriticalGatewayTests
             Set("spell_maximum_added_chaos_damage", 1000);
             Set("attack_speed_+%", 200);
             Refresh();
-            Target = new("critical target", new(32 + distance, 32, 30), 0, 2, targetLife);
+            Target = new("critical target", new(32 + distance, 32, 30), 0, 2, targetLife)
+                { Mods = targetMods ?? MonsterModSet.None };
             Conn.Monsters.Add(42, Target);
             Conn.Clock.Start();
             listener.Start();
@@ -110,6 +111,10 @@ public class ConditionalCriticalGatewayTests
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             while (Target.Life == Target.MaxLife) await Task.Delay(10, timeout.Token);
         }
+
+        public Task<bool> ContactDamage(Func<int> damage, int? action = null) => (Task<bool>)Method("HitMonster").Invoke(null,
+            ["impale-contact-gate-test", writer.GetStream(), ciphers, Conn, 42u, Target, 0, "test", false, false,
+                (ushort)0, action, null, null, damage])!;
 
         public async Task Refund(ushort node)
         {
@@ -186,7 +191,7 @@ public class ConditionalCriticalGatewayTests
         f.Refresh();
         var raw = gem is null ? new DamageRange(1000, 1000) : f.Hit[DamageType.Fire];
         Assert.True(raw.Min > 0);
-        Assert.NotNull(((SkillCatalog.Unarmed)Method("WeaponFor").Invoke(null, [f.Conn])!).PenetrationSources);
+        Assert.NotNull(((SkillCatalog.Unarmed)Method("WeaponFor").Invoke(null, [f.Conn])!).LocalSources);
         // The synthetic target has zero resistance. Spells get general 7 only; attacks get 7 + 5 + local 5.
         double factor = prohibited ? 1 : gem == "Fireball" ? 1.07 : 1.17;
         await f.Use();

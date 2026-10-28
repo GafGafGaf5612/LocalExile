@@ -192,10 +192,13 @@ public class PanelStatsTests
     }
 
     [Fact]
-    public void Impale_chance_sums_the_attacks_form()
+    public void Attack_only_impale_does_not_become_a_general_spell_or_secondary_source()
     {
         var panel = Compute(("attacks_impale_on_hit_%_chance", 20));
-        Assert.Equal(20, panel["impale_on_hit_%_chance"]);
+        Assert.Equal(20, panel["virtual_total_main_hand_impale_on_hit_%_chance"]);
+        Assert.Equal(20, panel["virtual_total_off_hand_impale_on_hit_%_chance"]);
+        Assert.False(panel.ContainsKey("impale_on_hit_%_chance"));
+        Assert.False(panel.ContainsKey("virtual_total_spell_impale_on_hit_%_chance"));
     }
 
     static Dictionary<string, int> Recovery(params (string Stat, int Value)[] stats) =>

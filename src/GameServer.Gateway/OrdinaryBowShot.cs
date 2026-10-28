@@ -1,11 +1,12 @@
 using GameServer.Core.World;
 
 /// <summary>An ordinary bow's offensive inputs frozen at release. The actual target supplies evasion and impales
-/// at contact. This preserves the ordinary attack's existing damage/crit/impale arithmetic.</summary>
+/// at contact. Direct hit and reflected impale damage are resolved separately.</summary>
 sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance, int CriticalMultiplier, int ImpaleChance)
 {
     public Penetration.PerType Penetration { get; init; }
     public HitResistances.Mods ResistanceMods { get; init; }
+    public ImpaleStats.Settings? ImpaleSettings { get; init; }
     public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
@@ -15,8 +16,9 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         foreach (var (key, value) in own) conversion.TryAdd(key, value);
         var hit = RageStats.ApplyAttack(PlayerHitDamage.Resolve(SupportedAttackDamage.Raw(weapon, Get), Get,
             DamageStats.Conversion(conversion, catalog, attack: true), spell: false, projectile: true), Get);
-        return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"))
-        { Penetration = global::Penetration.Of(character, catalog, attack: true, own, weapon.PenetrationSources),
+        var impale = ImpaleStats.From(character, catalog, attack: true, own, weapon.LocalSources);
+        return new(hit, accuracy, criticalChance, criticalMultiplier, impale.Chance)
+        { ImpaleSettings = impale, Penetration = global::Penetration.Of(character, catalog, attack: true, own, weapon.LocalSources),
             ResistanceMods = new(
                 Get("critical_strikes_ignore_elemental_resistances") | Own("critical_strikes_ignore_elemental_resistances"),
                 Get("attack_critical_strikes_ignore_elemental_resistances") | Own("attack_critical_strikes_ignore_elemental_resistances"),
@@ -31,20 +33,17 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
 
     public (int Damage, bool Critical) Roll(ImpaleState impale, Random random,
         Func<DamagePacket, bool, int>? mitigate = null, int? criticalMultiplier = null,
-        int extraCriticalRolls = 0, Random? criticalRandom = null, bool cannotCrit = false)
+        int extraCriticalRolls = 0, Random? criticalRandom = null, bool cannotCrit = false,
+        double now = 0, Func<double, int>? reflect = null, int avoidImpale = 0)
     {
-        var hit = Hit;
-        // Keep the existing ordinary attack convention: store the converted physical maximum before the bonus/crit.
-        double physical = hit[DamageType.Physical].Max;
-        double stored = impale.Bonus;
-        if (stored > 0) hit = hit.Add(DamageType.Physical, new DamageRange(stored, stored));
-        impale.AfterHit();
-        if (ImpaleChance > 0 && random.Next(100) < ImpaleChance) impale.Apply(physical);
-        var rolled = hit.Roll(random);
+        var rolled = Hit.Roll(random);
         bool critical = CriticalStrikePolicy.Roll(cannotCrit ? 0 : CriticalChance,
             criticalRandom ?? random, extraCriticalRolls);
         int damage = mitigate?.Invoke(rolled, critical) ?? (int)Math.Round(rolled.MinTotal);
         if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier ?? CriticalMultiplier);
-        return (damage, critical);
+        double physical = rolled[DamageType.Physical].Min * (critical ? Math.Max(0, CriticalMultiplier) / 100.0 : 1);
+        var (stored, _) = impale.OnHit(physical, now, ImpaleSettings ?? new(ImpaleChance), random, avoidImpale);
+        int reflected = stored > 0 ? reflect?.Invoke(stored) ?? (int)Math.Round(stored) : 0;
+        return (ImpaleStats.AddReflected(damage, reflected), critical);
     }
 }

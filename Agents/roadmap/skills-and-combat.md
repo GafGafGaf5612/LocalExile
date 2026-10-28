@@ -32,6 +32,15 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### The player's real stats
 
+Impale now has a shared actual-contact implementation for ordinary and supported hits, scoped chance/effect
+inputs, captured duration/hit counts and separately mitigated reflection. The three selected chance aliases
+include real supports and local weapon inputs. Remaining work includes conditional weapon/Pride chance,
+extra applications and consumption overrides, strongest/Impaler mechanics, native count/visual publication,
+corpse consumers, critical-only spell chance presentation and official duration tick rounding. Validate source,
+support, weapon, pause, transition and relog behavior in the current native client when other agents release
+the shared testing resources. See [damage §3a](../docs/protocol/20-damage.md) and the
+[review report](../docs/dev/issue75-review.md); automated coverage does not close these rows.
+
 Issue #75 validation counts and Standard/Ruthless native matrices below describe the source LocalExile revisions.
 This branch ports their completed ordinary-mode calculations; fresh build/test results, scope exclusions and
 remaining native checks are recorded in [the port record](../docs/dev/issue75-port.md).

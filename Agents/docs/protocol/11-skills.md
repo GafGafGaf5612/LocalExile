@@ -686,17 +686,17 @@ Catalog, raw-source, aura, flag, rounding, hit routing and roll-boundary checks 
 Timed, charge, enemy-state and other conditional/more critical mechanics remain outside this slice.
 `/crit` prints the attack values and the legacy pooled 5%-base spell reference, not the selected gem's chance.
 
-**Impale.** A hit that rolls `impale_on_hit_%_chance` stores 10% of the swing's physical damage on the monster as a
-stack: five at most, each lasting five physical hits. The stored amount is taken from the packet's physical **maximum**,
-not the rolled damage, so it is steady for a given weapon. Every later physical hit on that monster first takes the
-stored total as extra physical (a `DamageRange(stored, stored)` added to the packet before `RollTotal`, so it converts and
-mitigates with the hit) and then spends one hit of every stack. Order, in `Gateway.Attack`: add the bonus, `AfterHit()`,
-then roll `Apply(physical)` — a new stack applied first would lose one of its five hits on the swing that made it. The
-stack count and stored total are read before the hit applies because a killing blow clears them, which is why the log
-reports the real stacks on the killing 0x1b1. Only physical is stored. Live 2026-10-20, `/set_stat
-attacks_impale_on_hit_%_chance 100` on one monster: `hit for 5, impaled (1 stack(s), 0.5 stored)`, then `impale +0.5 (2
-stack(s))`, `impale +1 (3)`, `impale +1.5 (4)`, `impale +2 (5 stack(s), 2.6 stored)` on the killing critical, and the next
-monster reopened at one stack.
+**Impale (review correction).** Ordinary melee/bow and supported projectile/area contacts now share actual rolled
+physical damage, including the inflicting owner's critical multiplier, before target mitigation. Each instance stores
+10% times impale effect and lasts five later hits or eight game-time seconds, modified by its captured hit-count and
+duration inputs. Any later accepted hit can trigger existing impales, including spells and zero-damage hits.
+Their sum resolves as separate reflected physical damage, with target physical reduction and generic damage taken
+once; it does not inherit the triggering hit's critical multiplier, conversion, spell-only damage taken or return
+multiplier. Existing instances consume a hit before a new instance is added. There is no artificial five-stack cap.
+Killing hits retain instances on the corpse until expiry/removal. See [20-damage.md](20-damage.md) §3a for source
+scope, lifecycle gates, evidence, decisions and remaining conditional mechanics.
+The 2026-10-20 native observations exercised the old maximum-roll, capped, clear-on-death implementation and do
+not verify this corrected implementation. Current-branch native validation remains pending.
 
 Exits use the same approach (`ExitReach` = 6 cells) before the area change or the instance list.
 
@@ -1396,11 +1396,12 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   enqueueing creation. Aim remains the original aim. This is the selected release snapshot policy; official-server
   snapshot equivalence has not been established.
   At the actual send gate, one game-time sample drives the target observation and swept contact test. Target
-  evasion is checked there; on a hit, existing target impales are consumed, a new stack may be added, the packet
-  is rolled and crit applied, and life is committed with the arrow's stop packet. Paused or obsolete queued
-  samples consume no accuracy randomness or target state. A killing hit clears impales. Damage, accuracy,
-  crit and impale formulas retain the previous ordinary attack's approximations (including melee physical
-  increases on bows); this adds no new armour/resistance, entropy or support mechanics.
+  evasion is checked there; on a hit, the direct packet and critical state are rolled, live impales trigger separately,
+  and a new instance may store the actual pre-mitigation physical roll. Life is committed with the arrow's stop
+  packet. Paused or obsolete queued samples consume no accuracy randomness or target state. Impale instances
+  survive a killing hit until expiry/removal. Current damage excludes melee-only increases on bows and preserves
+  separate penetration/local-source inputs; see the later issue #75 corrections in [20-damage.md](20-damage.md).
+  Official snapshot, armour and entropy parity remain separate work.
   An evaded object is ignored for the rest of this straight flight, and a farther contact in the same sweep may
   hit. This is a bounded policy supported by the current community
   [Projectile](https://www.poewiki.net/wiki/Projectile) and [Avoidance](https://www.poewiki.net/wiki/Avoidance) pages;
@@ -1921,7 +1922,8 @@ it:
 | `virtual_trap/mine_throwing_speed_+%` | `trap_and_mine_throwing_speed_+%` (mine: `mine_laying_speed_+%`) |
 | `minimum/maximum_*_damage_to_return_to_melee_attacker` | `*_damage_to_return_to_melee_attacker` (both ends) |
 | `extra_damage_taken_from_crit_+%` | − `base_self_critical_strike_multiplier_-%` |
-| `impale_on_hit_%_chance` | `attacks_impale_on_hit_%_chance` (the attack reads this row's name) |
+| `virtual_total_main_hand/off_hand_impale_on_hit_%_chance` | general + attack-only + that hand's local chance, capped 0–100 |
+| `virtual_total_spell_impale_on_hit_%_chance` | general + spell-only chance, capped 0–100 |
 | `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
 
 `PanelStats.Compute` receives the actual character level from `Pools.Level`, clamped to 1–100, not a gem level or
@@ -1994,6 +1996,17 @@ Decision: recompute these twelve established coefficient formulas from raw input
 every ailment row as a simple sum would gloss over critical weighting, prohibitions, damage eligibility
 and actual duration/rate calculation. Those mechanics and native validation remain separate completion work;
 this publication correction does not implement ailment application or certify the whole ailment system.
+
+Selected impale chance now recomputes all three virtual totals from the raw actor, own support and each hand's
+local snapshot. Real Impale Support grants attack chance 60: actor 10 gives selected 70 while the actor/default
+remain 10 and spell chance remains zero. Qualified local weapon modifiers 15/17 produce main 85/off 87 without
+including the inactive weapon. Completed sums clamp to 0–100, and explicit final developer overrides retain
+their normal priority. Unlinking, source removal, incompatible spell support and repeated reads are covered.
+The old projection from attack chance into the general `impale_on_hit_%_chance` is removed: it erased source
+scope and could make attack-only inputs apply to spells/secondary hits. Decision: use raw scoped inputs in combat
+and recompute final display aliases, rather than feeding final aliases back into calculations. Native rendering,
+critical-only spell chance presentation and the remaining conditional sources are still open; see §3a of the
+damage module for the actual hit implementation and evidence.
 
 `PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
 

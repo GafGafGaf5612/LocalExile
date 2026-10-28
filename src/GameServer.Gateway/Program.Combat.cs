@@ -193,8 +193,8 @@ partial class Program
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var ownPenetration = attackEffect >= 0
             ? Skills.EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
-        // Impale: the stacks already on the target add their stored damage to this hit, this hit uses one of their five
-        // hits, and the hit's own physical damage may store a new stack for the hits after it.
+        // Existing impales trigger one separate reflected hit and consume one remaining hit each. The actual
+        // direct physical roll may then store a new instance; it never consumes that new instance itself.
         double stored, impaleStored;
         int impaleStacks, damage;
         bool impaled, critical;
@@ -210,32 +210,26 @@ partial class Program
             // Settle Rage at accepted contact before this hit's gain. It is a final multiplier on the attack packet,
             // never on an existing impale bonus or on generic damage/DoT.
             var player = CharacterPlayerStats(conn);
-            var pen = Penetration.Of(player, Stats, attack: true, ownPenetration, weapon.PenetrationSources);
+            var pen = Penetration.Of(player, Stats, attack: true, ownPenetration, weapon.LocalSources);
             var resistanceMods = HitResistMods(player, ownPenetration);
             var hit = AttackHitConverted(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee,
                 ConversionFor(conn, attackEffect, 1, attack: true));
-            double physical = hit[DamageType.Physical].Max;
-            stored = m.Impale.Bonus;
-            m.Impale.AfterHit();
-            int impaleChance = Stats.Key("impale_on_hit_%_chance") is uint impaleKey ? player.GetValueOrDefault(impaleKey) : 0;
-            impaled = impaleChance > 0 && Random.Shared.Next(100) < impaleChance && m.Impale.Apply(physical);
-            // Read before the hit is applied: a killing blow clears the target's impales.
+            var ownRolled = hit.Roll(Random.Shared);
+            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration);
+            int sourceCriticalMultiplier = AttackCriticalMultiplier(conn, player);
+            int criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
+            (damage, resistance) = MonsterDamage(m, ownRolled, critical, attack: true, resistanceMods, pen);
+            if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
+            (damage, stored, impaled) = WithImpaleHitLocked(conn, m, damage, ownRolled, critical, sourceCriticalMultiplier,
+                ImpaleStats.From(player, Stats, attack: true, ownPenetration, weapon.LocalSources, critical));
             impaleStacks = m.Impale.Stacks;
             impaleStored = m.Impale.Bonus;
-            var ownRolled = hit.Roll(Random.Shared);
-            // Impale is stored reflected damage, not part of the direct roll which can generate Fortification.
-            var rolled = stored > 0 ? ownRolled.Add(DamageType.Physical,
-                new DamageRange(Math.Floor(stored), Math.Floor(stored))) : ownRolled;
-            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration);
-            int criticalMultiplier = CriticalMultiplierOn(m, AttackCriticalMultiplier(conn, player));
-            (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, resistanceMods, pen);
-            if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
             FortificationOnHitLocked(conn, m, RawFortificationDamage(ownRolled, critical, criticalMultiplier),
                 WeaponProfileFor(conn, activeSet: true).Melee, player, ownPenetration);
             (m.Life, stageStarts) = TakeDamageLocked(m, damage);
             life = m.Life;
             conn.LastEnemyHitAt = conn.Clock.Elapsed.TotalSeconds;
-            if (life == 0) { m.Aggro = false; m.Dead = true; m.Impale.Clear(); }
+            if (life == 0) { m.Aggro = false; m.Dead = true; }
             RageOnHitLocked(conn, attack: true, melee: WeaponProfileFor(conn, activeSet: true).Melee, critical);
         }
         ChargesOnHit(conn, m, critical, spell: false);
@@ -712,7 +706,7 @@ partial class Program
         // direct target already took the projectile hit, so it is excluded from the explosion (no double hit), and the
         // explosion only bursts on contact (not at maximum range), as the skill does.
         bool fireball = projectile.Id.Contains("Fireball");
-        Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo = m =>
+        (int Damage, bool Critical) DamageTo(SpawnedMonster m, double hitMore)
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
             // types separate so conversion and per-type mitigation apply. An attack gem (Burning Arrow, Caustic Arrow …) has
@@ -722,9 +716,9 @@ partial class Program
             var own = SupportedSkill(conn, skillId).Stats;
             int chance = SupportedCriticalChance(conn, skillId);
             bool attack = Skills.IsAttack(gem.Effect);
-            var pen = Penetration.Of(stats, Stats, attack, own, attack ? MainHandPenetrationSources(conn) : null);
+            var weaponLocal = attack ? MainHandLocalSources(conn) : null;
+            var pen = Penetration.Of(stats, Stats, attack, own, weaponLocal);
             var resistanceMods = HitResistMods(stats, own);
-            foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
             if (MonsterBlocks(m, Random.Shared, spell))
             {
@@ -734,14 +728,19 @@ partial class Program
             var hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
             bool critical = RollCriticalStrike(conn, chance, own, attack: !spell);
+            var impaleSources = ImpaleStats.From(stats, Stats, attack, own, weaponLocal, critical);
+            int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
             var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, resistanceMods, pen);
             if (critical)
-                damage = DamageModel.CriticalDamage(damage,
-                    CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId)));
+                damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, sourceCriticalMultiplier));
+            if (hitMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, hitMore));
+            damage = WithImpaleHitLocked(conn, m, damage, rolled, critical, sourceCriticalMultiplier,
+                impaleSources, hitMore).Damage;
             ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, melee: false);
             if (resistance is not null) Console.WriteLine($"[gateway] {remote} {gem.Name} resistance: {resistance}");
             return (damage, critical);
-        };
+        }
+        Func<SpawnedMonster, (int Damage, bool Critical)> damageTo = m => DamageTo(m, 1);
         Func<(int X, int Y), uint, Task>? explosion = kineticBlast
             ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
                 immediate: true, melee: false, excludeMonster: exclude)
@@ -755,11 +754,7 @@ partial class Program
         // "While returning": Returning Projectiles Support's less Damage and the game's returning-projectile finals.
         double returnMore = ProjectileReturn.DamageMore(SumStat);
         bool returnPierce = SumStat("returning_projectiles_always_pierce") != 0;
-        Func<SpawnedMonster, (int Damage, bool Critical)>? returnDamageTo = damageTo is null ? null : m =>
-        {
-            var (damage, critical) = damageTo(m);
-            return ((int)Math.Floor(damage * returnMore), critical);
-        };
+        Func<SpawnedMonster, (int Damage, bool Critical)> returnDamageTo = m => DamageTo(m, returnMore);
         Func<(int X, int Y), uint, Task>? returnExplosion = kineticBlast ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
             immediate: true, melee: false, damageMore: returnMore, excludeMonster: exclude) : null;
         var returnShotgunned = new System.Collections.Concurrent.ConcurrentDictionary<uint, byte>();
@@ -885,7 +880,7 @@ partial class Program
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int criticalChance = SupportedCriticalChance(conn, skillId);
-        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats, spell ? null : MainHandPenetrationSources(conn));
+        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats, spell ? null : MainHandLocalSources(conn));
         var mods = HitResistMods(stats, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
         bool fortificationGranted = false; // One simultaneous sweep, independent of notification latency.
@@ -902,7 +897,8 @@ partial class Program
             DamagePacket hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
             bool critical = RollCriticalStrike(conn, criticalChance, skillStats, attack: !spell);
-            int criticalMultiplier = CriticalMultiplierOn(m, SupportedCriticalMultiplier(conn, skillId));
+            int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
+            int criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
             var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
             if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
             if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
@@ -910,6 +906,9 @@ partial class Program
             if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
                     $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
                     melee: melee ?? !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse,
+                    damageAtContact: () => WithImpaleHitLocked(conn, m, damage, rolled, critical, sourceCriticalMultiplier,
+                        ImpaleStats.From(player, Stats, !spell, skillStats, spell ? null : MainHandLocalSources(conn), critical),
+                        damageMore).Damage,
                     accepted: () =>
                     {
                         if (!fortificationGranted)
@@ -1172,10 +1171,11 @@ partial class Program
                                     CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier),
                                     extraCriticalRolls: ordinaryShot.CriticalChance > 0 ? CriticalExtraRolls(conn) : 0,
                                     criticalRandom: conn.CriticalRandom,
-                                    cannotCrit: ordinaryShot.CriticalChance > 0 && CriticalProhibited(conn, attack: true));
+                                    cannotCrit: ordinaryShot.CriticalChance > 0 && CriticalProhibited(conn, attack: true),
+                                    now: conn.Clock.Elapsed.TotalSeconds, reflect: stored => MonsterImpaleDamage(target, stored),
+                                    avoidImpale: target.Mods.Effects["avoid_impale_%"]);
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (hit is not null) RageOnHitLocked(conn, attack: true, melee: false, critical);
-                                if (target.Life == 0) target.Impale.Clear();
                             }
                             committed = true;
                             int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
@@ -1411,13 +1411,15 @@ partial class Program
     // the monster was dead already or the action was replaced (the hit did not land).
     static async Task<bool> HitMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id, SpawnedMonster m,
         int damage, string by, bool log = true, bool melee = false, ushort sequence = 0, int? actionToken = null,
-        CooldownUseTicket? cooldownUse = null, Action? accepted = null)
+        CooldownUseTicket? cooldownUse = null, Action? accepted = null, Func<int>? damageAtContact = null)
     {
         MonsterHit? hit;
         lock (conn.Monsters)
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused) return false;
             if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return false;
+            if (m.Dead || m.Life == 0) return false;
+            if (damageAtContact is not null) damage = damageAtContact();
             hit = ApplyMonsterHitLocked(conn, m, damage);
             if (hit is not null) accepted?.Invoke();
         }

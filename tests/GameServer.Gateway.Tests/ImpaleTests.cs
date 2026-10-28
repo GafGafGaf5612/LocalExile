@@ -27,15 +27,15 @@ public class ImpaleTests
     }
 
     [Fact]
-    public void Five_stacks_add_half_the_impaling_hits_damage()
+    public void Stacks_are_limited_by_hit_consumption_and_expiry_not_an_artificial_cap()
     {
         var impale = new ImpaleState();
-        for (int i = 0; i < ImpaleState.MaxStacks; i++) Assert.True(impale.Apply(100));
+        for (int i = 0; i < 5; i++) Assert.True(impale.Apply(100));
         Assert.Equal(5, impale.Stacks);
         Assert.Equal(50, impale.Bonus, 6);
-        // A sixth impale is refused while the five last.
-        Assert.False(impale.Apply(100));
-        Assert.Equal(5, impale.Stacks);
+        Assert.True(impale.Apply(100));
+        Assert.Equal(6, impale.Stacks);
+        Assert.Equal(60, impale.Bonus);
     }
 
     [Fact]
@@ -51,10 +51,48 @@ public class ImpaleTests
     {
         var impale = new ImpaleState();
         impale.Apply(100);
-        // The hit that applied it has already used one of its own five hits in the attack path, so this is the second.
+        // The applying hit does not consume the instance it just created.
         for (int hit = 0; hit < ImpaleState.HitsPerStack - 1; hit++) impale.AfterHit();
         Assert.Equal(10, impale.Bonus, 6);
         impale.AfterHit();
+        Assert.Equal(0, impale.Stacks);
+    }
+
+    [Fact]
+    public void Instances_expire_independently_at_the_eight_second_boundary()
+    {
+        var impale = new ImpaleState();
+        impale.Apply(100, now: 1);
+        impale.Apply(200, now: 2);
+        impale.Expire(8.999);
+        Assert.Equal(30, impale.Bonus);
+        impale.Expire(9);
+        Assert.Equal(20, impale.Bonus);
+        impale.Expire(10);
+        Assert.Equal(0, impale.Stacks);
+    }
+
+    [Fact]
+    public void Any_later_hit_triggers_existing_instances_before_the_new_instance_is_added()
+    {
+        var impale = new ImpaleState();
+        var first = impale.OnHit(200, 1, new(100, 50, 2, 4), new Random(1));
+        Assert.Equal((0d, true), first);
+        Assert.Equal(30, impale.Bonus);
+        Assert.Equal((30d, false), impale.OnHit(0, 2, new(0), new Random(1)));
+        Assert.Equal((30d, true), impale.OnHit(100, 3, new(100), new Random(1)));
+        Assert.Equal(10, impale.Bonus);
+        Assert.Equal((0d, false), impale.OnHit(0, 11, new(0), new Random(1)));
+    }
+
+    [Theory]
+    [InlineData(-100, 5, 8)]
+    [InlineData(0, 0, 8)]
+    [InlineData(0, 5, 0)]
+    public void Zero_effect_hits_or_duration_cannot_create_an_instance(int effect, int hits, double duration)
+    {
+        var impale = new ImpaleState();
+        Assert.False(impale.Apply(100, effectPercent: effect, hits: hits, duration: duration));
         Assert.Equal(0, impale.Stacks);
     }
 

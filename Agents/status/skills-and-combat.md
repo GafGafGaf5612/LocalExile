@@ -85,12 +85,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   the dead monster's life bar hides.
   Code: `GrantedSkill`, `SkillCatalog.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md).
-- Impale: a physical hit that rolls `impale_on_hit_%_chance` stores 10% of the hit's physical damage on the monster
-  (five stacks, five hits each), and every later physical hit on it takes the stored damage again as extra physical
-  before the roll; five stacks add half the impaling hit's damage — the mechanic behind the panel's Chance to Impale
-  row, verified live 2026-10-20 (the bonus climbs 0.5 → 2 over five hits and a fresh target reopens at one stack).
-  Code: `Impale.cs`, Gateway (`Attack`).
-  Docs: [11](../docs/protocol/11-skills.md) §14.
+- Impale: ordinary melee/bow and supported projectile/area hits store the actual pre-mitigation physical roll,
+  including the source critical multiplier and impale effect. Each instance lasts five later hits/eight seconds
+  with captured modifiers; any accepted hit can trigger its separate reflected damage, without a second crit,
+  spell-only or return multiplier. No artificial five-stack cap or clear-on-death remains. Target avoidance,
+  local/attack/spell scope, real Impale Support and all three selected chance aliases have automated coverage.
+  Historical 2026-10-20 native observations used the old maximum-roll implementation; current native checks,
+  conditional sources and advanced application/consumption rules remain open.
+  Code: `Impale.cs`, `ImpaleStats.cs`, `Program.Impale.cs`, `Program.Combat.cs`, `OrdinaryBowShot.cs`.
+  Docs: [20](../docs/protocol/20-damage.md) §3a and [11](../docs/protocol/11-skills.md) §14.
 - Offence panel damage rows: the hit the server swings with becomes `main_hand_minimum/maximum_total_damage` and the
   per-type minimum/maximum rows, with `skill_uses_main_hand` so the client shows them;
   whole numbers, main hand only, and an empty packet sends none.
@@ -846,8 +849,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   unverified. Already-paused uses are rejected; accepted queued confirmations run outside
   ground input dispatch and can wait for resume or original-token cancellation.
   Actual queued-send tests cover pause, action replacement, death and transfer, plus released arrows surviving
-  later actions/player death. Ordinary hits use ranged notifications, preserve existing damage/crit/impale
-  approximations and clear impales on death. Native before-controls confirmed the old visual-only ground arrow
+  later actions/player death. Ordinary hits use ranged notifications; the subsequent issue #75 correction stores
+  actual rolled impale damage and retains instances on death (see §3a in the damage module).
+  Native before-controls confirmed the old visual-only ground arrow
   and independent melee contact hit on object use. On the combined runtime, native ground/object right-clicks
   each dealt one hit only at the arrow stop (13 at (296,221), 6 at (296,220)), without melee `0x1af 0x4201`.
   Creation now occurs in the bow clip near contact; frame/server scheduling delay remains visible.

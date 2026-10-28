@@ -71,7 +71,6 @@ static class PanelStats
         new("virtual_total_spell_chance_to_poison_on_hit_%", ["base_chance_to_poison_on_hit_%", "spells_chance_to_poison_on_hit_%"]),
         new("virtual_total_secondary_chance_to_poison_on_hit_%", ["base_chance_to_poison_on_hit_%"]),
         new("virtual_total_spell_impale_on_hit_%_chance", ["spells_impale_on_hit_%_chance", "impale_on_hit_%_chance"]),
-        new("impale_on_hit_%_chance", ["attacks_impale_on_hit_%_chance"]),
         new("reduce_enemy_fire_resistance_%", ["base_reduce_enemy_fire_resistance_%", ElementalPenetration, PenetrateElemental]),
         new("reduce_enemy_cold_resistance_%", ["base_reduce_enemy_cold_resistance_%", ElementalPenetration, PenetrateElemental]),
         new("reduce_enemy_lightning_resistance_%", ["base_reduce_enemy_lightning_resistance_%", ElementalPenetration, PenetrateElemental]),
@@ -225,6 +224,7 @@ static class PanelStats
         get(sum.Display) + Total(sum.Sources, get, level) + Total(sum.Local, local, level);
 
     static int Project(Sum sum, long value) => sum.Flag ? value > 0 ? 1 : 0
+        : ImpaleStats.IsDisplay(sum.Display) ? (int)Math.Clamp(value, 0, 100)
         : (int)Math.Clamp(value, int.MinValue, int.MaxValue);
 
     static readonly Sum[] SelectedSums = [.. Sums.Where(s => s.Display is "skill_area_of_effect_+%"
@@ -236,6 +236,8 @@ static class PanelStats
         or "virtual_frostburn_duration_+%" or "virtual_frostburn_effect_+%"
         or "virtual_shock_duration_+%" or "virtual_shock_effect_+%"
         or "virtual_sap_duration_+%" or "virtual_sap_effect_+%"
+        or "virtual_total_main_hand_impale_on_hit_%_chance" or "virtual_total_off_hand_impale_on_hit_%_chance"
+        or "virtual_total_spell_impale_on_hit_%_chance"
         || s.Display.Contains("_attack_damage_penetrates_", StringComparison.Ordinal))];
 
     /// <summary>Selected-skill aliases from original raw character and qualifying skill/support inputs.

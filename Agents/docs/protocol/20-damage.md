@@ -487,6 +487,57 @@ average range. The caller applies the target's resistance. Non-damaging ailments
 ailment damage, ailment chance/application and ailment duration stats are not modelled yet. Righteous Fire still uses
 its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignite.
 
+## 3a. Impale contacts and reflected damage
+
+`ImpaleStats` resolves unconditional general + attack/spell chance, the attacking weapon's local chance, general
+effect, spell-only effect, extra reflected hits and increased duration. The native spell-only effect name really is
+`impale_effect_+%_for_impales_inficted_by_spells` (the spelling is preserved). Critical spell hits also consume
+`spell_impale_on_crit_%_chance`; this is not an unconditional panel input. Actor and qualified own inputs sum in
+wide intermediates; chance clamps once to 0–100. The three selected virtual chance rows share raw source scope,
+with each hand's local snapshot supplied separately. Attack-only chance no longer becomes a general raw stat.
+
+`ImpaleState` stores 10% of the actual physical roll, after conversion and source modifiers/critical multiplier but
+before target reduction or damage taken, multiplied by increased impale effect. Each instance captures its hit
+count (base five) and duration (base eight seconds). On a later accepted hit, expired instances are removed,
+their stored values are summed into one reflected physical hit, remaining hit counts decrement, then a successful
+new chance/target-avoidance roll may add an instance. Nonphysical and zero-damage hits can trigger existing
+instances but cannot create one. There is no independent five-stack cap; modifiers can extend the effective count.
+The state uses the paused connection clock and lazy expiry at the next hit/state observation. Corpses retain their
+instances until expiry/removal; native impale-count/visual publication and corpse consumers are not implemented.
+
+The reflected total receives the existing target physical reduction and generic damage-taken calculation once.
+It receives no new source modifiers, conversion, critical multiplier, spell-only damage taken or returning-projectile
+multiplier. It causes no second on-hit/resource callback. Ordinary melee/bow and supported projectile/area paths
+all use this lifecycle. Reflection is combined with direct damage only for the existing Life/notification commit.
+Ordinary bow inputs, including chance/effect/duration/local sources, remain frozen at release; melee keeps its
+existing accepted-weapon snapshot and supported attacks use the contact weapon. Area state mutation occurs
+inside the accepted-contact lock after closed/leaving/paused/dead/action/cooldown guards. Existing projectile
+collision, accuracy and block guards remain ahead of mutation. Returning hits scale only their own direct damage
+and newly stored physical amount. Target avoidance prevents new instances, not consumption of existing ones.
+
+Evidence: extracted `SupportImpale` supplies attack chance 60 at level one. The reference library entry
+`pob/skills/SupportImpale`, pinned PoB commit `16de4b82d57f1c0de6eb40f37143c32d4da36a02`, and its
+`CalcOffence.lua` use eight seconds, five base hits and capped chance. Library `wiki/12484`, revision 1699530
+(2026-08-07, snapshot 2026-10-13), describes actual pre-mitigation physical damage, any later hit, duration and corpse
+retention. [Mark_GGG's explanation](https://www.reddit.com/r/pathofexile/comments/bxa11w/comment/eq4of7c/?context=10)
+confirms one reflected hit sums the instances and does not trigger on-hit effects. These references establish
+mechanics, not exact parity for every conditional source or the current extracted build.
+
+Decision: correct actual-roll storage and separate reflection using the existing target mitigation path instead of
+retaining the old maximum-roll/critical-multiplied bonus. Remove the unsupported five-stack cap and death clear.
+The alternative of leaving support chance as display-only would continue to omit gem attack/spell gameplay.
+Keep established action/snapshot timing while changing the impale lifecycle; do not introduce a global timer or
+rewrite other agents' live sessions to obtain native evidence. Existing monster armour modelling, official tick
+rounding, conditional weapon/Pride sources, extra applications, no-consumption/strongest-instance/Impaler rules,
+critical-only chance display and native source/link/equipment/transition checks remain explicit completion work.
+
+Automated checks reproduce the old min-roll error (10..20 stored 2 instead of 1) and double-critical error
+(direct 10 crit200 plus reflected10 dealt40 instead of30), then cover expiry, hit count, captured inputs, physical
+conversion, critical/target separation, local source removal and selected real support lifecycle. Parsed default
+melee/bow, Cyclone, Caustic Arrow (`PoisonArrow`), Fireball and Ice Nova contacts exercise application and target
+avoidance; zero-damage supported contacts trigger independently mitigated reflection. Rejected contacts leave
+state unchanged. Current-branch native validation remains pending; historical native checks used the old code.
+
 ## 4. What the server uses now
 
 - The default attack builds the active weapon's typed packet, or the class's Characters.dat unarmed packet, plus
