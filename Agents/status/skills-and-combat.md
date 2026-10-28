@@ -355,6 +355,9 @@ and can require explicit recipes.
   keeps one primary and cannot Split.
   The internal AltY row retains normal-KB compatibility, without establishing a third playable gem.
   Separate blast/placement radii use supported area stats once; independent explosions can overlap covered victims.
+  Each KB contact group excludes its own triggering enemy, including delayed explosions; other groups may hit it.
+  Automated checks cover large triggering victims, pierced neighbors and wall/range groups. Gateway actor radii
+  remain zero, so live area coverage uses monster centers rather than calibrated body intersections.
   KB centers use a fixed scaled circle and random sector angles, with separate first-delay/inter-slot parameters:
   immediate first blast, then 1/30 s between slots. These are user-tuned feel values, not official measurements.
   Secondary explosions use their own small-burst art and equipped MTX; native art scales to the actual blast radius.

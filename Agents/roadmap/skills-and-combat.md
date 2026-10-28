@@ -205,7 +205,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   production-input coverage, including raw item modifiers, scoped area damage and continuation/lifetime boundaries.
   Basic catalog flight does not implement all special skill behavior; unknown metadata is refused before costs.
   Earlier native packet/collision controls need retesting on the new path; actor positions still use integer walk
-  estimates and shared collision radii. Live hostile projectile adapters remain future work.
+  estimates and shared projectile radii; Gateway actor radii are zero, making area coverage center-based even
+  for large monsters. Calibrate combat body geometry against the available movement `ObjectSize` data.
+  Live hostile projectile adapters remain future work.
 - **Start:** user-run Fireball/KB checks from the skill guide, including return, terrain and overlapping explosions.
   Calibrate cluster radial distribution, counter-clockwise sequence timing and native art against client evidence.
   Build a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas

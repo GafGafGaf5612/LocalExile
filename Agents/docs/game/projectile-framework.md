@@ -35,6 +35,9 @@ profile or modifiers. Competing viable conversions remain an error; primary coun
 The common player defaults share direct-hit admission by emission, separately for outbound and return phases.
 Denied siblings pass through that victim. An evaded contact keeps flying without consuming continuation.
 Independent area events have independent admission and may overlap any geometrically covered target.
+Core contact tests combine projectile and actor radii; area tests combine area and actor radii. The Gateway
+adapter currently passes zero actor radii, so area coverage checks target centers, including for large monsters.
+Monster catalog `ObjectSize` feeds movement blocking but has not been calibrated as a circular combat radius.
 A terminal collision victim shares direct admission with its terminal area, receiving one area-classified hit
 instead of a direct hit plus another blast. An evaded terminal victim does not end the flight.
 

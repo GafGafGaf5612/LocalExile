@@ -32,7 +32,8 @@ A simultaneous volley admits one direct collision per target and phase. Denied s
 consuming continuations or spawning collision explosions. Return opens a separate shared admission phase.
 Fireball's terminal victim uses this direct admission but receives the captured area packet, so area increases and
 Concentrated Effect apply once without a direct-plus-blast double hit. Each distinct explosion admits covered targets
-independently: neighboring enemy/wall blasts may overlap, and KB does not grant its original victim area immunity.
+independently: each KB contact group excludes only the enemy that triggered that group, including its delayed slots.
+Explosions triggered by other enemies, walls or range stops can still hit that enemy and overlap independently.
 
 Split, Pierce, Fork, Chain and Return use the common ordered continuation rules. Finite pierce hands off after its
 last grant; prohibitions win. Clustering declares its area count consumer before resolution, so Fury Valve's quantity
@@ -110,6 +111,9 @@ AltX carries quantity-to-clusters and cannot-Split. These client values corrobor
 
 - [3.29.0 official patch notes](https://www.pathofexile.com/forum/view-thread/3985332): Fireball radius/effectiveness,
   both KB Arcane Might values, normal KB's area penalty, Clustering's 10–15% mana addition at levels 1–20.
+- [Mark_GGG, 2 August 2017](https://www.pathofexile.com/forum/view-thread/1930316/filter-account-type/staff):
+  a KB impact's explosion group cannot hit its own triggering enemy; other impact groups can hit that enemy.
+  This historical official rule is used for the KB family; no independent 3.29.3b measurement establishes equivalence.
 - [Mark_GGG, 20 April 2023](https://www.pathofexile.com/forum/view-thread/3373661/page/2#p24964202) and
   [Crucible FAQ](https://www.pathofexile.com/forum/view-thread/3361940): Fireball waits for exhausted continuation;
   KB explodes on impact or stopping, including while continuing; returning projectiles can pass the caster.
@@ -139,6 +143,7 @@ they do not establish official gameplay or visual parity.
 - Fireball: lone target and grouped enemies; extra-projectile direct admission; independent neighboring/wall blast
   overlap; pierce followed by fork/chain; terminal victim once with area supports; return deferral and actual final art.
 - KB: four separate bursts, repeated pierced impacts, terrain-blocked sectors, empty range and return turnaround;
+  each contact group's victim exclusion, including large targets and delayed slots, while other groups can hit it;
   large-target/neighbor overlap; separate area/placement growth and explosion-only damage penalty.
 - Clustering: three base bursts, quantity-to-explosions with GMP/Fury Valve, no Split, retained Fork and support penalty.
 - Ordinary bow/catalog flight: close/far aim spread, finite pierce handoff, return terrain collision, pause/transfer and

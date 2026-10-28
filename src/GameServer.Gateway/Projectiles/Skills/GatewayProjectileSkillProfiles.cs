@@ -41,7 +41,7 @@ static class GatewayProjectileSkillProfiles
                 CannotSplit = clustering,
                 CountConsumer = clustering ? ProjectileCountConsumer.ContactAreas : ProjectileCountConsumer.Primary,
                 ContactArea = new("kinetic-blast", 0, count, Multiplier: Math.Max(0, multiplier))
-                    { SectorPlacement = true, RespectTerrain = true,
+                    { SectorPlacement = true, RespectTerrain = true, ExcludeContactTarget = true,
                         Delay = ProjectileRuntime.Time(ClusterDelaySeconds),
                         Interval = ProjectileRuntime.Time(ClusterIntervalSeconds) },
                 EndAreaReasons = NonContactStops, EndAreaOnReturnTurnaround = true

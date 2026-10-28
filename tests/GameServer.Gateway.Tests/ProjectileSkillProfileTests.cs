@@ -201,7 +201,7 @@ public class ProjectileSkillProfileTests
         Assert.Single(w.Attempts); Assert.Equal("direct", w.Attempts[0].Stage);
         Assert.Equal(multiplier, p.ContactArea!.Multiplier);
         Assert.True(p.ContactArea.SectorPlacement); Assert.True(p.ContactArea.RespectTerrain);
-        Assert.False(p.ContactArea.ExcludeContactTarget);
+        Assert.True(p.ContactArea.ExcludeContactTarget);
     }
 
     [Fact]
@@ -260,13 +260,56 @@ public class ProjectileSkillProfileTests
         });
     }
 
-    [Fact]
-    public void Large_primary_victim_and_neighbors_can_receive_independent_KB_area_hits()
+    [Theory]
+    [InlineData("KineticBlast", 4)]
+    [InlineData("KineticBlastAltX", 3)]
+    [InlineData("KineticBlastAltY", 4)]
+    public void KB_contact_group_excludes_its_large_victim_but_all_blasts_can_hit_a_neighbor(string effect, int count)
     {
         var w = new ProjectileRuntimeProbe(); w.Targets.Add(new(new(1), 2, _ => new(40, 10), 60));
-        w.Release(Profile("KineticBlast")); w.Advance(.25);
-        Assert.Equal(5, w.Attempts.Count(h => h.Target.Id == 1));
-        Assert.All(w.Attempts.Where(h => h.IsArea), h => Assert.Equal(.6, h.Multiplier));
+        w.Target(2, 40, 100);
+        w.Release(Profile(effect, ("active_skill_base_area_of_effect_radius", 200))); w.Advance(.25);
+        Assert.Equal(count, Areas(w).Length);
+        Assert.Equal("direct", Assert.Single(w.Attempts, h => h.Target.Id == 1).Stage);
+        Assert.Equal(count, w.Attempts.Count(h => h.Target.Id == 2 && h.IsArea));
+    }
+
+    [Theory]
+    [InlineData("KineticBlast", 4)]
+    [InlineData("KineticBlastAltX", 3)]
+    [InlineData("KineticBlastAltY", 4)]
+    public void KB_pierced_contact_groups_only_exclude_their_own_victims(string effect, int count)
+    {
+        var w = new ProjectileRuntimeProbe(); w.Target(1, 40, 10); w.Target(2, 50, 10);
+        w.Release(Profile(effect, ("projectile_base_number_of_targets_to_pierce", 1),
+            ("active_skill_base_area_of_effect_radius", 100))); w.Advance(.8);
+        Assert.Equal(count * 2, Areas(w).Length);
+        foreach (uint id in new uint[] { 1, 2 })
+        {
+            Assert.Single(w.Attempts, h => h.Target.Id == id && !h.IsArea);
+            Assert.Equal(count, w.Attempts.Count(h => h.Target.Id == id && h.IsArea));
+        }
+    }
+
+    [Theory]
+    [InlineData("KineticBlast", 4, false)]
+    [InlineData("KineticBlast", 4, true)]
+    [InlineData("KineticBlastAltX", 3, false)]
+    [InlineData("KineticBlastAltX", 3, true)]
+    [InlineData("KineticBlastAltY", 4, false)]
+    [InlineData("KineticBlastAltY", 4, true)]
+    public void KB_wall_or_range_group_can_hit_an_earlier_pierced_victim(string effect, int count, bool wall)
+    {
+        var w = new ProjectileRuntimeProbe(); w.Target(1, 40, 10);
+        if (wall) w.Blocked = (x, _) => x >= 100;
+        w.Release(Profile(effect, ("projectile_base_number_of_targets_to_pierce", 1),
+            ("active_skill_base_area_of_effect_radius", 100)) with { Range = 90 }); w.Advance(1.5);
+        int terminalBlasts = Areas(w).Length - count;
+        Assert.InRange(terminalBlasts, 1, count);
+        Assert.Single(w.Attempts, h => h.Target.Id == 1 && !h.IsArea);
+        Assert.Equal(terminalBlasts, w.Attempts.Count(h => h.Target.Id == 1 && h.IsArea));
+        Assert.Equal(wall ? ProjectileEndReason.Terrain : ProjectileEndReason.Distance,
+            Assert.Single(w.Events, e => e.Kind == ProjectileEventKind.End).Reason);
     }
 
     [Fact]
