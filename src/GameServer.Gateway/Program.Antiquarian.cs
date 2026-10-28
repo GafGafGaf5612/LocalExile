@@ -65,7 +65,7 @@ partial class Program
     static void ClearAntiquarianOnDeath(ClientState conn)
     {
         if (conn.PlayerLife != 0) return;
-        conn.Antiquarian.Clear(); conn.Ward.SetMaximum(0);
+        conn.Antiquarian.Clear(); conn.EnduringCryRecovery.Clear(); conn.Ward.SetMaximum(0);
     }
 
     internal static byte[]? AntiquarianPresentation(ClientState conn)
@@ -79,12 +79,17 @@ partial class Program
             double adrenaline = conn.PlayerLife > 0 && conn.Antiquarian.Adrenaline(conn.Clock.Elapsed.TotalSeconds)
                 ? conn.Antiquarian.AdrenalineUntil : double.NegativeInfinity;
             double recovery = conn.Antiquarian.RecoveryUntil(conn.Clock.Elapsed.TotalSeconds);
-            if (conn.SentWard == ward && conn.SentAdrenalineUntil == adrenaline && conn.SentStunRecoveryUntil == recovery)
+            double cry = conn.EnduringCryRecovery.Rate(conn.Clock.Elapsed.TotalSeconds) > 0
+                ? conn.EnduringCryRecovery.Until : double.NegativeInfinity;
+            if (conn.SentWard == ward && conn.SentAdrenalineUntil == adrenaline
+                && conn.SentStunRecoveryUntil == recovery && conn.SentEnduringCryUntil == cry)
                 return null;
             var bytes = new List<byte>();
             if (conn.WardBuff != 0) bytes.AddRange(InstanceEntities.RemoveBuff(PlayerId, conn.WardBuff));
             if (conn.AdrenalineBuff != 0) bytes.AddRange(InstanceEntities.RemoveBuff(PlayerId, conn.AdrenalineBuff));
+            if (conn.EnduringCryBuff != 0) bytes.AddRange(InstanceEntities.RemoveBuff(PlayerId, conn.EnduringCryBuff));
             conn.WardBuff = conn.AdrenalineBuff = 0;
+            conn.EnduringCryBuff = 0;
             if (ward.Maximum > 0 && ward.Broken)
                 bytes.AddRange(InstanceEntities.AddBuff(PlayerId, conn.WardBuff = conn.NextBuff++,
                     AntiquarianEffects.WardBrokenDefinition, PlayerId));
@@ -92,10 +97,14 @@ partial class Program
                 bytes.AddRange(InstanceEntities.AddBuff(PlayerId, conn.AdrenalineBuff = conn.NextBuff++,
                     AntiquarianEffects.AdrenalineDefinition, PlayerId,
                     u68: BitConverter.SingleToUInt32Bits((float)Math.Max(0, adrenaline - conn.Clock.Elapsed.TotalSeconds))));
+            if (double.IsFinite(cry))
+                bytes.AddRange(InstanceEntities.AddBuff(PlayerId, conn.EnduringCryBuff = conn.NextBuff++, 1541, PlayerId,
+                    u68: BitConverter.SingleToUInt32Bits((float)Math.Max(0, cry - conn.Clock.Elapsed.TotalSeconds))));
             bytes.AddRange(PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)));
             bytes.AddRange(InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []));
             conn.SentWard = ward; conn.SentAdrenalineUntil = adrenaline;
             conn.SentStunRecoveryUntil = recovery;
+            conn.SentEnduringCryUntil = cry;
             Console.WriteLine($"[gateway] Antiquarian Ward {conn.Ward.Current}/{conn.Ward.Maximum}, "
                 + $"broken={conn.Ward.Broken}, Adrenaline={double.IsFinite(adrenaline)}");
             return [.. bytes];
@@ -106,7 +115,7 @@ partial class Program
         Send(remote, stream, ciphers, [], null, atGate: () => AntiquarianPresentation(conn));
 
     sealed record AntiquarianTransfer(string Character, DateTime At, AntiquarianCombatState.Carried Buffs,
-        bool Broken, double WardSeconds);
+        bool Broken, double WardSeconds, TimedLifeRecovery.Carried Cry);
     static readonly ConcurrentDictionary<uint, AntiquarianTransfer> CarriedAntiquarian = new();
 
     internal static void CarryAntiquarian(ClientState conn, uint ticket)
@@ -120,7 +129,8 @@ partial class Program
             foreach (var (old, entry) in CarriedAntiquarian)
                 if (DateTime.UtcNow - entry.At > TimeSpan.FromMinutes(5)) CarriedAntiquarian.TryRemove(old, out _);
             CarriedAntiquarian.TryAdd(ticket, new(CharacterName(conn), DateTime.UtcNow,
-                conn.Antiquarian.Carry(now), conn.Ward.Broken, Math.Max(0, conn.Ward.RestoresAt - now)));
+                conn.Antiquarian.Carry(now), conn.Ward.Broken, Math.Max(0, conn.Ward.RestoresAt - now),
+                conn.EnduringCryRecovery.Carry(now)));
         }
     }
 
@@ -134,6 +144,7 @@ partial class Program
             if (conn.PlayerLife == 0 || DateTime.UtcNow - carry.At > TimeSpan.FromMinutes(5)) return;
             double now = conn.Clock.Elapsed.TotalSeconds;
             conn.Antiquarian.Restore(carry.Buffs, now);
+            conn.EnduringCryRecovery.Restore(carry.Cry, now);
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.Ward.RestoreCarried(carry.Broken, carry.WardSeconds, now);
             conn.ApplyMovementSpeed();

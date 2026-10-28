@@ -508,7 +508,7 @@ partial class Program
             });
             return true;
         }
-        if (gem.Name is not null && UseChargeSkill(conn, gem.Effect, gem.Level, gem.Quality, from)) return true;
+        if (gem.Name is not null && UseChargeSkillInstance(conn, skillId, gem.Effect, gem.Level, gem.Quality, from)) return true;
         if (gem.Name is not null && IsRighteousFire(gem.Effect))
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else

@@ -74,6 +74,10 @@ Lioneye's reduced Dexterity shares the normal attribute calculation before requi
 Whaletooth's derived duration is added once from complete groups of final Strength to a fresh stat snapshot.
 It reaches supported owner skill-duration consumers; it does not change a minion's own skill duration.
 The prerequisite implementation is composed from PR #323 head `8b681aef`.
+Enduring Cry now supplies a concrete owner-duration consumer alongside its existing charge generation.
+The target stat set gives 2500 ms and 120% Life/min per five Power, capped at 25 Power by its stat description.
+Whaletooth and compatible duration supports scale that recovery interval, retaining its rate.
+The native recovery buff, exact resource integral, death cleanup and transfer use the same paid skill snapshot.
 
 Turtle Shell runs only after the existing supported physical melee stun is accepted.
 The common stat projection already maps base stun recovery to the final recovery stat; never add it twice.

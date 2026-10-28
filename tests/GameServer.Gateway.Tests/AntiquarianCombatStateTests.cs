@@ -52,4 +52,17 @@ public class AntiquarianCombatStateTests
         Assert.Equal((int.MaxValue, 0, 0), new AttributeModifiers(Strength: long.MaxValue,
             Intelligence: long.MaxValue, ZeroIntelligence: true).Apply());
     }
+
+    [Fact]
+    public void Paid_skill_recovery_and_duration_supports_share_one_frozen_interval()
+    {
+        double duration = SkillDurationModifiers.Seconds(2500, name => name == "skill_effect_duration_+%" ? 27 : 0,
+            name => name == "support_more_duration_skill_effect_duration_+%_final" ? 40 : 0);
+        Assert.Equal(4.445, duration, 8);
+        var effect = new TimedLifeRecovery(); effect.Begin(10, duration, 100);
+        Assert.Equal(100, effect.Take(11));
+        var next = new TimedLifeRecovery(); next.Restore(effect.Carry(12), 0);
+        Assert.Equal(344.5, next.Take(10), 6);
+        Assert.Equal(0, next.Take(20)); next.Clear(); Assert.Equal(0, next.Rate(0));
+    }
 }

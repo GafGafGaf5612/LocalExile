@@ -1,4 +1,4 @@
-using System.Reflection;
+using GameServer.Core.Protocol.Instance;
 using GameServer.Core.World;
 
 namespace GameServer.Gateway.Tests;
@@ -138,5 +138,25 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.True(ProgramValue<bool>("IsInactive", game.State, robe.Id));
         Assert.Contains("intelligence", ProgramValue<string?>("GemRequirementsUnmet", game.State, fireball));
         Assert.Equal(0u, game.State.Pools.EnergyShield);
+    }
+
+    [Fact]
+    public async Task Actual_Enduring_Cry_consumes_Whaletooth_duration_and_retains_its_recovery_rate()
+    {
+        if (!DataAvailable()) return;
+        using var game = new GatewayCharacter(classRow: 0, baseClass: 1, choice: "Antiquarian",
+            nodes: AntiquarianBuilds[1], level: 60);
+        game.State.Monsters[2] = new SpawnedMonster("power", new(32, 32, 0), 0, 2, 100)
+            { Rarity = MonsterRarity.Unique, Hostile = true };
+        game.State.PlayerStats[Program.Stats.Key("warcry_speed_+%")!.Value] = 10000;
+        double before = game.State.Clock.Elapsed.TotalSeconds;
+        Assert.True(ProgramValue<bool>("UseChargeSkill", game.State, Program.Skills.EffectRow("EnduringCry"), 1, 0, (32, 32)));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (game.State.EnduringCryRecovery.Until == 0) await Task.Delay(10, timeout.Token);
+        double after = game.State.Clock.Elapsed.TotalSeconds;
+        Assert.InRange(game.State.EnduringCryRecovery.Until, before + 3.175, after + 3.175);
+        Assert.Equal(game.State.PlayerMaxLife * .08, game.State.EnduringCryRecovery.Rate(after), 8);
+        Assert.Equal(game.State.PlayerMaxLife * .08 * 3.175, game.State.EnduringCryRecovery.Take(after + 10), 6);
+        Assert.Equal(0, game.State.EnduringCryRecovery.Take(after + 11));
     }
 }

@@ -327,6 +327,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly PlayerHitRecovery HitRecovery = new();
     public readonly WardState Ward = new();
     public readonly AntiquarianCombatState Antiquarian = new();
+    public readonly TimedLifeRecovery EnduringCryRecovery = new();
+    public double SentEnduringCryUntil = double.NaN;
+    public ushort EnduringCryBuff;
     public bool AppliedAdrenaline;
     public (uint Maximum, bool Broken)? SentWard;
     public double SentAdrenalineUntil = double.NaN;

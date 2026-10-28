@@ -147,7 +147,8 @@ partial class Program
             // Turtle Shell's exact one-second integral is consumed separately by the resource writer.
             if (Stats.Key("base_life_regeneration_rate_per_minute") is uint turtle)
                 stats[turtle] = (int)Math.Clamp(stats.GetValueOrDefault(turtle)
-                    + conn.Antiquarian.RecoveryPerSecond(conn.Clock.Elapsed.TotalSeconds) * 60, 0, int.MaxValue);
+                    + (conn.Antiquarian.RecoveryPerSecond(conn.Clock.Elapsed.TotalSeconds)
+                        + conn.EnduringCryRecovery.Rate(conn.Clock.Elapsed.TotalSeconds)) * 60, 0, int.MaxValue);
             var session = FortificationOf(conn);
             var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
             AddFortificationCounts(stats, value);

@@ -469,7 +469,8 @@ partial class Program
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
                     double fortificationLife = FortificationOf(conn).TakeRecovery(conn.Clock.Elapsed.TotalSeconds);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
-                        life + lifeRate * seconds + fortificationLife + conn.Antiquarian.TakeRecovery(now) - lifeBurn, ref lifeCarry, minimum: 1);
+                        life + lifeRate * seconds + fortificationLife + conn.Antiquarian.TakeRecovery(now)
+                            + conn.EnduringCryRecovery.Take(now) - lifeBurn, ref lifeCarry, minimum: 1);
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
                         mana + manaRate * seconds, ref manaCarry);
                 }
