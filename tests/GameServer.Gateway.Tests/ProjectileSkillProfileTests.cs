@@ -272,7 +272,7 @@ public class ProjectileSkillProfileTests
     public void Catalog_uses_common_defaults_including_base_count_spread_and_named_return_restrictions()
     {
         var p = Program.CatalogProjectileDefinition(Program.Skills.EffectRow("BurningArrow"))!
-            .Resolve(Stats(("base_number_of_projectiles", 2), ("attacks_number_of_additional_projectiles", 2)), 100);
+            .Parameters.Resolve(Stats(("base_number_of_projectiles", 2), ("attacks_number_of_additional_projectiles", 2)), 100);
         Assert.Equal(4, p.Count); Assert.Equal(40, p.AimSpreadDistance); Assert.Equal(ProjectileHitScope.Emission, p.HitRule.Scope);
         Assert.Null(p.OutboundHitLimit); Assert.Null(p.ReturnHitLimit); Assert.False(p.IgnoreTerrainOnReturn);
         Assert.True(Profile("Spark", ("projectiles_return", 1)).CannotReturn);

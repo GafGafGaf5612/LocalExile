@@ -22,7 +22,7 @@ partial class Program
                 throw new InvalidOperationException("no supported projectile damage plan");
             var resolved = MergeSkillStats(CharacterPlayerStats(conn), SupportedSkill(conn, skillId).Stats);
             int Get(string name) => Stats.Key(name) is uint key ? resolved.GetValueOrDefault(key) : 0;
-            _ = definition.Resolve(Get, 1);
+            _ = definition.Parameters.Resolve(Get, 1);
             var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             if (definition.RequiresTerrain && ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, at.X, at.Y) is null)
                 throw new InvalidOperationException("Projectile recipe requires a projectile terrain mask");
@@ -78,7 +78,7 @@ partial class Program
         double speed = ProjectileSpeed.CellsPerSecond(baseSpeed, Player, Own, Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
         if (!double.IsFinite(speed) || speed <= 0)
             throw new InvalidOperationException("Projectile release requires a finite positive speed.");
-        var profile = definition.Resolve(Get, speed);
+        var profile = definition.Parameters.Resolve(Get, speed);
         var at = conn.Walk.Position(session.Runtime.Now / (double)ProjectileRuntime.QuantaPerSecond);
         var origin = ProjectileSession.Vector(at);
         if (definition.RequiresTerrain && ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, at.X, at.Y) is null)

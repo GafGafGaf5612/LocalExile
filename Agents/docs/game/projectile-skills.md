@@ -19,12 +19,14 @@ it does not establish those skills' special mechanics. Missing metadata or damag
 no public evidence here establishes a third playable gem. The normal/Clustering base cluster totals are four/three,
 not five/four inferred from tooltip wording about additional explosions. Exported `cluster_burst_spawn_amount` wins.
 
-Native skill-bar records publish resolved projectile count and pierce/fork/chain totals separately from raw modifiers.
+Native skill-bar records publish resolved projectile count, pierce/fork/chain/split and return separately from raw modifiers.
 KB also publishes `virtual_kinectic_blast_number_of_clusters` (the exported spelling) from its contact-area recipe.
 Normal KB with GMP fires five projectiles while keeping its per-impact explosion count; Clustering fires one projectile
 and adds GMP's four extra projectiles to its explosion count. Gem quality contributes before this projection.
 Unlinking supports rebuilds these display totals; projection does not change gameplay inputs or apply modifiers twice.
 The client selects native wording; visible layout still requires user-operated validation.
+Skill parameter overrides also apply without native projectile metadata: known return prohibitions still suppress
+return descriptions, while the lack of an executable definition continues to reject release.
 
 A simultaneous volley admits one direct collision per target and phase. Denied siblings pass through without
 consuming continuations or spawning collision explosions. Return opens a separate shared admission phase.
