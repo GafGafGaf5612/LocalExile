@@ -37,9 +37,19 @@ This scan supports document navigation; it is not a claim that every statement h
 
 Exact C# literal matches are navigation candidates only.
 Interpolated names and numeric keys must be traced manually; absence of a literal does not establish missing behavior.
-All generated review states remain `unreviewed`, deliberately avoiding automatic certification.
-The concrete findings below and the protocol/status documents provide the reviewed evidence.
+The [authored stat ledger](issue75-stat-ledger.md) lists each of the 357 targets exactly once. Its current
+40 `partial` and 317 `pending` entries are audit dispositions, not implemented-stat counts. No entry is certified
+complete on the current branch. Partial records link the reviewed corrections and their unresolved scope;
+pending records do not imply absence of implementation or historical evidence.
+The inventory copies these authored states and their links without inferring completion from literal matches.
+It rejects missing, duplicate or unexpected ledger names. The 134 supporting dependencies stay `unreviewed`
+in this report. The concrete findings below and protocol/status documents provide the detailed evidence.
 Generated reports contain extracted metadata and remain ignored; do not commit the tables or client files.
+
+Ledger validation reproduced the exact 357-name set and accepted both LF and CRLF Markdown. Deliberate missing,
+duplicate and unexpected names were rejected; local fixtures remain under `artifacts/issue75-review/ledger-checks/`.
+Decision: keep explicit partial/pending states and per-stat links rather than treating source-name matches or
+historical certificates as completion. The ledger defines the evidence required to change a row to complete.
 
 ## Confirmed defects addressed
 

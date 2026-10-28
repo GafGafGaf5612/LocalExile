@@ -2007,6 +2007,13 @@ ring will require its actual radius rather than this marker. The skill-bar assoc
 
 ## 14. Character panel sums
 
+The [issue #75 ledger](../dev/issue75-stat-ledger.md) records all 357 virtual dependencies individually, with
+partial/pending review states and links to evidence or remaining work. The 387 rows also use 134 nonvirtual
+dependencies. `scripts/dev/audit-character-panel.py` checks the ledger's exact membership against the local
+tables. Decision: keep authored review state separate from source matches and historical native certificates;
+automatically treating those as completion would hide unresolved sources, consumers and lifecycle behavior.
+The ledger's counts are audit states, not numbers of completed implementations.
+
 The character panel (CharacterPanelStats.dat, 387 rows) reads mostly virtual stats that the server computes; the client
 derives none of them (§4). Passives and item mods give the base form (`base_stun_recovery_+%`) while the Stun Recovery
 row reads `stun_recovery_+%`. `PanelStats` (issue #75) lists, for about 150 display stats, what each one sums: the display

@@ -32,6 +32,10 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### The player's real stats
 
+Track the exact issue #75 target in the [357-stat ledger](../docs/dev/issue75-stat-ledger.md). Partial audit
+records retain their unresolved scope; pending records need individual tracing. No current-branch completion
+certificate follows from a historical native run or a matching source name. The inventory rejects membership drift.
+
 Ordinary melee/bow now share defender evasion entropy and independent critical confirmation, with target
 evasion modifiers/Blind, target Masteries, qualified raw cannot-evade flags and evaded-arrow continuation.
 Selected flat/increased accuracy supports and raw actor overrides now compose before the final floor.

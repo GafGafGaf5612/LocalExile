@@ -729,6 +729,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   ([11](../docs/protocol/11-skills.md) 13).
 - **Stats.** The client's stat key is the Stats.dat row + 1 with the vendored schema
   ([11](../docs/protocol/11-skills.md) §8); `/set_stat` takes stat names or keys.
+  The [357-stat ledger](../docs/dev/issue75-stat-ledger.md) tracks current individual review state and remaining
+  scope. The inventory validates exact membership; these states do not count completed implementations.
   The player's life, mana, accuracy, armour and evasion come from its class and level, with the attributes' bonuses
   (energy shield, evasion and melee physical damage increases);
   accuracy also takes its flat/increased passives, weapon-specific stats and Accuracy Mastery (rating for the panel,
