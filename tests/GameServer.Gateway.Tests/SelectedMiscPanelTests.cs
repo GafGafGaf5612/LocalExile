@@ -17,8 +17,17 @@ public sealed partial class AscendancyGatewayIntegrationTests
             "display_skill_increased_item_rarity_+%", 10, 40, 0),
         "minion" => new("SkillGemRaiseZombie", "SupportGemMinionDamage", "SupportMinionDamage",
             "minion_damage_+%", "minion_damage_+%", "virtual_minion_damage_+%", 15, 10, 20),
+        "fire-penetration" => PenetrationSpec("Fire"),
+        "cold-penetration" => PenetrationSpec("Cold"),
+        "lightning-penetration" => PenetrationSpec("Lightning"),
         _ => throw new ArgumentOutOfRangeException(nameof(field)),
     };
+
+    static SelectedMiscCase PenetrationSpec(string element) => new("SkillGemFireball",
+        $"SupportGem{element}Penetration", $"Support{element}Penetration",
+        $"base_reduce_enemy_{element.ToLowerInvariant()}_resistance_%",
+        $"base_reduce_enemy_{element.ToLowerInvariant()}_resistance_%",
+        $"reduce_enemy_{element.ToLowerInvariant()}_resistance_%", 10, 20, 0);
 
     static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
 
@@ -26,6 +35,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("area")]
     [InlineData("rarity")]
     [InlineData("minion")]
+    [InlineData("fire-penetration")]
+    [InlineData("cold-penetration")]
+    [InlineData("lightning-penetration")]
     public void Selected_misc_real_supports_compose_once_and_follow_link_and_source_removal(string field)
     {
         var spec = SelectedMiscSpec(field);
@@ -74,6 +86,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("area")]
     [InlineData("rarity")]
     [InlineData("minion")]
+    [InlineData("fire-penetration")]
+    [InlineData("cold-penetration")]
+    [InlineData("lightning-penetration")]
     public void Selected_misc_signed_cancellation_and_final_developer_zero_replace_the_full_selected_sum(string field)
     {
         var spec = SelectedMiscSpec(field);
@@ -106,6 +121,41 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
         game.AssertControls(spec.Actor);
         Assert.Equal(spec.Actor, game.State.PlayerStats[SelectedMiscKey(spec.ActorSource)]);
+    }
+
+    [Theory]
+    [InlineData("Fire", GameServer.Core.World.DamageType.Fire)]
+    [InlineData("Cold", GameServer.Core.World.DamageType.Cold)]
+    [InlineData("Lightning", GameServer.Core.World.DamageType.Lightning)]
+    public void Selected_penetration_matches_hit_sources_and_support_requirement_changes(string element,
+        GameServer.Core.World.DamageType damageType)
+    {
+        var spec = PenetrationSpec(element);
+        using var game = new SelectedMiscCharacter(spec);
+        game.Socket();
+        game.State.PlayerStats[SelectedMiscKey("base_penetrate_elemental_resistances_%")] = 5;
+        game.Refresh();
+
+        void Check(int expected, bool supported)
+        {
+            var view = game.Read();
+            Assert.Equal(expected, view.Get(spec.Alias));
+            var actor = Program.CharacterPlayerStats(game.State);
+            Assert.Equal(expected, Penetration.Of(actor, Program.Stats, attack: false, view.Own).Of(damageType));
+            if (supported) game.AssertSupported(view);
+            else Assert.Empty(view.Applied);
+            Assert.Equal(15, game.Read(other: true).Get(spec.Alias));
+        }
+
+        Check(35, supported: true);
+        game.SetQualifier(false);
+        Assert.NotNull(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.SupportGem));
+        Assert.DoesNotContain(game.HostId, Program.InactiveItems[game.Character]);
+        Check(15, supported: false);
+        game.SetQualifier(true);
+        Check(35, supported: true);
+        game.Socket(linked: false);
+        Check(15, supported: false);
     }
 
     [Fact]

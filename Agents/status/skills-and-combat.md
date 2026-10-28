@@ -310,6 +310,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   area-transition object creation share that snapshot with later `PlayerSkills` refreshes; Cyclone's radius inputs
   are calculated before the selected overlay and keep their existing result.
   Real supports cover area 20+30=50, minion 15+quality 10=25 and ordinary Item Rarity 10+40=50.
+  Selected fire/cold/lightning penetration now also includes the linked support's raw contribution.
+  Each real level-one support adds 20 to actor 10, displaying 30 instead of the previous incorrect 10.
+  Nine new Gateway regressions cover link/source removal, cancellation, overrides, requirements and skill isolation;
+  general elemental penetration composes to 35 in both the panel and hit consumer.
+  These pass within 29 focused checks on this branch; fresh native verification remains pending.
   Historical LocalExile Ruthless support exclusions are outside this branch. Link/source removal, incompatible or unqualified supports,
   unrelated/default skills and repeated builds are covered; minion combat and item-drop execution remain separate.
   Added-base critical/default-mirror/selected-alias cases pass 52/19/22 new tests plus 95 existing controls:

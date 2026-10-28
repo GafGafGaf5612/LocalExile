@@ -85,6 +85,10 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   creation and later skill refreshes share the snapshot path. Real support controls cover ordinary availability.
   The historical LocalExile Ruthless exclusion of Item Rarity Support is outside this port.
   Minion combat/drop execution and native alias checks remain open.
+  Selected spell penetration now includes real Fire/Cold/Lightning Penetration supports, with source/link/requirement
+  lifecycle and hit-consumer agreement covered by nine new Gateway regressions.
+  Verify the three updated rows natively; attack-hand alias composition, display prohibitions and the remaining
+  penetration sources still need implementation and validation.
   Added-base/default-mirror/selected-alias coverage passes 52/19/22 new cases and 95 existing controls: 188 focused
   cases without skips. Fresh full Gateway 3803/Core 648/Data 37 pass without skips (4488 freshly rerun cases).
   The current hook records six actual unobserved disposed-NetworkStream faults, all `MonsterKilled` through

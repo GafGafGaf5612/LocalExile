@@ -1934,8 +1934,9 @@ recovery, maximum-pool percentage sources, prohibitions or other conditional ope
 sum is a display coefficient; actual flask use and local/global factor composition are documented in
 [13-items.md](13-items.md#8-life-and-mana-flasks).
 
-Three selected aliases now derive from one immutable raw character snapshot plus the qualifying skill/support's own
-raw inputs: `skill_area_of_effect_+%`, `display_skill_increased_item_rarity_+%` and `virtual_minion_damage_+%`.
+Selected aliases derive from one immutable raw character snapshot plus the qualifying skill/support's own raw
+inputs: `skill_area_of_effect_+%`, `display_skill_increased_item_rarity_+%`, `virtual_minion_damage_+%` and
+`reduce_enemy_fire/cold/lightning_resistance_%`.
 The rarity sum includes direct/base item rarity and `base_killed_monster_dropped_item_rarity_+%`; the minion sum
 includes increased `minion_damage_+%`, keeping support MORE separate. Previously derived actor aliases are not fed
 back as source inputs. The completed signed sum clamps once and retains explicit zero after cancellation/removal;
@@ -1950,6 +1951,16 @@ mode-specific availability is outside this branch. Actor sources and explicit fi
 replacements still work. Requirement failure, incompatible supports, unlink/relink/removal, unrelated/default skill
 isolation and repeated builds are covered. This changes selected publication; it does not add minion combat or
 item-drop execution, and native validation of these aliases remains outstanding.
+
+The three elemental penetration aliases previously inherited only the character's value even when a linked
+support supplied more penetration to the hit calculation.
+Real level-one Fire/Cold/Lightning Penetration supports each grant 20 through their matching base stat.
+Character 10 plus support 20 now publishes 30; adding general elemental penetration 5 gives 35 in both the
+selected record and the existing hit consumer.
+Nine Gateway regressions cover all three elements, link/source removal, signed cancellation, explicit final
+zero/replacement, support requirement failure/recovery and unrelated/default-skill isolation.
+These pass within 29 focused tests on this branch; fresh native panel verification remains pending.
+Attack-hand aliases, penetration prohibitions in the display and unsupported penetration sources remain separate work.
 
 `PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
 

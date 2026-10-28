@@ -37,7 +37,8 @@ public sealed class SelectedPanelStatCompositionTests
         var actor = new Dictionary<string, int> { ["base_skill_area_of_effect_+%"] = 20 };
         var own = new Dictionary<string, int> { ["base_skill_area_of_effect_+%"] = -20 };
         var cancelled = Selected(actor, own);
-        Assert.Equal(3, cancelled.Count);
+        Assert.Contains("skill_area_of_effect_+%", cancelled.Keys);
+        Assert.Contains("reduce_enemy_fire_resistance_%", cancelled.Keys);
         Assert.All(cancelled.Values, value => Assert.Equal(0, value));
         actor.Clear(); own.Clear();
         Assert.All(Selected(actor, own).Values, value => Assert.Equal(0, value));

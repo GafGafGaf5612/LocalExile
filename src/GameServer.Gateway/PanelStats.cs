@@ -223,7 +223,9 @@ static class PanelStats
         : (int)Math.Clamp(value, int.MinValue, int.MaxValue);
 
     static readonly Sum[] SelectedSums = [.. Sums.Where(s => s.Display is "skill_area_of_effect_+%"
-        or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%")];
+        or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%"
+        or "reduce_enemy_fire_resistance_%" or "reduce_enemy_cold_resistance_%"
+        or "reduce_enemy_lightning_resistance_%")];
 
     /// <summary>Selected-skill aliases from original raw character and qualifying skill/support inputs.
     /// Derive each alias once, clamp the completed sum, and retain zero to clear a removed contribution.
