@@ -353,6 +353,7 @@ partial class Program
     static async Task ChangeArea(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PendingTransfer t, string why)
     {
         if (!conn.TryBeginAreaChange(t, out var projectiles)) return;
+        await CancelPlayerTrade(conn, "left the area");
         // Remove outstanding visuals while the old world still exists, before 0x2b2. If Auth refuses the transfer,
         // their canceled tasks must not leave permanent projectile/explosion objects in the retained world.
         foreach (uint id in projectiles)
