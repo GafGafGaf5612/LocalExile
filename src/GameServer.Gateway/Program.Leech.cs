@@ -6,6 +6,26 @@ partial class Program
     static readonly ConditionalWeakTable<ClientState, LeechSession> LeechSessions = new();
     internal static LeechSession LeechOf(ClientState conn) => LeechSessions.GetValue(conn, _ => new());
 
+    static (bool Life, bool Mana, bool EnergyShield, bool FullEnergyShield) LeechContext(ClientState conn)
+    {
+        lock (conn.Monsters)
+        {
+            TrimLeechLocked(conn);
+            if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0) return default;
+            var active = LeechOf(conn).Active(conn.Clock.Elapsed.TotalSeconds);
+            return (active.Life, active.Mana, active.EnergyShield, conn.EnergyShield.Full);
+        }
+    }
+
+    static void WithLeechConditions(ClientState conn, Dictionary<uint, int> stats)
+    {
+        var state = LeechContext(conn);
+        foreach (var (name, active) in new[] { ("is_life_leeching", state.Life), ("is_mana_leeching", state.Mana),
+            ("is_es_leeching", state.EnergyShield), ("is_leeching", state.Life || state.Mana || state.EnergyShield),
+            ("on_full_energy_shield", state.FullEnergyShield) })
+            if (Stats.Key(name) is uint key) stats[key] = active ? 1 : 0;
+    }
+
     static void ConfigureLeech(ClientState conn, Func<string, int> get, IReadOnlyDictionary<uint, int> replacements,
         bool onLowLife)
     {

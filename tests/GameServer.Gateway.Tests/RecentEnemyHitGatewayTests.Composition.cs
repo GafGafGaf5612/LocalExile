@@ -123,6 +123,12 @@ public partial class RecentEnemyHitGatewayTests
                 if (change == "chaos-off") f.Conn.Pools = f.Conn.Pools with { ArmourAppliesToChaosDamage = false };
             }
             if (change == "expiry") await Task.Delay(1100);
+            // Waiting for the recent-hit window must not introduce an unrelated evasion reseed draw.
+            lock (f.Conn.Monsters)
+            {
+                f.Conn.EvasionEntropy = 99;
+                f.Conn.LastEvasionAt = f.Conn.Clock.Elapsed.TotalSeconds;
+            }
         }
         finally { f.Gate.Release(); }
         await swing.WaitAsync(TimeSpan.FromSeconds(5));

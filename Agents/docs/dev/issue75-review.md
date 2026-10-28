@@ -506,6 +506,51 @@ pass (`core-ghost-reaver.trx`, `data-ghost-reaver.trx`), and the corrected compl
 (`gateway-ghost-reaver-final.trx`): 5,013 total, no skips. The exact 357-row audit remains 82 partial/275 pending.
 The first full Gateway receipt retains four failed fixture assertions and 4,430 passing cases for comparison.
 
+## Live leech conditions and Energy Leech damage
+
+Four new regressions reproduce ignored Energy Leech conditional damage and forgeable raw leeching flags
+(`leech-conditions-reproduced.trx`). Live flags now come from actual per-resource instances and the ES pool.
+Expiry inspection leaves pending recovery for the resource writer, and instant-only grants do not manufacture
+a persistent leech state. The existing player tick publishes condition changes without requiring another action.
+
+The hit resolver applies general, per-resource, attack-only and physical-during-Life-leech increases in their
+correct buckets, including physical conversion history. Energy Leech's current 15% full-ES MORE source stays
+separate from its 1%-per-quality increased damage while ES leeching. The retained legacy conditional MORE source
+is also gated. Pinned PoB `Data/Skills/sup_int.lua:2214`, stat descriptions and actual qualified support stats
+provide the source evidence. These formulas affect the authoritative hit and the selected hit projection.
+
+Twenty-three new cases pass in `leech-conditions-contacts.trx`: scoped damage/conversion and distinct MORE
+operators, non-draining expiry reads, real quality/full-ES/overleech/unlink behavior, unforgeable condition flags,
+committed projectile damage and an observed idle player tick. The earlier focused set passed 19 cases, including
+the existing timing/session controls (`leech-conditions-focused.trx`).
+
+The first full Gateway run passed 4,453 and failed four (`gateway-leech-conditions.trx`). One new committed-hit
+expectation rounded the total instead of flooring each component endpoint as `DamageRange.Roll` does; correct the
+expectation without changing production damage. Two piercing-flight fixtures raced target/transfer mutations
+against fixed wall-clock delays; they now acquire the send gate after creation, pause the game clock, observe the
+launch packet and mutate before resuming. A queued recent-hit fixture now seeds its unrelated evasion state after
+its deliberate expiry wait. All 33 new/affected focused cases pass (`leech-conditions-corrected.trx`).
+The next full run passed 4,456 and failed one (`gateway-leech-conditions-corrected.trx`), exposing an existing
+two-flight test's assumption that entropy never expires under load.
+It now permits the legitimate inactivity reseed with a deterministic hit value while retaining exact damage and
+target-exclusion assertions. Core's explicit-time tests still enforce the 3.33-second boundary. These fixture
+choices avoid widening timeouts, weakening contact assertions or accepting a lucky rerun.
+The third full run passed 4,456 with one unrelated save-concurrency fixture timeout
+(`gateway-leech-conditions-final.trx`). A synchronous loopback connect could enter the held save lock before the
+test coordinator reached its release. Schedule publication independently, as the fixture already does for the
+grant, so the coordinator always releases that lock. No save/gameplay behavior changes.
+
+Decision: use instance existence rather than nonzero recovery or developer-supplied condition values. Recovery
+suppression need not remove an instance, and immediate leech has no lasting instance. Read expiry without taking
+recovery so UI/damage queries cannot consume healing. Add only evidenced hit-damage scopes rather than broad
+name-based rules; speed, defence, ailments, DoT and other conditional consumers remain explicit work. The module
+records these choices and alternatives. Native flag/prediction/lifecycle parity is still open; no live sessions ran.
+
+Final validation: solution build has zero warnings/errors (`build-leech-conditions-verified.log`), Core 561 and
+Data 18 pass (`core-leech-conditions.trx`, `data-leech-conditions.trx`), and the complete Gateway suite passes
+4,457 (`gateway-leech-conditions-verified.trx`): 5,036 total, no skips. The prior failed receipts remain intact.
+The exact inventory remains 357 virtual stats, 82 partial/275 pending; no completion status was inferred from tests.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

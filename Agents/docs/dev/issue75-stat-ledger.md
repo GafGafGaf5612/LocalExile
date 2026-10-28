@@ -71,6 +71,8 @@ its cap/recharge changes, with actual node/refund controls. Conditional sources,
 recovery speeds and native getter/recovery parity remain open. See [review](issue75-review.md#ordinary-active-leech-recovery)
 and [damage module](../protocol/20-damage.md#5b-character-panel-leech-limits). Do not add overlapping display scopes
 as independent leech amounts in combat.
+Actual leech/full-ES condition flags now drive evidenced hit-damage scopes and Energy Leech's full-ES/quality
+bonuses, with qualified support, contact and periodic refresh controls; other condition consumers remain open.
 
 ## Leech limits and prohibitions
 

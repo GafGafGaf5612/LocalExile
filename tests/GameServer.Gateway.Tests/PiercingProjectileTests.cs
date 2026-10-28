@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
 
@@ -35,6 +36,34 @@ public class PiercingProjectileTests
     static SpawnedMonster Monster(int x, int y) =>
         new("target", new(x, y, 10, width: 300, height: 300), 0, 2, 100);
 
+    static async Task<Task> LaunchPaused(Wire wire, ClientState conn, Func<SpawnedMonster, (int, bool)> damage)
+    {
+        var gate = Program.SendGates.GetValue(wire.Ciphers, _ => new(1, 1));
+        await gate.WaitAsync();
+        var flight = Flight(wire, conn, damage); // Queues creation first.
+        var afterCreate = gate.WaitAsync(); // Acquire before wake/glide or any contact can commit.
+        gate.Release();
+        await afterCreate;
+        try
+        {
+            lock (conn.Monsters)
+            {
+                Assert.Single(conn.ProjectileObjects);
+                conn.Clock.Stop();
+            }
+        }
+        finally { gate.Release(); }
+        int create = InstanceEntities.CreateObject(0x3000, 0, new ProjectileObject("arrow", 0, 0, Height: 0).Blob()).Length;
+        int wake = InstanceProtocol.EnterWakeZone(0x3000).Length;
+        int move = InstanceProtocol.MoveTo(0x3000, 0, 0, 1).Length;
+        byte[] bytes = new byte[create + wake + move];
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await wire.Reader.GetStream().ReadExactlyAsync(bytes, timeout.Token);
+        new ConnectionCiphers(new byte[64], isClient: true).Receive.Process(bytes);
+        Assert.Equal(new byte[] { 0x01, 0xba }, bytes.AsSpan(create + wake, 2).ToArray());
+        return flight;
+    }
+
     [Fact]
     public async Task A_piercing_projectile_does_not_hit_a_target_that_leaves_the_route_before_contact()
     {
@@ -43,9 +72,9 @@ public class PiercingProjectileTests
         var target = Monster(110, 10);
         conn.Monsters.Add(42, target);
         int hits = 0;
-        var flight = Flight(wire, conn, _ => { hits++; return (10, false); });
-        await Task.Delay(300);
+        var flight = await LaunchPaused(wire, conn, _ => { hits++; return (10, false); });
         lock (conn.Monsters) target.Walk.Teleport(110, 150, conn.Clock.Elapsed.TotalSeconds);
+        conn.Clock.Start();
         await flight.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(0, hits);
         Assert.Equal(100u, target.Life);
@@ -59,9 +88,9 @@ public class PiercingProjectileTests
         var target = Monster(110, 150);
         conn.Monsters.Add(42, target);
         int hits = 0;
-        var flight = Flight(wire, conn, _ => { hits++; return (10, false); });
-        await Task.Delay(300);
+        var flight = await LaunchPaused(wire, conn, _ => { hits++; return (10, false); });
         lock (conn.Monsters) target.Walk.Teleport(110, 10, conn.Clock.Elapsed.TotalSeconds);
+        conn.Clock.Start();
         await flight.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(1, hits);
         Assert.Equal(90u, target.Life);
@@ -75,9 +104,7 @@ public class PiercingProjectileTests
         var target = Monster(60, 10);
         conn.Monsters.Add(42, target);
         int hits = 0;
-        var flight = Flight(wire, conn, _ => { hits++; return (10, false); });
-        await Task.Delay(150);
-        conn.Clock.Stop();
+        var flight = await LaunchPaused(wire, conn, _ => { hits++; return (10, false); });
         await Task.Delay(300);
         Assert.Equal(0, hits);
         Assert.Equal(100u, target.Life);
@@ -95,8 +122,7 @@ public class PiercingProjectileTests
         var target = Monster(40, 10);
         conn.Monsters.Add(42, target);
         int hits = 0;
-        var flight = Flight(wire, conn, _ => { hits++; return (10, false); });
-        await Task.Delay(150);
+        var flight = await LaunchPaused(wire, conn, _ => { hits++; return (10, false); });
         lock (conn.Monsters) Assert.True(conn.TryBeginAreaChange(new PendingTransfer(2, 0, false), out _));
         await flight.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(0, hits);

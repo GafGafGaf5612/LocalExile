@@ -151,3 +151,8 @@ unknown fields and items), `UnsavedProgressTests` (experience and flask charges 
 each tab holds, slots, the repair at load), `CtrlClickTests` (Ctrl + click to and from the stash and a shop) and, in the
 Core tests,
 `SqliteAccountStoreTests` (accounts, deletion with its save, the import).
+
+`ExperienceLevelEventTests` also checks an extra-point grant while level publication is in flight. Its grant and
+publication run independently from the coordinator that releases the deliberately held save. A loopback connect
+may complete synchronously, so invoking publication on the coordinator can block on that save before release.
+Keep the independent scheduling rather than increasing the timeout; the production transaction is unchanged.

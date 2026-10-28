@@ -42,7 +42,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
         try
         {
             beforeCommit = await writing.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            level = game.CompleteGain(gain, new LevelControl().Call);
+            // A completed loopback connect can enter the synchronous save lock before this call yields.
+            // Run publication independently so this coordinator always reaches release.Set().
+            level = Task.Run(() => game.CompleteGain(gain, new LevelControl().Call));
         }
         finally
         {

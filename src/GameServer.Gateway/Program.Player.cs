@@ -332,6 +332,7 @@ partial class Program
         double last = conn.Clock.Elapsed.TotalSeconds;
         int suppression = Suppression(conn).Chance;
         var criticalContext = CriticalContext(conn);
+        var leechContext = LeechContext(conn);
         while (!conn.Closed)
         {
             await Task.Delay(PlayerTickMs);
@@ -340,6 +341,11 @@ partial class Program
             double seconds = tickNow - last;
             last = tickNow;
             if (conn.Paused || seconds <= 0) continue;
+            if (LeechContext(conn) is var currentLeech && currentLeech != leechContext)
+            {
+                leechContext = currentLeech;
+                await SendCharacterStats(remote, stream, ciphers, conn, "leech or full Energy Shield conditions changed");
+            }
             // Keep the selected skill's conditional luck virtuals current across live Life/Focus boundaries too.
             // Combat still samples the owner at the accepted contact, independently of this panel refresh cadence.
             if (CriticalContext(conn) is var currentCritical && currentCritical != criticalContext)

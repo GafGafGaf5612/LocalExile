@@ -10,6 +10,7 @@ sealed class LeechRecoveryState
     bool initialized;
 
     public int Count => expiries.Count;
+    public bool Active(double now) { Settle(now); return expiries.Count > 0; }
 
     public void Configure(double now, Settings value)
     {

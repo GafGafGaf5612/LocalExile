@@ -24,6 +24,14 @@ static class PlayerHitDamage
         double common = (double)get("damage_+%") + get(spell ? "spell_damage_+%" : "attack_damage_+%")
             + (melee ? get("melee_damage_+%") : 0) + (area ? get("area_damage_+%") : 0)
             + (projectile ? get("projectile_damage_+%") : 0) + (spell ? 0 : DamageStats.SpellAttackIncrease(get));
+        bool lifeLeech = get("is_life_leeching") != 0, manaLeech = get("is_mana_leeching") != 0,
+            shieldLeech = get("is_es_leeching") != 0, fullShield = get("on_full_energy_shield") != 0;
+        bool anyLeech = lifeLeech || manaLeech || shieldLeech;
+        common += (anyLeech ? (double)get("damage_+%_while_leeching") + (spell ? 0 : get("attack_damage_+%_while_leeching")) : 0)
+            + (lifeLeech ? get("damage_+%_while_life_leeching") : 0)
+            + (manaLeech ? get("damage_+%_while_mana_leeching") : 0)
+            + (shieldLeech ? get("damage_+%_while_es_leeching") : 0)
+            + (fullShield ? get("damage_+%_on_full_energy_shield") : 0);
         var typed = DamageTypes.ConversionOrder.Select(type =>
             (History: DamageTypes.HistoryOf(type), Increased: get($"{type.ToString().ToLowerInvariant()}_damage_+%"))).ToArray();
         int elemental = get("elemental_damage_+%"), meleePhysical = melee ? get("melee_physical_damage_+%") : 0;
@@ -40,14 +48,15 @@ static class PlayerHitDamage
             foreach (var source in typed)
                 if ((path.History & source.History) != 0) increased += source.Increased;
             if ((path.History & DamageTypeHistory.Elemental) != 0) increased += elemental;
-            if ((path.History & DamageTypeHistory.Physical) != 0) increased += meleePhysical;
+            if ((path.History & DamageTypeHistory.Physical) != 0)
+                increased += meleePhysical + (lifeLeech ? (double)get("physical_damage_+%_while_life_leeching") : 0);
 
             // Preserve the existing attack multiply-before-divide projection and spell factor construction.
             // Clamp the complete increased bucket once: a negative original-type subtotal must survive until here.
             var range = spell
                 ? path.Range.Scale(Math.Max(0, 1 + increased / 100.0) * (SpellMore(get, path.History) * charges))
                 : DamageStats.IncreaseAttackRange(path.Range, increased);
-            var support = GemSupportDamage.Multipliers(path.History, modifiers, supportTypes);
+            var support = GemSupportDamage.Multipliers(path.History, modifiers, supportTypes, fullShield, shieldLeech);
             range = range.Scale(support.GeneralOrPhysical).Scale(support.ElementalOrChaos);
             result = result.Add(path.Type, range);
         }

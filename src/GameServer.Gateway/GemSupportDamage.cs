@@ -1,6 +1,7 @@
 using GameServer.Core.World;
 
-/// <summary>Unconditional support multipliers. Conditional/trigger/minion mechanics require their own execution paths.</summary>
+/// <summary>Qualified support multipliers, with explicit owner conditions for Energy Leech.
+/// Other conditional/trigger/minion mechanics require their own execution paths.</summary>
 static class GemSupportDamage
 {
     static readonly HashSet<string> Unconditional =
@@ -27,11 +28,14 @@ static class GemSupportDamage
     /// Retain the existing two product groups for floating projection, while qualifying both against full history.</summary>
     public static (double GeneralOrPhysical, double ElementalOrChaos) Multipliers(DamageTypeHistory history,
         IEnumerable<(string Name, int Value)> stats,
-        IReadOnlySet<int> types)
+        IReadOnlySet<int> types, bool fullEnergyShield = false, bool leechingEnergyShield = false)
     {
         double general = 1, typed = 1;
         foreach (var (name, value) in stats)
-            if (Unconditional.Contains(name) && Applies(name, history, types))
+            if ((Unconditional.Contains(name)
+                || fullEnergyShield && name == "support_energy_shield_leech_damage_+%_on_full_energy_shield_final"
+                || leechingEnergyShield && name == "support_energy_shield_leech_damage_+%_while_leeching_energy_shield_final")
+                && Applies(name, history, types))
             {
                 double factor = Math.Max(0, 1 + value / 100.0);
                 if (name.Contains("elemental", StringComparison.Ordinal) || name.Contains("_chaos_", StringComparison.Ordinal)

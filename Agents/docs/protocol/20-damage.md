@@ -808,8 +808,30 @@ ES prohibitions as well, following pinned PoB `CalcOffence.lua:3403,3631,3678`; 
 interaction remains a specific validation requirement. Target ES-leech immunity blocks both converted and native
 ES grants while leaving Mana available. Existing Life instances from before conversion retain their original type.
 
+`is_life_leeching`, `is_mana_leeching`, `is_es_leeching`, `is_leeching` and `on_full_energy_shield` now come from
+live owner state, overriding forged raw condition values. Reading these conditions expires old instances without
+draining pending recovery. Instant-only grants leave no timed instance. The normal player tick republishes player
+and selected skill stats when these conditions change; pause keeps their game-clock lifetime fixed.
+
+The hit resolver now adds general/resource leeching damage, attack-only leeching damage, physical damage while
+Life leeching and full-ES damage to their proper increased buckets. Physical increases follow conversion history
+once. Energy Leech's full-ES MORE modifier is separate from its quality's increased damage while ES leeching;
+both can apply with overleech. The retained legacy while-ES-leeching MORE source also has an explicit condition.
+Pinned PoB `Data/Skills/sup_int.lua:2214` and the actual qualified support set supply the current 150-permyriad,
+15% full-ES MORE and 1%-per-quality increased-damage inputs. Actual linked/unlinked quality and committed projectile
+controls distinguish those factors. Ordinary bow damage continues to use its documented release snapshot.
+
+Decision: derive conditions from active instances, not nonzero recovery or raw developer flags. Suppressed recovery
+can leave a live instance, while an instant-only grant cannot create a persistent leech condition. Preserve pending
+recovery when inspecting expiry; consuming it during a panel rebuild would make damage/UI queries change healing.
+Extend only evidenced hit-damage scopes rather than treating every `while_leeching` stat as generic damage.
+Committed-hit controls floor each component's random-range endpoints before summing, matching `DamageRange.Roll`.
+Lifecycle controls synchronize on the send gate and pause the owner clock after creation rather than racing a
+wall-clock delay. A two-flight exclusion control permits legitimate entropy expiry; exact expiry/no-redraw rules
+remain in the explicit-time Core tests. These choices preserve gameplay assertions under shared-machine load.
+
 Still open: other conversions, conditional/weapon-family sources and instant percentages, attack-only
-ES overleech, skill-specific recovery-speed ownership, legacy instant flags, current leech-condition publication/consumers,
+ES overleech, skill-specific recovery-speed ownership, legacy instant flags, speed/defence/ailment/DoT leech-state consumers,
 remaining cap conditions and current-branch native recovery/prediction/lifecycle parity. These are explicit follow-up
 requirements, not completed by the ordinary engine. No current-branch client/server was launched for these controls.
 

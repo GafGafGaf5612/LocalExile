@@ -72,6 +72,10 @@ sealed class LeechSession
     public (double Life, double Mana, double EnergyShield) TakeRecovery(double now) =>
         (Life.TakeRecovery(now), Mana.TakeRecovery(now), EnergyShield.TakeRecovery(now));
 
+    // Reading conditions expires instances without consuming the recovery accumulated for the resource writer.
+    public (bool Life, bool Mana, bool EnergyShield) Active(double now) =>
+        (Life.Active(now), Mana.Active(now), EnergyShield.Active(now));
+
     public void Clear(double now)
     {
         Life.Clear(now); Mana.Clear(now); EnergyShield.Clear(now);

@@ -134,7 +134,9 @@ public class ProjectileAccuracyLifecycleTests
     {
         using var f = new Flight();
         var target = f.Target(42, returning ? 90 : 130);
-        var random = new Draws(90);
+        // Either continuing 95 entropy or an inactivity reseed must let the second projectile hit.
+        // Wall-clock flight scheduling is not the entropy-expiry contract (covered with explicit times in Core).
+        var random = new Draws(90, 99);
         f.Conn.AttackAccuracyRandom = random;
         await f.Start(pierce, returning).WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(100u, target.Life);
@@ -144,7 +146,7 @@ public class ProjectileAccuracyLifecycleTests
         Assert.Equal(90u, target.Life);
         Assert.True(f.Hits.ContainsKey(42));
         Assert.Equal(new uint[] { 42 }, f.Impacts);
-        Assert.Equal(1, random.Calls); // Second attempt continues the same defender entropy.
+        Assert.InRange(random.Calls, 1, 2);
     }
 
     [Theory]

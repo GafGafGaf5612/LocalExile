@@ -2137,6 +2137,10 @@ actor/support fractions separately. Ordinary active leech now consumes raw quali
 and uses separate instance duration, total recovery and cap rules (damage §5b). Ghost Reaver converts independent
 Life-source grants to ES and applies its cap/recharge effects. Conditional sources, other conversions,
 skill-specific recovery-speed ownership and native validation remain open in the review ledger.
+The owner now publishes actual leeching/full-ES conditions and refreshes selected skills when they change.
+Energy Leech's full-ES MORE damage and quality increased damage while ES leeching use distinct buckets, with
+real support/unlink and accepted projectile controls. General/resource/attack/physical leeching hit-damage sources
+use the same live flags; expiry inspection preserves pending recovery. See damage §5b for decisions and remaining scopes.
 
 Selected impale chance now recomputes all three virtual totals from the raw actor, own support and each hand's
 local snapshot. Real Impale Support grants attack chance 60: actor 10 gives selected 70 while the actor/default

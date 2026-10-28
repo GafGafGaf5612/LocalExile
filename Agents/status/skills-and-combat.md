@@ -427,7 +427,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   cleanup and real support contacts have automated controls. Ghost Reaver now creates separate converted/native
   ES instances, doubles the total ES cap and disables recharge; actual node sources and parsed refund have controls.
   Plain conversion does not add those keystone side effects. Other conversions/conditions, skill-specific
-  recovery-speed ownership, leech-state consumers and current native recovery/prediction parity remain open.
+  recovery-speed ownership and current native recovery/prediction parity remain open. Leeching/full-ES flags now
+  reflect actual instances/pools and refresh player/selected stats on the normal tick. General/resource/attack/
+  physical leeching hit damage and Energy Leech's full-ES MORE/quality increased bonuses have separate buckets
+  and actual support/contact controls; speed/defence/ailment/DoT consumers remain open.
   Code: `LeechLimits.cs`, `LeechSources.cs`, `LeechRecoveryState.cs`, `LeechSession.cs`, Gateway (`Program.Leech`, resource writer).
   Docs: [20](../docs/protocol/20-damage.md) §5b.
 - Ordinary Life/Mana regeneration: flat and maximum-pool percentage sources receive regeneration and recovery increases.
