@@ -70,7 +70,7 @@ maximum-mana physical addition enter the common attack damage construction, befo
 Each group chooses a random initial rotation and divides the circle into N equal sectors for its resolved explosion
 count. One angle is sampled independently inside each sector, visited counter-clockwise. Centers lie on the fixed
 placement circle: 20 cells for normal KB and 28 for Clustering before area scaling. Blast and placement radii scale
-separately. Terrain-blocked center paths are omitted without replacement, redistribution or timing compression.
+separately. Terrain-blocked center paths are omitted without replacement or redistribution and consume no time slots.
 Centers and terrain admission are captured at impact/stop; actors and defenses resolve at each later blast.
 The fixed-circle geometry is a development approximation, not a measured official distribution. Unusual target sizes
 can overlap geometrically; Core supports actor radii while the Gateway currently uses monster centers of radius zero.
@@ -82,7 +82,8 @@ More area therefore increases overall coverage without guaranteeing single-targe
 Slot i generates its native effect and commits its damage at trigger + delay + i * interval (zero-based i), so four
 slots run at 0, 1/30, 2/30 and 3/30 seconds. The first blast is immediate and each later interval is exactly 4000
 simulation quanta, without rounding to integer milliseconds. These are user-tuned feel values for development,
-not frame measurements or established official timings. Omitted terrain slots retain their gaps.
+not frame measurements or established official timings. After terrain rejection, i indexes only surviving centers:
+the first surviving blast is immediate and later blasts follow at consecutive intervals without timing gaps.
 Pending blasts survive parent continuation/removal, retain the trigger phase and share the simulation pause/teardown.
 The native secondary burst uses `kinetic_blast_small` (`Metadata/Effects/Spells/cluster_burst/mini.ao` by default)
 at each actual center for 0.35 seconds, resolved through the equipped skill-art variation.

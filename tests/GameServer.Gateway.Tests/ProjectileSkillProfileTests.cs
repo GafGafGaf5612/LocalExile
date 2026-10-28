@@ -244,20 +244,25 @@ public class ProjectileSkillProfileTests
         Assert.InRange(Areas(wall).Length, 1, 3); Assert.All(Areas(wall), e => Assert.True(e.Position.X < 60));
     }
 
-    [Fact]
-    public void Terrain_omits_slots_without_moving_other_centres_or_compressing_their_times()
+    [Theory]
+    [InlineData("KineticBlast", 4)]
+    [InlineData("KineticBlastAltX", 3)]
+    [InlineData("KineticBlastAltY", 4)]
+    public void Terrain_omits_centres_and_compacts_the_surviving_KB_sequence(string effect, int count)
     {
         var wall = new ProjectileRuntimeProbe { Blocked = (x, _) => x >= 60 };
-        wall.Release(Profile("KineticBlast")); wall.Advance(1);
+        wall.Release(Profile(effect)); wall.Advance(1);
         var impact = Assert.Single(wall.Events, e => e.Kind == ProjectileEventKind.End);
         var open = new ProjectileRuntimeProbe();
-        open.Release(Profile("KineticBlast") with { Range = impact.Position.X - 10 }); open.Advance(1);
-        Assert.Equal(4, Areas(open).Length); Assert.InRange(Areas(wall).Length, 1, 3);
-        Assert.All(Areas(wall), actual =>
+        open.Release(Profile(effect) with { Range = impact.Position.X - 10 }); open.Advance(1);
+        Assert.Equal(count, Areas(open).Length); Assert.InRange(Areas(wall).Length, 1, count - 1);
+        var surviving = Areas(open).Where(e => e.Position.X < 60).ToArray();
+        Assert.Equal(surviving.Length, Areas(wall).Length);
+        foreach (var (actual, expected) in Areas(wall).Zip(surviving))
         {
-            var slot = Assert.Single(Areas(open), candidate => candidate.At == actual.At);
-            Assert.Equal(slot.Position.X, actual.Position.X, 7); Assert.Equal(slot.Position.Y, actual.Position.Y, 7);
-        });
+            Assert.Equal(expected.Position.X, actual.Position.X, 7); Assert.Equal(expected.Position.Y, actual.Position.Y, 7);
+        }
+        Assert.Equal(Enumerable.Range(0, surviving.Length).Select(i => impact.At + i * 4000), Areas(wall).Select(e => e.At));
     }
 
     [Theory]
