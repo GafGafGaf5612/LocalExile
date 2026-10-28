@@ -92,6 +92,9 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Display prohibitions and weapon-local/non-base combat penetration now have automated source/lifecycle/contact
   coverage. Verify the updated rows and contacts natively; off-hand attack selection and remaining conditional
   penetration sources still need implementation and validation.
+  Selected ailment duration/effect coefficients now include real Unbound Ailments contributions, with 24
+  source/link/override regressions. Validate the twelve aliases natively, then complete ailment chance/eligibility,
+  damaging ranges, duration/application and stacking; a correct coefficient alone does not prove those consumers.
   Added-base/default-mirror/selected-alias coverage passes 52/19/22 new cases and 95 existing controls: 188 focused
   cases without skips. Fresh full Gateway 3803/Core 648/Data 37 pass without skips (4488 freshly rerun cases).
   The current hook records six actual unobserved disposed-NetworkStream faults, all `MonsterKilled` through

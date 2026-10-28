@@ -325,6 +325,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   for all nine elemental aliases under prohibition and restore totals when removed; chaos remains separate.
   Real Elemental Penetration support contributes 14 at level one and agrees with the hit consumer.
   Current-branch native validation, off-hand attack selection and remaining target conditions are still open.
+  Selected ailment duration/effect coefficients now also include qualifying supports: real level-one Unbound
+  Ailments adds 35 to character 10 for all seven duration and five non-damaging effect aliases. Its 10% more
+  ailment damage stays separate. Twenty-four regressions cover the reproduced omission, link/source removal,
+  signed cancellation, explicit replacements and unrelated/default-skill isolation. Native presentation and
+  actual ailment application remain open; this does not complete the ailment system.
   Historical LocalExile Ruthless support exclusions are outside this branch. Link/source removal, incompatible or unqualified supports,
   unrelated/default skills and repeated builds are covered; minion combat and item-drop execution remain separate.
   Added-base critical/default-mirror/selected-alias cases pass 52/19/22 new tests plus 95 existing controls:

@@ -231,6 +231,11 @@ static class PanelStats
         or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%"
         or "reduce_enemy_fire_resistance_%" or "reduce_enemy_cold_resistance_%"
         or "reduce_enemy_lightning_resistance_%"
+        or "virtual_ignite_duration_+%" or "virtual_scorch_duration_+%" or "virtual_scorch_effect_+%"
+        or "virtual_chill_duration_+%" or "virtual_chill_effect_+%" or "virtual_freeze_duration_+%"
+        or "virtual_frostburn_duration_+%" or "virtual_frostburn_effect_+%"
+        or "virtual_shock_duration_+%" or "virtual_shock_effect_+%"
+        or "virtual_sap_duration_+%" or "virtual_sap_effect_+%"
         || s.Display.Contains("_attack_damage_penetrates_", StringComparison.Ordinal))];
 
     /// <summary>Selected-skill aliases from original raw character and qualifying skill/support inputs.

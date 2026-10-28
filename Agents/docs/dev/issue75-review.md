@@ -50,11 +50,13 @@ Generated reports contain extracted metadata and remain ignored; do not commit t
 | Selected attack rows omitted supports | Heavy Strike with actor 10 plus linked support 20 displayed 10 | Recompute all eight hand aliases while preserving raw local snapshots; six before-fix Gateway regressions reproduced omissions; twelve added pure/Gateway cases cover sources, removal, hand isolation and inactive gear | Native checks and broader selected aliases |
 | Combat ignored non-base/general and weapon-local penetration | Elemental Penetration Support and local weapon penetration appeared in panel sums but had no hit effect | Consume raw general elemental/chaos inputs plus the attacking weapon's local snapshot; real support, parsed contact, inactive-weapon and shot snapshot checks | Native verification, off-hand attack selection and conditional sources |
 | Elemental prohibition left positive display values | Combat suppressed penetration while the panel retained positive elemental sums | Emit explicit zero for all nine elemental aliases while preserving chaos; check player/own flags, real support composition and restoration | Native presentation; explicit developer overrides intentionally keep their final priority |
+| Selected ailment coefficients omitted supports | Actor duration/effect 10 plus real Unbound Ailments 35 still displayed 10 | Recompute seven duration and five effect aliases from raw actor/own inputs; all 24 new lifecycle/override cases reproduced 45 expected/10 actual | Native presentation and full ailment mechanics remain open |
 
 Implementation: `PanelStats.Selected`, `PanelStats.Sums`, and `Program`'s `PanelSourceSnapshot`.
 Tests: `SelectedMiscPanelTests`, `SelectedPanelStatCompositionTests`, `HandPenetrationPanelTests` and existing
 `PanelStatsTests`/`PenetrationTests`.
-These fixes improve eleven display stats; they do not certify eleven complete stats against every game source.
+The penetration fixes improve eleven display stats and the ailment fix improves twelve coefficients.
+They do not certify those stats against every game source or complete their associated gameplay systems.
 
 ## Validation of the penetration changes
 
@@ -95,6 +97,15 @@ the required suites pass 4,679 tests. This validates the current automated behav
 Receipts: `penetration-consumers-final-focused.trx`, `core-penetration-consumers.trx`,
 `data-penetration-consumers.trx`, `gateway-penetration-consumers.trx` (failure), `bow-lifecycle-gated.trx`,
 and `gateway-penetration-consumers-gated.trx` (full success).
+The local commits are `0e91b09` (bow-test synchronization) and `329aa0a` (penetration consumers/prohibitions).
+
+The ailment coefficient batch adds 24 Gateway cases. All 24 failed before the fix with 45 expected / 10 actual,
+preserved in `selected-ailment-reproduced.trx`. Afterward, 149 focused checks passed in
+`selected-ailment-focused.trx`. The solution build passed without warnings/errors, followed by Core 555,
+Data 18 and Gateway 4,130: 4,703 tests with no reported skips. The three final receipts are
+`core-selected-ailment.trx`, `data-selected-ailment.trx` and `gateway-selected-ailment.trx`.
+The exact inventory confirms that these twelve names are virtual dependencies of the panel, including native
+`virtual_frostburn_*` names for the Brittle duration/effect rows. Native checks remain pending.
 
 ## Autonomous decisions and shared validation resources
 
@@ -108,12 +119,18 @@ and continuing until an irreversible action is required. Publishing remains proh
   Merely hiding rows would retain incorrect selected values; see [skills documentation](../protocol/11-skills.md).
 - Bow-test timeout: synchronize on the real send gate instead of increasing timeout limits or accepting a lucky rerun.
   This preserves the test's assertion that a later action occurs before impact; it changes no production flight behavior.
+- Ailment coefficients: extend the selected projection only for twelve established duration/effect sums, keeping
+  Unbound Ailments' separate more-damage source out. The alternative of extending all ailment rows as sums would
+  assume unresolved critical, eligibility and application rules; [the skills module](../protocol/11-skills.md)
+  records those limits and the pinned reference evidence. Continue implementing those mechanics separately.
 - Native testing: other agents may use the machine's client and fixed server ports. A Gateway from the parent
   checkout's `build/quest-validation/wake-skip-final` was running at this checkpoint. Leave it alone and continue
   independent code/tests while the live slot is occupied. Do not invoke `live.ps1` until the shared resources are
   free: it stops existing dotnet listeners and patched clients. The alternative of restarting those resources
   would interrupt another agent's validation. Recheck immediately before launching, and stop only this task's
   own processes when its test session ends. Preserve logs and existing client/profile data.
+  A subsequent check also found an active client under a Claude `custom-assets-spike` worktree; this task
+  launched no servers/client and did not stop any of those processes.
 
 ## Remaining review and implementation
 
@@ -122,8 +139,11 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
 
 1. Penetration native validation, off-hand attack selection and remaining target/conditional sources.
    Unconditional raw composition and display prohibition now have automated coverage, not native certification.
-2. Selected ailment, leech and other aliases whose raw support contributions are not recomputed.
-   Prove each omission using real sources before expanding the selected alias set.
+2. Selected ailment chances, leech and other aliases whose raw support contributions are not recomputed.
+   The twelve duration/effect coefficients are corrected; prove other omissions using real sources before expanding
+   the selected alias set. In particular, `SupportImpale` grants attack chance 60, but gem projectile/area paths
+   currently neither apply new impales nor consume the target's existing ones. Ordinary attacks have a separate
+   legacy implementation whose stored-damage roll, critical interaction, expiry and hand/source scope need review.
 3. Hit averages/DPS, critical weighting, effective critical chances, off-hand selection and secondary damage.
    `SpellPanelStats` and `AttackPanelStats` still describe pre-critical averages.
 4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.

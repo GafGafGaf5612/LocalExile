@@ -24,6 +24,8 @@ public sealed partial class AscendancyGatewayIntegrationTests
         "attack-fire-penetration" => AttackPenetrationSpec("Fire"),
         "attack-cold-penetration" => AttackPenetrationSpec("Cold"),
         "attack-lightning-penetration" => AttackPenetrationSpec("Lightning"),
+        _ when field.StartsWith("ailment-duration:", StringComparison.Ordinal) => UnboundAilmentSpec(field, duration: true),
+        _ when field.StartsWith("ailment-effect:", StringComparison.Ordinal) => UnboundAilmentSpec(field, duration: false),
         _ => throw new ArgumentOutOfRangeException(nameof(field)),
     };
 
@@ -44,6 +46,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
         "base_penetrate_elemental_resistances_%", "reduce_enemy_elemental_resistance_%",
         "reduce_enemy_fire_resistance_%", 10, 14, 0);
 
+    static SelectedMiscCase UnboundAilmentSpec(string field, bool duration)
+    {
+        string ailment = field.Split(':')[1];
+        string source = duration ? "base_all_ailment_duration_+%" : "non_damaging_ailment_effect_+%";
+        return new("SkillGemFireball", "SupportGemUnboundAilments", "SupportUnboundAilments", source, source,
+            $"virtual_{ailment}_{(duration ? "duration" : "effect")}_+%", 10, 35, 0);
+    }
+
     static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
 
     [Theory]
@@ -57,6 +67,18 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("attack-fire-penetration")]
     [InlineData("attack-cold-penetration")]
     [InlineData("attack-lightning-penetration")]
+    [InlineData("ailment-duration:ignite")]
+    [InlineData("ailment-duration:scorch")]
+    [InlineData("ailment-duration:chill")]
+    [InlineData("ailment-duration:freeze")]
+    [InlineData("ailment-duration:frostburn")]
+    [InlineData("ailment-duration:shock")]
+    [InlineData("ailment-duration:sap")]
+    [InlineData("ailment-effect:scorch")]
+    [InlineData("ailment-effect:chill")]
+    [InlineData("ailment-effect:frostburn")]
+    [InlineData("ailment-effect:shock")]
+    [InlineData("ailment-effect:sap")]
     public void Selected_misc_real_supports_compose_once_and_follow_link_and_source_removal(string field)
     {
         var spec = SelectedMiscSpec(field);
@@ -112,6 +134,18 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("attack-fire-penetration")]
     [InlineData("attack-cold-penetration")]
     [InlineData("attack-lightning-penetration")]
+    [InlineData("ailment-duration:ignite")]
+    [InlineData("ailment-duration:scorch")]
+    [InlineData("ailment-duration:chill")]
+    [InlineData("ailment-duration:freeze")]
+    [InlineData("ailment-duration:frostburn")]
+    [InlineData("ailment-duration:shock")]
+    [InlineData("ailment-duration:sap")]
+    [InlineData("ailment-effect:scorch")]
+    [InlineData("ailment-effect:chill")]
+    [InlineData("ailment-effect:frostburn")]
+    [InlineData("ailment-effect:shock")]
+    [InlineData("ailment-effect:sap")]
     public void Selected_misc_signed_cancellation_and_final_developer_zero_replace_the_full_selected_sum(string field)
     {
         var spec = SelectedMiscSpec(field);
@@ -482,6 +516,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
             {
                 Assert.Equal(25, view.Own[SelectedMiscKey("support_minion_damage_+%_final")]);
                 Assert.Equal(25, support.Stats.Single(s => s.Key == SelectedMiscKey("support_minion_damage_+%_final")).Value);
+            }
+            if (_spec.SupportEffect == "SupportUnboundAilments")
+            {
+                // More ailment damage is separate from both increased duration and non-damaging ailment effect.
+                Assert.Equal(10, view.Own[SelectedMiscKey("support_unbound_ailments_ailment_damage_+%_final")]);
+                Assert.Equal(35, view.Own[SelectedMiscKey("base_all_ailment_duration_+%")]);
+                Assert.Equal(35, view.Own[SelectedMiscKey("non_damaging_ailment_effect_+%")]);
             }
         }
 

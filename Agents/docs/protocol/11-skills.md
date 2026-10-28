@@ -1936,7 +1936,8 @@ sum is a display coefficient; actual flask use and local/global factor compositi
 
 Selected aliases derive from one immutable raw character snapshot plus the qualifying skill/support's own raw
 inputs: `skill_area_of_effect_+%`, `display_skill_increased_item_rarity_+%`, `virtual_minion_damage_+%`,
-`reduce_enemy_fire/cold/lightning_resistance_%` and the eight main/off-hand penetration aliases.
+`reduce_enemy_fire/cold/lightning_resistance_%`, the eight main/off-hand penetration aliases, and twelve
+ailment duration/effect coefficients described below.
 The rarity sum includes direct/base item rarity and `base_killed_monster_dropped_item_rarity_+%`; the minion sum
 includes increased `minion_damage_+%`, keeping support MORE separate. Previously derived actor aliases are not fed
 back as source inputs. The completed signed sum clamps once and retains explicit zero after cancellation/removal;
@@ -1978,6 +1979,21 @@ The combat consumer now reads these non-base general inputs and the attacking we
 [20-damage.md](20-damage.md) records scope, timing, contact tests and remaining off-hand/conditional mechanics.
 Decision: publish explicit elemental zeros when blocked, because a sparse omission could retain an earlier raw
 alias. The alternative of merely hiding the row would leave the underlying selected value incorrect.
+
+Selected ailment coefficients now include qualified skill/support inputs for seven durations
+(`virtual_ignite/scorch/chill/freeze/frostburn/shock/sap_duration_+%`) and five non-damaging effects
+(`virtual_scorch/chill/frostburn/shock/sap_effect_+%`). The existing raw source formulas remain shared with the
+actor projection. Level-one Unbound Ailments grants `base_all_ailment_duration_+% = 35` and
+`non_damaging_ailment_effect_+% = 35`; character 10 plus support 35 now publishes 45 instead of 10.
+Its separate 10% more ailment damage does not enter either increased coefficient.
+Twenty-four real-support regressions first reproduced 45 expected/10 actual, then verify source/link removal,
+unrelated/default-skill isolation, signed cancellation, explicit final replacements and repeated publication.
+Reference: extracted `SupportUnboundAilments` stat set and local library `pob/skills/SupportUnboundAilments`
+at PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02` (labelled 3.29.x fallback).
+Decision: recompute these twelve established coefficient formulas from raw inputs. The alternative of treating
+every ailment row as a simple sum would gloss over critical weighting, prohibitions, damage eligibility
+and actual duration/rate calculation. Those mechanics and native validation remain separate completion work;
+this publication correction does not implement ailment application or certify the whole ailment system.
 
 `PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
 
