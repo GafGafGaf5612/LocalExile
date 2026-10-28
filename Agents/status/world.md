@@ -80,7 +80,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   the client paths around bodies itself); death releases the occupied space and the corpse stays in the area.
   Chasers spread around the player on rings (`MonsterSurround`); the AI decides every 100 ms.
   Automated regressions cover direct chases for negative footprints and player-body clearance for new and reused slots.
-  These two crowd-movement corrections still need a real-client check.
+  Further automated checks cover short attack reach, stationary-blocked slots, bounded crowd escape and queued
+  channel/Rage refreshes.
+  AI and correction passes share indexed body snapshots; surround reservations use spatial queries and cached rings.
+  Queue age, send/wire/socket timings and hot combat-lock timings are measured independently of tick latency.
+  The extended crowd changes still need a real-client check.
   A player boxed in by estimated bodies follows the client through them instead of being pulled back.
   Native-client checks cover a normal zombie, unique Hillock and an injected remote player object.
   Two authenticated clients in the same instance still need an end-to-end check.

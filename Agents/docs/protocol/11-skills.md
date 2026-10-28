@@ -1035,6 +1035,13 @@ and multiplier once and rolls them per monster; every monster gets its hit, life
 sweep's deaths run their loot, experience and quest work (`AreaSkillHit`). Before, a sweep recalculated the whole skill
 per monster and handled each death inline, spreading one sweep over up to 1.4 s in a crowd.
 
+An accepted channel owns `ChannelGeneration` as well as its action token.
+The initial timer starts only after payment succeeds; 0x199 invalidates the generation under the combat lock.
+Queued sweeps check it again after mana publication and inside each hit commit, so releasing and restarting the same
+skill cannot revive old damage.
+The sweep centre is sampled from the current walk after queued sends, rather than its earlier timer position.
+Pause still rejects contacts, and each timer revalidates that its gem remains available before charging the next sweep.
+
 ## 10. Projectiles (experimental)
 
 The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
@@ -1895,6 +1902,10 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
 ## 16. Rage
 
 Generic Rage generation, loss, attack damage, transient ownership and native count/buff packets are implemented.
+Skill lists prepared outside the send gate carry their resolved stat inputs, immutable equipped-item identities,
+pools, life and skill cosmetics.
+The gated snapshot reuses a list only while those inputs and the Rage value still match; otherwise it rebuilds from
+current state instead of publishing old skill stats alongside a new character snapshot.
 See [26-rage.md](26-rage.md) for inputs, primary evidence, versioned policies and the scoped native controls.
 Automated parsed-dispatch coverage does not constitute native verification.
 

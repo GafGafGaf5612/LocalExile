@@ -347,6 +347,9 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   `MonsterSurround`: the nearest chasers choose first, each takes the free cell on the innermost ring (its size + 3
   cells from the player) closest to its bearing, bodies never overlap, and a full ring sends the rest one ring out to
   wait. Candidates must also clear the player's square collision footprint, including when a ring-0 slot is reused.
+  Inner candidates respect the monster's actual attack reach; stationary footprints and other players also exclude cells.
+  A short native path is retried after arrival at a bounded half-second cadence.
+  Occupancy queries use a spatial index; ring trigonometry is cached and candidate searches do not allocate per cell.
   Monsters with negative footprints chase directly without taking a slot; stationary objects and walls still block them.
   A ring-0 slot is kept while it stays free and on the ring. Before, every monster aimed at the cell on the line
   toward itself, so a pack from one side queued in a wedge and only the front ones attacked. The server follows each monster's walk with

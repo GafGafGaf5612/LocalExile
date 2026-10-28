@@ -80,4 +80,19 @@ public class MonsterSurroundTests
         Assert.NotEqual((104, 104), slot);
         Assert.False(ClientPathfinder.ObjectBlocks([new(100, 100, LivingCollision.PlayerSize)], slot.X, slot.Y, 4, 7));
     }
+
+    [Theory]
+    [InlineData(150)]
+    [InlineData(300)]
+    public void Dense_surround_assignments_have_a_bounded_allocation_budget(int count)
+    {
+        var askers = Enumerable.Range(1, count).Select(i => new MonsterSurround.Asker((uint)i,
+            130 + i % 40, 90 + i % 20, 2, null)).ToArray();
+        for (int i = 0; i < 3; i++) MonsterSurround.Assign(askers, (100, 100), [], Open);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var result = MonsterSurround.Assign(askers, (100, 100), [], Open);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.NotEmpty(result);
+        Assert.True(allocated < 256 * 1024, $"Surround assignment allocated {allocated:N0} bytes for {count} chasers.");
+    }
 }

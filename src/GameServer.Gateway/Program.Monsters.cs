@@ -146,10 +146,11 @@ partial class Program
                 var askers = new List<(MonsterSurround.Asker Asker, SpawnedMonster M, double D)>();
                 double now;
                 int px, py;
-                lock (conn.Monsters)
+                using (conn.Performance.Lock(conn.Monsters, "ai"))
                 {
                     if (conn.Closed || conn.LeavingArea || conn.Paused) continue;
                     now = conn.Clock.Elapsed.TotalSeconds;
+                    using var blockers = conn.BeginMonsterBlockerFrame(now);
                     (px, py) = conn.Walk.Position(now);
                     foreach (var (id, m) in conn.Monsters)
                     {
@@ -191,23 +192,33 @@ partial class Program
                             orders.Add((id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
                         }
                         else if (LivingCollision.Blocks(m))
-                            askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget), m, d));
+                            askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget,
+                                m.Attack?.Range ?? double.PositiveInfinity), m, d));
                     }
                     // Every other living body near the player keeps its place: the chasers' cells go around it.
                     var asking = askers.Select(a => a.Asker.Id).ToHashSet();
-                    var occupied = conn.Monsters.Where(e => !asking.Contains(e.Key) && LivingCollision.Blocks(e.Value))
-                        .Select(e => (P: e.Value.Walk.Position(now), Size: LivingCollision.Size(e.Value)))
-                        .Where(e => Math.Max(Math.Abs(e.P.X - px), Math.Abs(e.P.Y - py)) < 64)
-                        .Select(e => (e.P.X, e.P.Y, e.Size)).ToList();
+                    var occupied = blockers.Bodies.Where(b => !asking.Contains(b.Id)
+                        && Math.Max(Math.Abs(b.X - px), Math.Abs(b.Y - py)) < 64).Select(b => (b.X, b.Y, b.Size));
+                    var fixedBlockers = blockers.FixedBlockers;
+                    long surroundAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                    long allocationAt = GC.GetAllocatedBytesForCurrentThread();
                     var slots = MonsterSurround.Assign(askers.Select(a => a.Asker), (px, py), occupied,
-                        (x, y, size) => conn.Layout.WalkableFor(x, y, size) && !conn.Barrier.Contains((x, y)));
+                        (x, y, size) => conn.Layout.WalkableFor(x, y, size) && !conn.Barrier.Contains((x, y))
+                            && !GameServer.Core.World.ClientPathfinder.ObjectBlocks(fixedBlockers, x, y, size + 1, size + 4));
+                    conn.Performance.Elapsed(LatencyPhase.Surround, surroundAt);
+                    conn.Performance.SurroundAllocation(GC.GetAllocatedBytesForCurrentThread() - allocationAt);
                     foreach (var (asker, m, d) in askers)
                     {
                         // A full surround (every ring taken): aim at the player and queue behind the others, as before.
                         (int X, int Y) to = slots.TryGetValue(asker.Id, out var slot) ? slot : (px, py);
                         // Standing in its cell already: it waits there for the swing (no order, no new path).
-                        if (Math.Max(Math.Abs(asker.X - to.X), Math.Abs(asker.Y - to.Y)) <= 1) { m.LastTarget = to; continue; }
-                        if (m.LastTarget is { } last && Math.Abs(last.X - to.X) + Math.Abs(last.Y - to.Y) < 3) continue;
+                        if ((asker.X, asker.Y) == to) { m.LastTarget = to; continue; }
+                        if (m.LastTarget is { } last && Math.Abs(last.X - to.X) + Math.Abs(last.Y - to.Y) < 3)
+                        {
+                            if (now < m.Walk.ArrivesAt || now < m.NextChaseRetryAt) continue;
+                            // The native budget can end a path short. Retry after arrival, with a bounded cadence.
+                            m.NextChaseRetryAt = now + 0.5;
+                        }
                         m.LastTarget = to;
                         orders.Add((asker.Id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
                     }
@@ -219,6 +230,7 @@ partial class Program
                     await ShowBossLifeBar(remote, stream, ciphers, id, m, conn);
                 foreach (var (id, m, from, epoch) in swings)
                     _ = MonsterSwing(remote, stream, ciphers, conn, id, m, from, (px, py), epoch);
+                conn.Performance.MaybeLog(remote);
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)

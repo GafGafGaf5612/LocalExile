@@ -367,7 +367,7 @@ partial class Program
                 }
             }
             else if (id == InstanceProtocol.ChannelEndId)
-                conn.ChannelSkill = 0;
+                lock (conn.Monsters) { conn.ChannelSkill = 0; conn.ChannelGeneration++; }
             else if (id == InstanceProtocol.SwapWeaponsId)
             {
                 // The weapon swap: the hands' rows and the other set's trade their items (the client shows the active set in
