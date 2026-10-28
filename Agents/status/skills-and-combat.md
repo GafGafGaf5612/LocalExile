@@ -153,6 +153,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   in the constant 20-unit close range (2 metres; 10 units per metre), multiplying when both hold and never folded into
   the panel's rating or `/accuracy`'s unconditional rating.
   Gems' attack hits do not roll accuracy yet, so the conditions apply where a roll exists (the default attack).
+  Ordinary melee/bow now share per-defender evasion entropy and a separate critical-confirmation draw.
+  Bow contacts include target evasion modifiers/Blind and live target mastery conditions, retaining release-time
+  owner inputs; an evaded arrow continues to later targets. Raw global/qualified local cannot-evade flags bypass
+  both checks. Failed critical confirmation keeps a normal hit and normal impale storage. Rejected melee contacts
+  do not consume entropy; ordinary bow block is checked after evasion. Deterministic parsed-contact, pass-through,
+  source-freeze/removal and target-condition tests pass. Current native validation, gem accuracy/confirmation,
+  selected support composition, off-hand sources/execution and accuracy/always-hit/DPS publication remain open.
+  See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
   Ten native checks used connected ordinary paths and actual mastery selection requests.
   The panel stayed at 711 while target rolls used 995 against Unique, 1066 in close range and 1493 when both held.
   A far Unique kept only 995; target movement, relog and refund restored the expected conditions and baseline.

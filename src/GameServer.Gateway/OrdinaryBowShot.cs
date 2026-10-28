@@ -7,6 +7,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
     public Penetration.PerType Penetration { get; init; }
     public HitResistances.Mods ResistanceMods { get; init; }
     public ImpaleStats.Settings? ImpaleSettings { get; init; }
+    public AttackAccuracyProfile? AccuracyProfile { get; init; }
     public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
@@ -18,7 +19,13 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
             DamageStats.Conversion(conversion, catalog, attack: true), spell: false, projectile: true), Get);
         var impale = ImpaleStats.From(character, catalog, attack: true, own, weapon.LocalSources);
         return new(hit, accuracy, criticalChance, criticalMultiplier, impale.Chance)
-        { ImpaleSettings = impale, Penetration = global::Penetration.Of(character, catalog, attack: true, own, weapon.LocalSources),
+        { ImpaleSettings = impale,
+            AccuracyProfile = new(accuracy,
+                Get("accuracy_rating_+%_final_vs_unique_enemies_from_mastery"),
+                Get("accuracy_rating_+%_final_vs_enemies_in_close_range_from_mastery"),
+                Get("global_always_hit") != 0 || Own("global_always_hit") != 0
+                    || (weapon.LocalSources?.GetValueOrDefault("local_always_hit") ?? 0) != 0),
+            Penetration = global::Penetration.Of(character, catalog, attack: true, own, weapon.LocalSources),
             ResistanceMods = new(
                 Get("critical_strikes_ignore_elemental_resistances") | Own("critical_strikes_ignore_elemental_resistances"),
                 Get("attack_critical_strikes_ignore_elemental_resistances") | Own("attack_critical_strikes_ignore_elemental_resistances"),
@@ -28,17 +35,16 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         int Own(string name) => catalog.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
     }
 
-    public bool Hits(int evasion, Random random) =>
-        DamageModel.Hits(DamageModel.AccuracyHitChance(evasion, Accuracy), random.Next(100));
-
     public (int Damage, bool Critical) Roll(ImpaleState impale, Random random,
         Func<DamagePacket, bool, int>? mitigate = null, int? criticalMultiplier = null,
         int extraCriticalRolls = 0, Random? criticalRandom = null, bool cannotCrit = false,
-        double now = 0, Func<double, int>? reflect = null, int avoidImpale = 0)
+        double now = 0, Func<double, int>? reflect = null, int avoidImpale = 0,
+        int hitChance = 100, Random? accuracyRandom = null)
     {
         var rolled = Hit.Roll(random);
         bool critical = CriticalStrikePolicy.Roll(cannotCrit ? 0 : CriticalChance,
-            criticalRandom ?? random, extraCriticalRolls);
+            criticalRandom ?? random, extraCriticalRolls)
+            && EvasionEntropy.ConfirmsCritical(hitChance, accuracyRandom ?? random);
         int damage = mitigate?.Invoke(rolled, critical) ?? (int)Math.Round(rolled.MinTotal);
         if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier ?? CriticalMultiplier);
         double physical = rolled[DamageType.Physical].Min * (critical ? Math.Max(0, CriticalMultiplier) / 100.0 : 1);

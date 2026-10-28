@@ -465,6 +465,51 @@ The real native Life reads and accepted-hit logs agree, with Gateway/Core/Storag
 RF, Ice Nova, relog and selected-panel controls above remain attributed to the original head.
 No native allocation of Rampager, owned-actor execution or whole-class acceptance is claimed.
 
+## 2g. Ordinary attack evasion and critical confirmation
+
+Ordinary melee and bow contacts now share `SpawnedMonster.AttackEvasion`, one entropy sequence per defender.
+The first attack seeds it with a random 0..99 value. Each attempted hit adds its whole-percent hit chance;
+reaching 100 accepts the hit and subtracts 100. The sequence resets after more than 3.33 game-clock seconds
+without a check, matching the existing incoming-attack policy. A new spawn starts fresh. Pause does not advance
+the clock. This timing is the current local policy; exact official tick boundaries remain unverified.
+
+After an accepted hit rolls critical chance/luck, an independent accuracy check confirms that critical result.
+Failure makes it a normal hit, retaining damage and normal on-hit behavior. Confirmation does not consume
+entropy or apply critical luck again. The confirmed result reaches resistance selection, damage multiplier,
+new impale storage, Fortification and critical callbacks. Existing reflected impale damage stays separate.
+At 100% hit chance confirmation needs no random draw. A miss performs no critical roll or on-hit mutation.
+
+The same contact chance includes the target's evasion modifiers and current smoke-ground Blind, plus the
+attacker's Unique/close-range Accuracy Masteries. Ordinary bows freeze rating, mastery magnitudes and
+unconditional cannot-evade flags at release; target rarity, position and evasion resolve at impact. Evaded
+targets do not stop the arrow: the sweep can hit a later target once. Block is tested after evasion and before
+damage/critical/impale. Melee's admission, evasion and damage now share the accepted-contact lock, preventing
+cancelled/paused/dead-owner contacts from consuming outgoing accuracy state. Bow admission remains at its
+existing relocation gate.
+
+Raw `global_always_hit` from the owner/default skill, or `local_always_hit` from the qualified attacking weapon,
+bypasses both accuracy checks. Inactive/off-hand weapon sources and final hand aliases cannot grant this flag.
+This batch establishes ordinary gameplay, not all source conditions or selected publication: gem attacks still
+need first-hit evasion, critical confirmation and correct projectile continuation; selected accuracy supports,
+other cannot-evade conditions, off-hand execution, chance/always-hit aliases and accuracy-weighted averages/DPS
+remain open. Spell hits continue without attack accuracy. Native revalidation remains pending.
+
+[Mark_GGG's entropy explanation](https://www.pathofexile.com/forum/view-thread/11707/filter-account-type/staff/page/10)
+establishes per-defender state, independent critical confirmation, inactivity resets and separate block checks.
+His [later correction](https://www.reddit.com/r/pathofexile/comments/ezhhtc/comment/fgqomvw/?context=3)
+confirms that misses do not roll critical chance and failed confirmation downgrades a landed hit.
+Pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02`, `CalcOffence.lua` hit-chance section, independently
+applies cannot-be-evaded before the accuracy/evasion formula; native stat descriptions identify both raw flags.
+These are labelled reference mechanics, not an official-server RNG-sequence claim for 3.29.3b.
+
+Decision: use one defender-owned sequence and a separate confirmation draw, keeping the existing bow release
+snapshot and game clock. Independent random misses would retain streaks; advancing entropy for confirmation
+would wrongly prevent critical hits at low hit chance. Recomputing bow owner inputs at impact would change
+the established release contract. Extend gem flight admission in a separate reviewable change rather than
+treating an evaded projectile as a terminal zero-damage collision. Automated checks cover deterministic sequences,
+expiry, parsed ordinary melee/bow confirmation, real local/global flags, pass-through, rejected actions,
+target modifiers/Blind, source removal and noncritical impale storage.
+
 ## 3. Damage over time and ailments
 
 DoT is one damage type, has no hit, cannot critically strike and uses that type's resistance. `DamageOverTime` carries

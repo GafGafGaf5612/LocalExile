@@ -23,6 +23,16 @@ partial class Program
             conn.Pools.AccuracyMoreInCloseRangePct, unique, close), unique, close);
     }
 
+    // Both accuracy checks use the same target context. Only the first check consumes the defender's entropy.
+    internal static int AttackHitChanceAt(ClientState conn, uint id, SpawnedMonster target, double at,
+        AttackAccuracyProfile profile)
+    {
+        int evasion = target.Mods.Effects.Evasion(Monsters.BaseEvasion(target.Level) ?? 0);
+        evasion = conn.FlaskGrounds.Evasion(id, evasion);
+        bool close = TargetAccuracy.InCloseRange(Dist(conn.Walk.Position(at), target.Walk.Position(at)));
+        return profile.Chance(evasion, target.Rarity == MonsterRarity.Unique, close);
+    }
+
     // A ground bow shot reserves pacing, its action token and stationary walk together with the input-time gate.
     internal static bool TryBeginBowAttack(ClientState conn, double requestedAt, double duration,
         ushort skill, ushort sequence, out (int Action, int X, int Y) started)
@@ -159,37 +169,6 @@ partial class Program
         await WhilePaused(conn);
         uint life;
         bool stageStarts = false;
-        int accuracy, evasion;
-        lock (conn.Monsters)
-        {
-            if (m.Life == 0) return;
-            if (!PlayerActionCurrent(conn, action))
-            {
-                Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled by a later action");
-                return;
-            }
-            // The Accuracy Mastery's target conditions at the roll: the target's own rarity and its distance at the hit
-            // resolution time (TargetAccuracy). Spells do not roll, so spells never see these.
-            var targetAccuracy = AttackAccuracyAt(conn, m, conn.Clock.Elapsed.TotalSeconds);
-            bool unique = targetAccuracy.Unique, closeRange = targetAccuracy.CloseRange;
-            accuracy = targetAccuracy.Accuracy;
-            if (accuracy != conn.Pools.Accuracy)
-                Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}, {m.Rarity}): accuracy {conn.Pools.Accuracy} -> {accuracy} " +
-                    $"for the target ({(unique ? "unique target, " : "")}{(closeRange ? "in close range (20 units) " : "")}accuracy mastery more)");
-            evasion = m.Mods.Effects.Evasion(Monsters.BaseEvasion(m.Level) ?? 0);
-        }
-        int hitChance = DamageModel.AccuracyHitChance(conn.FlaskGrounds.Evasion(use.TargetId, evasion), accuracy);   // blinded in smoke
-        if (!DamageModel.Hits(hitChance, Random.Shared.Next(100)))
-        {
-            Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} missed: accuracy {accuracy} vs evasion {evasion}, " +
-                $"{hitChance}% chance");
-            return;
-        }
-        if (MonsterBlocks(m, Random.Shared, spell: false))   // Stalwart: nothing of the hit happens
-        {
-            Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}) blocked");
-            return;
-        }
         int attackEffect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } attackId ? Skills.EffectRow(attackId) : -1;
         var ownPenetration = attackEffect >= 0
             ? Skills.EffectStats(attackEffect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2) : null;
@@ -210,12 +189,26 @@ partial class Program
             // Settle Rage at accepted contact before this hit's gain. It is a final multiplier on the attack packet,
             // never on an existing impale bonus or on generic damage/DoT.
             var player = CharacterPlayerStats(conn);
+            var accuracy = AttackAccuracyProfile.From(conn.Pools, player, Stats, ownPenetration, weapon.LocalSources);
+            double contactAt = conn.Clock.Elapsed.TotalSeconds;
+            int hitChance = AttackHitChanceAt(conn, use.TargetId, m, contactAt, accuracy);
+            if (!accuracy.CannotBeEvaded && !m.AttackEvasion.Hits(hitChance, contactAt, conn.AttackAccuracyRandom))
+            {
+                Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} evaded ({hitChance}% chance to hit)");
+                return;
+            }
+            if (MonsterBlocks(m, Random.Shared, spell: false))
+            {
+                Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} ({m.Label}) blocked");
+                return;
+            }
             var pen = Penetration.Of(player, Stats, attack: true, ownPenetration, weapon.LocalSources);
             var resistanceMods = HitResistMods(player, ownPenetration);
             var hit = AttackHitConverted(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee,
                 ConversionFor(conn, attackEffect, 1, attack: true));
             var ownRolled = hit.Roll(Random.Shared);
-            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration);
+            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration)
+                && GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom);
             int sourceCriticalMultiplier = AttackCriticalMultiplier(conn, player);
             int criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
             (damage, resistance) = MonsterDamage(m, ownRolled, critical, attack: true, resistanceMods, pen);
@@ -1157,13 +1150,20 @@ partial class Program
                         lock (conn.Monsters)
                         {
                             if (!Active() || conn.Paused) return null;
-                            bool Accept(uint targetId) => conn.Monsters.TryGetValue(targetId, out var monster)
-                                && !monster.Dead && monster.Life > 0
-                                && ordinaryShot.Hits(Monsters.BaseEvasion(monster.Level) ?? 0, Random.Shared);
                             double now = conn.Clock.Elapsed.TotalSeconds;
+                            var accuracy = ordinaryShot.AccuracyProfile ?? new(ordinaryShot.Accuracy);
+                            int hitChance = 100;
+                            bool Accept(uint targetId)
+                            {
+                                if (!conn.Monsters.TryGetValue(targetId, out var monster) || monster.Dead || monster.Life == 0)
+                                    return false;
+                                hitChance = AttackHitChanceAt(conn, targetId, monster, now, accuracy);
+                                return accuracy.CannotBeEvaded || monster.AttackEvasion.Hits(hitChance, now, conn.AttackAccuracyRandom);
+                            }
                             step = flight.Advance(now, Targets(now), Accept);
                             if (!step.Finished || (step.TargetId == 0 && !step.Wall)) return null;
-                            if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
+                            if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0
+                                && !MonsterBlocks(target, Random.Shared, spell: false))
                             {
                                 (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared,
                                     (rolled, crit) => MonsterDamage(target, rolled, crit, attack: true,
@@ -1173,7 +1173,8 @@ partial class Program
                                     criticalRandom: conn.CriticalRandom,
                                     cannotCrit: ordinaryShot.CriticalChance > 0 && CriticalProhibited(conn, attack: true),
                                     now: conn.Clock.Elapsed.TotalSeconds, reflect: stored => MonsterImpaleDamage(target, stored),
-                                    avoidImpale: target.Mods.Effects["avoid_impale_%"]);
+                                    avoidImpale: target.Mods.Effects["avoid_impale_%"], hitChance: hitChance,
+                                    accuracyRandom: conn.AttackAccuracyRandom);
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (hit is not null) RageOnHitLocked(conn, attack: true, melee: false, critical);
                             }

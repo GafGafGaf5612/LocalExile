@@ -2150,12 +2150,18 @@ the alternative of retaining precritical means continues to ignore real critical
 continuous packet estimates, not the expectation of every integer damage-roll/rounding path.
 [Mark_GGG's mechanics answer](https://www.pathofexile.com/forum/view-thread/1676002/filter-account-type/staff/page/1)
 confirms tooltip DPS includes critical strikes and accuracy (the Lacerate/Double Strike answer). This correction
-covers critical weighting; reference-target accuracy, the second attack critical confirmation, dual-hand and
+covers critical weighting; reference-target accuracy/confirmation weighting, dual-hand and
 multi-hit counts, cooldown/downtime, conditional more critical sources and damage-over-time DPS remain open.
 Native validation is pending. The historical numeric observations below are precritical values from the older
 implementation, not evidence for the corrected averages. Automated before-controls reproduce six omissions
 across ordinary melee/bow, Cyclone, Caustic Arrow, Fireball and Ice Nova; source/luck/prohibition, actual rate,
 hitless/support removal, fractional and overflow checks pass.
+
+Ordinary melee/bow combat now uses defender entropy followed by independent critical confirmation, with
+current target evasion/Blind and qualified cannot-evade flags. The averages above still need that probability
+weighting. Selected gem attacks also still need their own evasion/confirmation and accuracy-support composition.
+[Damage §2g](20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation) records the source evidence,
+snapshot/admission decisions, alternatives, parsed-contact controls and remaining native work.
 
 **Selected attack-gem hit rows (#196)** (`AttackSkillHit`, `AttackPanelStats`): main-hand total and per-type
 ranges now use the same packet constructor as projectile and area attack combat.

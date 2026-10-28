@@ -32,6 +32,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### The player's real stats
 
+Ordinary melee/bow now share defender evasion entropy and independent critical confirmation, with target
+evasion modifiers/Blind, target Masteries, qualified raw cannot-evade flags and evaded-arrow continuation.
+Complete gem attack evasion/confirmation with correct forward/piercing/return collision behavior; compose
+selected accuracy supports and other conditions, correct off-hand sources, and publish matching chance,
+always-hit and accuracy-weighted average/DPS rows. Validate these paths natively when shared resources are free.
+See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
+
 Impale now has a shared actual-contact implementation for ordinary and supported hits, scoped chance/effect
 inputs, captured duration/hit counts and separately mitigated reflection. The three selected chance aliases
 include real supports and local weapon inputs. Remaining work includes conditional weapon/Pride chance,
@@ -69,7 +76,7 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
 - **Spell hit panel (#188):** selected-spell ranges now share combat's converted packet and hitless spells clear
   inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
   DPS now includes the current critical chance/multiplier and signed luck, with exact action duration and
-  bounded native integers. Reference accuracy, attack critical confirmation, integer-roll expectation,
+  bounded native integers. Reference accuracy/confirmation weighting, gem attack accuracy, integer-roll expectation,
   cooldowns and DoT/beam displays remain separate work. Quality conversion and existing modifier precedence
   are unchanged. Selected attack-gem main-hand ranges and critical-weighted averages share the combat packet.
   Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.

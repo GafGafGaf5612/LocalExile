@@ -189,6 +189,34 @@ or multiplier. That needs the correct hand-specific source/execution work; it is
 main-hand/spell checks. Guaranteed critical effects and attack accuracy/confirmation remain open too.
 The parent Gateway/Auth/Patch processes were rechecked alive and left alone; no native session was started.
 
+## Ordinary attack evasion and critical confirmation
+
+Review found independent random misses on ordinary melee/bow, no critical confirmation on either path,
+and bare base evasion on bow contact. Bow also skipped target block. Ordinary contacts now share a
+defender-owned entropy sequence, use current target evasion/Blind and mastery conditions, and independently
+confirm critical hits before resistance, damage, impale storage and critical callbacks. Failed confirmation
+keeps the normal hit; evaded arrows can continue to another target. Melee admission and all hit mutations
+share one lock. Raw global and actual qualified weapon-local cannot-evade flags bypass both checks.
+
+Twenty-five added cases cover six Core entropy/confirmation cases and nineteen Gateway cases: parsed
+ordinary melee/bow accepted and downgraded criticals, actual `AlwaysHits` modifier and global flag,
+miss/cancellation safety, later arrow collision, target modifiers/Blind, raw-source isolation and frozen
+bow inputs with source removal. An existing bow case now verifies downgraded mitigation/impale storage.
+The focused Gateway run passes 45 (`ordinary-accuracy-expanded.trx`); Core focused passes 6
+(`evasion-entropy.trx`). Initial compile errors in the new test setup were corrected before execution.
+The solution builds with no warnings/errors; Core 561, Data 18 and Gateway 4,233 pass without skips,
+for 4,812 total. Final receipts are `core-ordinary-accuracy.trx`, `data-ordinary-accuracy.trx` and
+`gateway-ordinary-accuracy.trx`. The prior critical-final correction is local commit `e00d398`.
+
+Decision: preserve release-time bow owner inputs and use the existing game clock/inactivity policy, while
+sharing one sequence per defender and keeping critical confirmation independent. The alternatives of
+independent random misses, reusing entropy for confirmation, or re-reading bow sources at impact would
+retain known errors or alter established flight semantics. Gem projectile accuracy requires continuation
+through evaded collisions, including pierce/return; implement that separately instead of terminating
+evaded gem arrows as zero-damage impacts. These decisions, primary GGG/pinned PoB evidence and remaining
+source/panel/native work are also in [damage §2g](../protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
+Parent Gateway 39900/Auth 45972/Patch 56752 remain active and were left alone.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

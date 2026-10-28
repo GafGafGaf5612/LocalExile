@@ -128,15 +128,19 @@ public class OrdinaryBowShotTests
     }
 
     [Fact]
-    public void Accuracy_uses_the_contact_targets_evasion_without_mutating_its_impales()
+    public void Failed_critical_confirmation_selects_noncritical_mitigation_and_impale_storage()
     {
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 20), 100, 0, 150, 100);
+        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 10), 100, 10000, 200, 100);
         var impale = new ImpaleState();
         impale.Apply(100);
-        Assert.True(shot.Hits(0, new Rolls(99)));
-        Assert.False(shot.Hits(100_000, new Rolls(99)));
-        Assert.Equal(1, impale.Stacks);
-        Assert.Equal(10, impale.Bonus);
+        var result = shot.Roll(impale, new Rolls(0, 0), mitigate: (rolled, critical) =>
+        {
+            Assert.False(critical);
+            return (int)rolled.MinTotal;
+        }, criticalRandom: new Rolls(0), hitChance: 5, accuracyRandom: new Rolls(99));
+        Assert.Equal((20, false), result); // Normal direct 10 plus the existing reflected 10.
+        Assert.Equal(2, impale.Stacks);
+        Assert.Equal(11, impale.Bonus); // New physical 10 stores 1, not the unconfirmed critical's 2.
     }
 
     [Fact]
