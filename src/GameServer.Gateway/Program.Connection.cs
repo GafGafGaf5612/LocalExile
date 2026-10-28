@@ -277,7 +277,8 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x01d4 pause: in a town or hideout, not paused");
             return;
         }
-        lock (conn.Monsters) { if (pause) conn.Clock.Stop(); else conn.Clock.Start(); }
+        // Pause is a barrier: commit the preceding combat interval before freezing the world clock.
+        using (ProjectileMutation(conn)) { if (pause) conn.Clock.Stop(); else conn.Clock.Start(); }
         await Send(remote, stream, ciphers, InstancePause.State(pause), $"0x01d3 {(pause ? "paused" : "resumed")} (C→S 0x01d4 {(pause ? 1 : 0)})");
     }
 
@@ -299,6 +300,7 @@ partial class Program
         await gate.WaitAsync();
         try
         {
+            if (ProjectileOutputGuard.Value is { } projectileGuard && !projectileGuard()) return;
             if (still is not null && !still()) return;
             if (atGate is not null)
             {

@@ -249,8 +249,12 @@ Decrypted command-wire tests cover a 50% aura with regeneration disabled, unchan
 An explicit zero suppresses the source; repeated builds cannot compound it, and fresh connections clear dev inputs.
 Final native `strength` overrides remain presentation/requirement inputs and do not change this pool calculation.
 Reservation, native `maximum_mana` and maximum-mana attack lightning all read the resulting pool.
-Mental Conditioning (graph node 38080) supplies raw value 8, but its keys 9548 and 21159 are separate, unimplemented
-mechanics; mana-to-armour conversion and Phrecia selection remain separate work.
+Mental Conditioning (graph node 38080) supplies raw value 8 and conversion key 9548.
+With conversion active, `StrengthMana.Flat` joins the unrounded flat bucket once before mana/armour increases.
+Both Strength and Intelligence use final scaled attributes; odd Intelligence retains half mana until final rounding.
+The ordinary decimal/`Rating` bounds and every raw-attribute `/set_stat` rebuild remain in place.
+The full node gives a fresh Witch 16 mana and 128 Armour; display key 21159 alone enables neither consumer.
+The consumer does not enable Phrecia selection or claim the full class.
 Automated arithmetic, production-source and actual command/reload checks pass.
 Thirteen native checks use a fresh unascended Witch, raw key 4993 and synthetic Plate Vest modifiers.
 Fourteen and fifteen Strength grant three groups: maximum mana rises from 56 to 80 at raw value 8.
@@ -294,6 +298,10 @@ and boots ([13](13-items.md) §1): `base_physical_damage_reduction_rating` / `ba
 (Cloth and Chain and similar nodes), `global_defences_+%` and the combined armour/evasion increase are additive
 increased modifiers. The overcapped cold resistance's increase is one of them (§12); it applies before the conversion,
 so Iron Reflexes' converted evasion keeps it, and monster attacks roll against the boosted rating.
+Power of Purpose's raw `keystone_mental_conditioning` flag converts 80% of flat mana to twice as much armour.
+Mana and armour increases add on that branch, and its unrounded contribution joins ordinary armour before rounding.
+The remaining maximum mana drives reservation and maximum-mana added lightning; Steel Willed reads final armour once.
+See [the calculation boundaries and pending native checks](../game/power-of-purpose.md).
 **Iron Reflexes**
 (`keystone_iron_reflexes`) converts all evasion rating, including the base 15 and
 passive/item flat evasion, to armour and removes dexterity's 1% per 5 evasion; the converted part keeps the armour,
@@ -1030,6 +1038,14 @@ u32 BE y, the player's cell) every few frames while the button is held, and **C�
 `AreaSkillHit` around it at once (`ClientState.ChannelSkill`, `NextChannelHitAt`).
 
 ## 10. Projectiles (experimental)
+
+**Current implementation:** the [framework](../game/projectile-framework.md) owns gem/bow production routing and
+the sole 30 Hz Core simulator. Without skill coverage, catalog-recognized projectiles use basic straight-flight
+recipes; missing metadata is refused before costs. Coverage replaces recipes and presentation, never the engine.
+The old callback flight, observed-motion estimator, fixed-gap spread and named return-policy helpers are removed.
+The older native evidence below records packet discoveries and the replaced implementation: its 16 ms polling,
+send-gate damage commits, return overshoot/debug flags and fixed-gap controls are not current runtime behavior.
+Revalidate native gameplay against the current runtime; packet-layout evidence remains applicable.
 
 The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
 nothing by itself: its slot 17 reads nothing and almost every other slot is a bare `ret`.

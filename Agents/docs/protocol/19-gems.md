@@ -49,9 +49,13 @@ The variant: the copy `0x14246fa50` checks +0x3c against the `GemVariants` count
 count in the 3.29 layout) and keeps 0 when it is outside the list. The u16: `0x14246fae3` and `0x1424732c3` look it up
 in `Data/IndexableSupportGems.dat` when it is not 0.
 
-The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`,
-`GemFlags`: 0, or 4 for a locked level); saves keep the experience, the variant and the flags (`GemExperience`,
-`GemVariant`, `GemFlags`).
+The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`).
+Serialization derives flag bit 5 (`0x20`) from a positive variant and clears a stale bit 5 for variant 0, including
+gems nested inside sockets. Level-lock and other flags are preserved; saves retain the original `GemFlags`.
+The network reader copies the raw flags byte into +0x10 (`0x14246eb46..0x14246eb5b`), without applying the native
+copy's bit-5 normalization (`0x14246fab8..0x14246fae3`). A variant index alone therefore leaves the native variant
+marker unset even though the server grants the correct variant skill. Wire regression tests cover both item paths;
+the transfigured item-name display still needs a native retest.
 
 ## 2. The game data
 

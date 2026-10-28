@@ -51,7 +51,7 @@ partial class Program
     // Restoring an already enabled aura is not a fresh cast: transient mana availability must not discard its saved intent.
     static IReadOnlyList<AuraCatalog.Aura> RestoreRememberedAuras(ClientState conn, IEnumerable<string> saved)
     {
-        if (conn.Closed || conn.LeavingArea || InTown(conn) || OwnAuraRestrictionValue(conn) != 0) return [];
+        if (conn.Closed || conn.LeavingArea || conn.RageRetired || InTown(conn) || OwnAuraRestrictionValue(conn) != 0) return [];
         var wanted = saved.ToHashSet(StringComparer.Ordinal);
         var candidates = new List<AuraCatalog.Aura>();
         foreach (var gem in GemSkillEffects(conn.Character))
@@ -136,7 +136,7 @@ partial class Program
             {
                 // Preserve already-paid cost publication on the existing retired-action path.
                 // Aura restoration/presentation is forbidden on that old connection.
-                if (conn.Closed || conn.LeavingArea)
+                if (conn.Closed || conn.LeavingArea || conn.RageRetired)
                     return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerMana,
                         (uint)ReservedMana(conn), pool: ManaPool);
                 return WithOwnAuraChanges(conn, () => InstanceProtocol.LifeUpdate(PlayerId,
@@ -302,6 +302,7 @@ partial class Program
         List<(uint Monster, ushort Buff)> auras;
         lock (conn.Monsters)
         {
+            if (ProjectileOutputGuard.Value is { } guard && !guard()) return;
             rf = conn.RighteousFire;
             conn.RighteousFire = null;
             auras = rf is null ? [] : [.. rf.Auras.Select(kv => (kv.Key, kv.Value))];
@@ -483,11 +484,11 @@ partial class Program
         var damageOverTime = new SkillDamageContext(SkillHitKind.Spell, playerStats)
             .OverTime(new DamageOverTime(DamageType.Fire, perSecond, seconds));
         var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
-        var stages = new List<(uint Id, SpawnedMonster M)>();
         var entered = new List<(uint Id, ushort Buff)>();
         var left = new List<(uint Id, ushort Buff)>();
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
+            now = ProjectileWorldTime(conn);
             var here = conn.Walk.Position(now);
             foreach (var (id, m) in conn.Monsters)
             {
@@ -505,7 +506,7 @@ partial class Program
                 m.Aggro = m.Life > 0;
                 if (m.Life == 0) { m.Dead = true; if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b)); }
                 hits.Add((id, m, m.Life, damage));
-                if (stageStarts) stages.Add((id, m));
+                if (stageStarts) CommitBossStage(remote, stream, ciphers, conn, id, m, now);
             }
         }
         foreach (var (id, buff) in entered)
@@ -520,7 +521,6 @@ partial class Program
                 life == 0 ? $"0x01b1 monster 0x{id:x} ({m.Label}) burnt to death by Righteous Fire" : null);
             if (life == 0) await MonsterKilled(remote, stream, ciphers, conn, id, m);
         }
-        foreach (var (id, m) in stages) _ = RunBossStage(remote, stream, ciphers, conn, id, m);
     }
 
     // The quest flags the permanent Kitava resistance penalty mirrors (ResistancePenalty): the Act 5 pair and the
@@ -752,7 +752,7 @@ partial class Program
                 {
                     lock (conn.Monsters)
                     {
-                        if (conn.Closed || conn.LeavingArea) return null;
+                        if (conn.Closed || conn.LeavingArea || conn.RageRetired) return null;
                         ReconcileOwnAuras(conn, validateSkills: true);
                         var player = PlayerForCreation(conn);
                         conn.PeerTemplate = player;
