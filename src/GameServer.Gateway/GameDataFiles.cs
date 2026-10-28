@@ -8,6 +8,7 @@ static class GameDataFiles
     public static readonly (string File, string Feature)[] All =
     [
         ("data/tables/WorldAreas.json", "the game tables (stats, areas, waypoints, items, monsters, NPCs)"),
+        ("data/tables/PassiveJewelSlots.json", "ordinary passive tree jewel sockets"),
         ("data/tables/ModType.json", "vendor affix sale-price categories"),
         ("data/tables/Essences.json", "essence crafting and class-specific guaranteed modifiers"),
         ("data/tables/CraftingBenchOptions.json", "crafting bench recipes, unlocks and costs"),
@@ -23,7 +24,7 @@ static class GameDataFiles
         ("data/hideouts.json", "hideouts and native stationary model collision radii"),
         ("data/animation-contacts.json", "class spell timing (the Witch's is used)"),
         ("data/monster-takehit.json", "monster hit reactions (the TakeHit flinch and its sound)"),
-        ("data/passive-skill-graphs.json", "ordinary and Phrecia passive graph membership/connections (passive-graphs v4)"),
+        ("data/passive-skill-graphs.json", "ordinary and Phrecia passive graph membership/connections/geometry (passive-graphs v5)"),
         ("data/phrecia-passive-skillgraph.psg", "merged passive graph analysis artifact (not installed)"),
     ];
 

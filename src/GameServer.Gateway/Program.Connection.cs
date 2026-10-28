@@ -41,6 +41,7 @@ partial class Program
         // A new character's start kit is built and saved only after the read-only progress preflight above succeeds.
         var startItems = ItemsOf(conn);
         level = LoadProgress(conn, level);
+        NormalizePassiveJewels(conn);
         // Towns and hideouts refill the flasks, before the inventories go to the client.
         if (!conn.Ruthless && (WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true } || HideoutCatalog.Hideouts.Any(h => h.AreaHash16 == conn.Layout.Hash))
             && FillFlasks(startItems, int.MaxValue, catalog: ItemsFor(conn)).Count > 0)

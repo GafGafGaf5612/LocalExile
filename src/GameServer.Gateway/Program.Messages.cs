@@ -227,11 +227,13 @@ partial class Program
                 var (u2, node, u6) = InstanceEntities.ReadAllocatePassive(bytes);
                 Console.WriteLine($"[gateway] {remote} <= 0x0034 allocate passive {node} ({PassivesFor(conn).Find(node)?.Name ?? "unknown"}), " +
                     $"node high16 {u2}, expansion {u6}");
-                if (u2 == 0 && u6 == 0)
+                if (u2 == 0 && u6 != 0)
+                    await ChangeClusterPassive(remote, stream, ciphers, conn, node, allocate: true);
+                else if (u2 == 0)
                     await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree");
                 else
                 {
-                    Console.WriteLine($"[gateway] {remote} allocation refused: expanded/32-bit passive ids are not supported");
+                    Console.WriteLine($"[gateway] {remote} allocation refused: 32-bit passive ids are not supported");
                     await SendPassives(remote, stream, ciphers, conn);
                 }
             }
@@ -245,7 +247,9 @@ partial class Program
                 var (node, expansion, gold) = InstanceEntities.ReadRefundPassive(bytes);
                 Console.WriteLine($"[gateway] {remote} <= 0x0036 refund passive {node} ({(node <= ushort.MaxValue ? PassivesFor(conn).Find((ushort)node)?.Name : null) ?? "unknown"})" +
                     $"{(expansion ? ", expansion node" : "")}, {(gold ? "gold respec" : "refund points")}: {Convert.ToHexString(bytes)}");
-                if (!expansion && node <= ushort.MaxValue)
+                if (expansion && node <= ushort.MaxValue)
+                    await ChangeClusterPassive(remote, stream, ciphers, conn, (ushort)node, allocate: false);
+                else if (!expansion && node <= ushort.MaxValue)
                 {
                     if (gold)
                         await ChangePassives(remote, stream, ciphers, conn, [(ushort)node], allocate: false, "Respecialisation", goldRespec: true);
@@ -254,8 +258,7 @@ partial class Program
                 }
                 else
                 {
-                    // Cluster jewel nodes do not exist here: put the tree back.
-                    Console.WriteLine($"[gateway] {remote} refund refused: expansion nodes are not supported");
+                    Console.WriteLine($"[gateway] {remote} refund refused: 32-bit passive ids are not supported");
                     await SendPassives(remote, stream, ciphers, conn);
                 }
             }

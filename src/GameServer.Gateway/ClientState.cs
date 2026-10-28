@@ -399,6 +399,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
     public List<ushort> Passives = [];
+    /// <summary>The cluster jewel nodes allocated in the tree's expansion cells: the client's own small ids, sent with
+    /// the expansion flag (C->S 0x34/0x36) and carried in 0x33's second list. Empty until a cluster jewel is socketed.
+    /// </summary>
+    public HashSet<ushort> ClusterPassives = [];
     public AscendancyProgress MainAscendancy = new();
     public CharacterSaves.PassiveProgressSnapshot? SavedPassiveProgress;
     // Selected mastery effects: mastery node (PassiveSkillGraphId) -> effect HASH16. Saved with the character.

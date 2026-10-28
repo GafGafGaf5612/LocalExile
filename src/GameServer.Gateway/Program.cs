@@ -220,6 +220,7 @@ sealed partial class Program
     internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);
     // The passive tree's nodes (PassiveSkills.dat by PassiveSkillGraphId).
     internal static readonly PassiveTree Passives = new();
+    internal static readonly TimelessJewelEngine TimelessJewels = new();
     internal static readonly OrdinaryPassiveRules OrdinaryPassives = new();
     internal static readonly AscendancyCatalog Ascendancies = new();
     internal static readonly AscendancyRules AscendancyRules = new(Ascendancies);

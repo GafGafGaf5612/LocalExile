@@ -1906,7 +1906,10 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   with claws or daggers. When hit: endurance, frenzy. On block: endurance, frenzy, attack-only frenzy, power,
   spell-only power, a random one. Over time (`ChargeGains.Periodics`): per second, every x ms (the body armour
   implicits), random every 6 seconds, each second if hit in the last 4 seconds, while stationary or moving (the walk
-  estimate); not in towns. Skills: the Frenzy gem's hit gives a Frenzy Charge once per use (ActiveSkills `frenzy`;
+  estimate); not in towns. `gain_X_..._charges_per_second` carries the count, so a negative value
+  takes charges away: Replica Fragility, Replica Pacifism and Replica Powerlessness store `-1` ("Lose an
+  Endurance Charge each second") and lose one each second, never below the minimum; every other use of
+  the stat is positive. Skills: the Frenzy gem's hit gives a Frenzy Charge once per use (ActiveSkills `frenzy`;
   without a Frenzy projectile row it hits as an area, and only its first target counts), Power Siphon's
   killing hit a Power Charge, Flicker Strike's and Power Siphon's own on-hit chances count, and Enduring Cry grants an
   Endurance Charge per 5 power (`endurance_charge_granted_per_X_monster_power_during_endurance_warcry`) of the hostile
