@@ -579,7 +579,7 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   which drops a server-driven monster's queued attack in the same frame (traced: created, queued, both checks passed,
   then neither current nor queued). The server walks the monster itself, so the skill is non-pathing. Only on the
   skill: on the monster's Stats component it also stops its Move action from pathing (the monsters stood still).
-- **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
+- **AI** (`RunMonsterAi`, 100 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
   0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
   the player is still within reach + 2: 0x1b1 on the player.
 - **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level (raised by its mods); the server
@@ -1034,8 +1034,16 @@ player back there (live 2026-10-23).
 
 **Channelled skills** (Cyclone): after the skill's 0x1ab start the client sends **C→S 0x197** (10 bytes: u32 BE x,
 u32 BE y, the player's cell) every few frames while the button is held, and **C→S 0x199** (2 bytes) when it is let go
-(read from live captures 2026-10-23). The Gateway moves the player there and, once per attack time, runs
-`AreaSkillHit` around it at once (`ClientState.ChannelSkill`, `NextChannelHitAt`).
+(read from live captures 2026-10-23). The Gateway only moves the player there: 0x197 does not come at the attack rate.
+The hits run on the server's own timer (`RunChannel`, started with the channel): the first sweep lands as the channel
+starts, then one sweep around the player's current cell every `SupportedAttackSeconds` (the skill's own speed, its
+supports and the player's attack speed, as the tooltip shows), paying the cost each time, until 0x199, any other action,
+running out of mana, death or travel, or when the 0x197 updates stop for a second (the client sends them all the
+time while the button is held, so a lost 0x199 cannot keep the channel going: `LastChannelUpdateAt`;
+`ClientState.ChannelSkill`, `NextChannelHitAt`). One sweep resolves its damage
+and multiplier once and rolls them per monster; every monster gets its hit, life update and death packet before the
+sweep's deaths run their loot, experience and quest work (`AreaSkillHit`). Before, a sweep recalculated the whole skill
+per monster and handled each death inline, spreading one sweep over up to 1.4 s in a crowd.
 
 ## 10. Projectiles (experimental)
 
@@ -1713,7 +1721,11 @@ Whaletooth Bangle's owner duration is projected by `SkillDurationModifiers` in `
 `skill_effect_duration_+%` gains the signed per-ten-Strength value (key 2817) for each complete group of ten final Strength.
 It adds to ordinary raw duration once per rebuild, after attribute resolution; explicit final-stat overrides win.
 The resulting stat reaches the normal player/GrantedSkill stat publication without changing message layouts.
-This is stat projection only; elapsed skill/summon lifetime execution remains separate.
+Enduring Cry consumes that duration in its paid recovery interval, including compatible linked duration supports.
+Its base 2500 ms becomes 3175 ms at 272 final Strength with Whaletooth, retaining the Power-based recovery rate.
+Native paired recovery totals, expiry Life correction, transfer and cleanup are in
+[Antiquarian](../game/antiquarian.md#strength-duration-and-stun).
+Other skill/summon lifetime engines remain separate.
 See [the ascendancy scope and lifecycle checks](../game/ascendancies.md#whaletooth-bangle-duration-stat).
 
 The character panel (CharacterPanelStats.dat, 387 rows) reads mostly virtual stats that the server computes; the client
@@ -1940,3 +1952,35 @@ Skill removal suspends runtime effects without deleting enabled intent. A skill-
 A real town/hideout round trip restored only Vitality despite saved Precision and Clarity. The log marked the body armour inactive because Precision needed 22 dexterity while initial pools still contained the class base 14. CharacterStatSources was checking socketed gems against stale/uninitialized pools while constructing those very pools, then disabling the entire item's global modifiers and all its gems.
 
 Item activation now uses only the equipment's own requirements. Gem requirements remain enforced individually at socketing/casting against completed pools; an unavailable gem no longer suppresses its host armour, unrelated gems or their attributes. This removes the circular initialization gate on aura candidates. AuraEquipmentRestoreTests reproduces the fresh-connection equipment case and restores all 17 supported self auras, including 34 distinct source/recipient buff packets after town suppression. Restoration has no aura-count limit.
+
+### Grace Period on combat-area entry
+
+Each instance connection grants a fresh 60-second `grace_period` buff after creating the player and before
+spawning monsters. WorldAreas.IsTown and owned hideout templates are excluded by this server's policy.
+BuffDefinitions row 6 is visible, non-recovery, uses BuffVisuals row 8 (`invulnerability.dds`), and has
+base_cannot_be_damaged / is_hidden_monster / in_grace_period and minion protection flags. Send ordinary
+S→C 0x1c1 with a fresh buff instance and u68 holding IEEE-754 f32 **60.0 seconds** (0x42700000); remove once with 0x1c2.
+
+GracePeriod tracks a per-entry deadline and initial cell using the pause-aware connection game clock.
+The first actual grid step (including approach-to-object movement), expiry, skill/attack use or a successful
+flask use ends protection. An idle/blocked move order alone does not remove it. Protection is checked at
+hit time and ends immediately on movement/deadline even before the recovery loop sends the remove packet.
+It cannot reactivate by returning to the starting cell. No state is persisted across connections.
+
+While protected, the server grants immunity to every damage type, suppresses RF self-burning and outgoing
+RF pulses, and prevents hostile AI targeting and pending monster hits. Functional summoned-minion combat
+is not implemented; cosmetic pets have no incoming/outgoing damage to protect.
+GGG's [3.25.0 patch notes](https://www.pathofexile.com/forum/view-thread/3531661) explicitly identify the
+Grace Period buff and protection from enemy targeting. The native buff metadata supplies the icon/name/stats;
+the requested 60-second duration and town/hideout exclusions are server policy. See also the
+[community mechanics reference](https://www.poewiki.net/wiki/Grace_Period) for action cancellation rules.
+Automated coverage includes exact expiry, all exclusion combinations, native metadata/packet, one-step
+movement and action cancellation. Real-client icon/timing verification is pending.
+
+Grace Period countdown correction: packet +0x68 is copied by 0x141e07220 to constructor parameters,
+then by 0x141e06290 to Buff +0x18 (initial duration) and +0x1c (remaining duration).
+0x141e10520 subtracts elapsed seconds multiplied by Buff +0x20 (packet +0x6c, rate default 1).
+The omitted-duration default 0x14015a670 is float positive infinity (0x7f800000).
+An integer 60000 was interpreted as a tiny subnormal float and immediately displayed 0:00.
+The regression independently decodes the BE duration bits and checks float 60, rather than comparing two calls
+to the same packet writer. Native icon was confirmed; corrected countdown awaits live verification.

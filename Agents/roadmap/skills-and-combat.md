@@ -101,6 +101,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 - **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show
   the same reserved and unreserved values.
 
+### Area-entry protection verification
+
+- **Known:** Grace Period protection and the native timed buff are implemented outside towns and hideouts.
+- **Start:** verify the 60-second countdown, first-step removal and damage prevention in the real client.
+  The icon is visible; its corrected floating-point timer needs a live recheck after the upstream integration.
+- **Done when:** the timer counts down and protection ends on movement, actions or expiry.
+
 ### Damage model (foundation done, deeper defence next)
 
 - **Done:** hits are per-type `DamagePacket`s; conversion follows physical, lightning, cold, fire, chaos, including
@@ -118,6 +125,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   armour/evasion mitigate monster hits (Status: Armour and Evasion).
   Ordinary physical monster melee can now trigger native player hit recovery with matching server cancellation.
   Copied-save live checks verified walking, pending cast cancellation, released flight and a stun-immune control.
+  Selected Antiquarian now has native Ward/Adrenaline, Turtle Shell, always-hit/Far Shot and shield controls.
+  Whaletooth extends actual Enduring Cry recovery; see [its model and evidence](../docs/game/antiquarian.md).
 - **Known:** both sides still have flat damage ranges ([11](../docs/protocol/11-skills.md) 5, 6);
   ordinary player ES absorption, regeneration and interrupted recharge are implemented and live-checked.
   Added damage has its first stat: the attack's added lightning gets

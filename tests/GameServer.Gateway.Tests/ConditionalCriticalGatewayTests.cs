@@ -203,7 +203,9 @@ public class ConditionalCriticalGatewayTests
             ? "main_hand_critical_strike_multiplier" : "spell_critical_strike_multiplier")!.Value;
         Assert.Contains((multiplierKey, multiplier), panel.Stats!);
         Assert.Contains((Program.Stats.Key("virtual_extra_critical_rolls")!.Value, 1), panel.Stats!);
-        f.Conn.PlayerLife = 51;
+        // The low-life condition is read when the hit resolves: at the contact for a swing or a cast, at once for a
+        // channelled skill (Cyclone's first sweep lands as it starts, RunChannel).
+        f.Conn.PlayerLife = gem == "Cyclone" ? 50u : 51u;
         await f.Use();
         f.Conn.PlayerLife = 50;
         await f.HitLands();
