@@ -65,6 +65,8 @@ cancellation, release specialization and presentation. Paid attacks normally sur
 definitions with release-time resources retain action cancellation. Cooldown tickets, death, recovery and
 epoch restrictions still apply. Specialization runs once in the simulation commit and may provide frozen
 per-initial-projectile payloads; continuation children inherit their parent's payload.
+Accepted hit recovery permanently cancels unreleased paid attacks, even after recovery expires;
+already released flights continue independently.
 
 `ProjectilePresentation` supplies flight mesh/clip, second-form clip and event effects. Non-gem sources may
 supply presentation directly through `ProjectileOffense`. The common host owns object lifecycle, terrain
