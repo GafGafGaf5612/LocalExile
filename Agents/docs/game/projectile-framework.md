@@ -74,6 +74,8 @@ already released flights continue independently.
 
 Gem skill records resolve the same profile for native projectile-count, pierce, chain and fork description inputs.
 Prohibitions override displayed continuation grants; unlimited pierce uses the native all-targets flag.
+Arrow pierce display aliases are cleared after their applicable contributions enter the combined profile budget,
+so they cannot shadow the generic total or the cannot-pierce row.
 Final display values modify only the outgoing skill record, never raw supported stats or later release calculations.
 A definition may project specialized stage counts through `PanelStats`; an unavailable recipe omits this projection
 without blocking the remaining skill list. Native description templates choose the wording and visibility.
