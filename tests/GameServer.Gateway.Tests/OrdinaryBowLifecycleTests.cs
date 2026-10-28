@@ -114,13 +114,28 @@ public class OrdinaryBowLifecycleTests
         await Task.Delay(50);
         Assert.Empty(conn.ProjectileObjects);
         Assert.Equal(0, wire.Reader.Available);
-        conn.Clock.Start();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (true)
+        await wire.Gate.WaitAsync(timeout.Token);
+        bool held = true;
+        try
         {
-            lock (conn.Monsters) if (conn.ProjectileObjects.Count != 0) { conn.ActionCount++; break; }
-            await Task.Delay(1, timeout.Token);
+            conn.Clock.Start();
+            while (true)
+            {
+                lock (conn.Monsters) if (conn.ProjectileObjects.Count != 0) { conn.ActionCount++; break; }
+                // Pass one queued send, then hold the next before flight can advance. Polling a live projectile
+                // without this gate could miss its entire lifetime when the test continuation is delayed.
+                await Task.Delay(5, timeout.Token);
+                var reclaim = wire.Gate.WaitAsync(timeout.Token);
+                wire.Gate.Release();
+                held = false;
+                await reclaim;
+                held = true;
+            }
+            Assert.False(flight.IsCompleted);
+            Assert.Equal(100u, target.Life);
         }
+        finally { if (held) wire.Gate.Release(); }
         await flight.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(1, target.Impale.Stacks);
         Assert.Equal(90u, target.Life);
