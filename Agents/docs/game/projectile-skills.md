@@ -57,17 +57,23 @@ The generic damage adapter captures separate direct/area packets, including area
 KB applies `active_skill_area_damage_+%_final` only at the explosion stage. Skill-owned Arcane Might and Clustering's
 maximum-mana physical addition enter the common attack damage construction, before stage multipliers.
 
-Cluster centers use one seeded sample in each equal angular sector, visited counter-clockwise. Minimum placement is
-`min(placement radius, blast radius + projectile collision radius + 0.001)`, with a uniformly sampled radius up to the
-placement radius. Blocked center paths are omitted without redistributing those sectors. This spacing and sampling
-are explicit approximations; unusual target sizes may overlap geometrically. The Core actor interface supports actor
-radii, while the present Gateway adapter represents monster centers with radius zero and a shared projectile radius.
+Each group chooses a random initial rotation and divides the circle into N equal sectors for its resolved explosion
+count. One angle is sampled independently inside each sector, visited counter-clockwise. Centers lie on the fixed
+placement circle: 20 cells for normal KB and 28 for Clustering before area scaling. Blast and placement radii scale
+separately. Terrain-blocked center paths are omitted without replacement, redistribution or timing compression.
+Centers and terrain admission are captured at impact/stop; actors and defenses resolve at each later blast.
+The fixed-circle geometry is a development approximation, not a measured official distribution. Unusual target sizes
+can overlap geometrically; Core supports actor radii while the Gateway currently uses monster centers of radius zero.
 
-All cluster damage events simulate simultaneously at impact/stop. The native cluster burst uses
-`Metadata/Effects/Spells/cluster_burst/big.ao` at each actual center for 0.35 seconds. There is no invented interval:
-exact official random distribution, radial spiral and sequential timing have not been calibrated. Fireball art uses
-the selected native variation for 1.5 seconds on actual area events, including the final return event. These durations
-are presentation lifetimes, not damage delays. Native height, art alignment and full visual equivalence remain pending
+`ClusterDelayMs = 50` and `ClusterIntervalMs = 50` are separate recipe parameters in `GatewayProjectileSkillProfiles`.
+Slot i generates its native effect and commits its damage at trigger + delay + i * interval (zero-based i), so four
+slots run at 50/100/150/200 ms. Both values are arbitrary development defaults: neither frame measurements nor
+experiential estimates, and no source establishes these exact timings. Omitted terrain slots retain their gaps.
+Pending blasts survive parent continuation/removal, retain the trigger phase and share the simulation pause/teardown.
+The native burst uses `Metadata/Effects/Spells/cluster_burst/big.ao` at each actual center for 0.35 seconds.
+Exact official random distribution, radial spiral and sequential timing remain uncalibrated. Fireball art uses
+the selected native variation for 1.5 seconds on actual area events, including the final return event. These lifetimes
+are separate from the KB damage delays. Native height, art alignment and full visual equivalence remain pending
 user-operated client validation.
 
 ## Evidence and versions

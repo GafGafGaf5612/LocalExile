@@ -354,7 +354,9 @@ and can require explicit recipes.
   keeps one primary and cannot Split.
   The internal AltY row retains normal-KB compatibility, without establishing a third playable gem.
   Separate blast/placement radii use supported area stats once; independent explosions can overlap covered victims.
-  Geometry, simultaneous cluster timing and native height/art equivalence still need client validation.
+  KB centers use a fixed scaled circle and random sector angles, with separate 50 ms first-delay/inter-slot defaults.
+  Both timing values are arbitrary, without frame measurements or experiential basis; official geometry/timing and
+  native height/art equivalence still need client validation.
   Code: Core `Projectiles/`, Gateway `Projectiles/` and `Projectiles/Skills/`; see the
   [framework guide](../docs/game/projectile-framework.md).
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry

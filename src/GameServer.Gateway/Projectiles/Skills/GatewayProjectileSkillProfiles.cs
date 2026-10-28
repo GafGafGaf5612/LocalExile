@@ -3,6 +3,9 @@ using GameServer.Core.Projectiles;
 /// <summary>Named behavior and catalog policies on the common projectile runtime.</summary>
 static class GatewayProjectileSkillProfiles
 {
+    // Arbitrary development values: neither measured frame timings nor experiential estimates.
+    public const int ClusterDelayMs = 50;
+    public const int ClusterIntervalMs = 50;
     public static IReadOnlyList<string> Effects { get; } = Array.AsReadOnly(new[]
         { "Fireball", "KineticBlast", "KineticBlastAltX", "KineticBlastAltY" });
 
@@ -38,7 +41,9 @@ static class GatewayProjectileSkillProfiles
                 CannotSplit = clustering,
                 CountConsumer = clustering ? ProjectileCountConsumer.ContactAreas : ProjectileCountConsumer.Primary,
                 ContactArea = new("kinetic-blast", 0, count, Multiplier: Math.Max(0, multiplier))
-                    { SectorPlacement = true, RespectTerrain = true },
+                    { SectorPlacement = true, RespectTerrain = true,
+                        Delay = ProjectileRuntime.Time(ClusterDelayMs / 1000d),
+                        Interval = ProjectileRuntime.Time(ClusterIntervalMs / 1000d) },
                 EndAreaReasons = NonContactStops, EndAreaOnReturnTurnaround = true
             };
         }
@@ -59,9 +64,8 @@ static class GatewayProjectileSkillProfiles
             bool clustering = effect == "KineticBlastAltX";
             int blast = SkillArea.Radius(Value("active_skill_base_area_of_effect_radius", clustering ? 19 : 14), get, spell);
             int placement = SkillArea.Radius(Value("active_skill_base_secondary_area_of_effect_radius", clustering ? 28 : 20), get, spell);
-            // Inner spacing is an explicit geometry approximation, not immunity for the original victim.
-            var area = contact with { Radius = blast, Offset = placement,
-                MinimumOffset = Math.Min(placement, blast + p.Radius + .001) };
+            // Centers lie on the scaled placement circle; only the angle is sampled within each sector.
+            var area = contact with { Radius = blast, Offset = placement, MinimumOffset = placement };
             return p with { ContactArea = area, EndArea = area };
         }
         if (p.EndArea is { } terminal)

@@ -16,12 +16,37 @@ public class ProjectileSkillProfileTests
     static ProjectileEvent[] Areas(ProjectileRuntimeProbe w) => w.Events.Where(e => e.Kind == ProjectileEventKind.Area).ToArray();
 
     [Theory]
+    [InlineData("KineticBlast", 4, 20)]
+    [InlineData("KineticBlastAltX", 3, 28)]
+    [InlineData("KineticBlastAltY", 4, 20)]
+    public void KB_uses_fixed_scaled_circle_and_fifty_millisecond_area_slots(string effect, int count, int placement)
+    {
+        var w = new ProjectileRuntimeProbe();
+        w.Release(Profile(effect, ("skill_area_of_effect_+%", 300)) with { Range = 20 });
+        w.Advance(.2); Assert.Empty(Areas(w));
+        w.Advance(.25 - 1d / ProjectileRuntime.QuantaPerSecond); Assert.Empty(Areas(w));
+        w.Advance(.25); Assert.Single(Areas(w));
+        w.Advance(1);
+        var areas = Areas(w); Assert.Equal(count, areas.Length);
+        Assert.Equal(Enumerable.Range(1, count).Select(i => ProjectileRuntime.Time(.2 + .05 * i)), areas.Select(e => e.At));
+        Assert.All(areas, e => Assert.Equal(placement * 2, (e.Position - new ProjectileVector(30, 10)).Length, 7));
+        double previous = Math.Atan2(areas[0].Position.Y - 10, areas[0].Position.X - 30), turn = 0;
+        foreach (var area in areas.Skip(1))
+        {
+            double angle = Math.Atan2(area.Position.Y - 10, area.Position.X - 30);
+            double delta = (angle - previous + Math.Tau) % Math.Tau;
+            Assert.InRange(delta, double.Epsilon, 2 * Math.Tau / count); turn += delta; previous = angle;
+        }
+        Assert.True(turn < Math.Tau);
+    }
+
+    [Theory]
     [InlineData("Fireball")]
     [InlineData("KineticBlast")]
     public void Lone_target_admits_one_direct_collision_and_no_denied_sibling_blast(string effect)
     {
         var w = new ProjectileRuntimeProbe(); w.Target(1, 40, 10);
-        w.Release(Profile(effect, ("number_of_additional_projectiles", 4)) with { SpreadRadians = 0 }); w.Advance(.4);
+        w.Release(Profile(effect, ("number_of_additional_projectiles", 4)) with { SpreadRadians = 0 }); w.Advance(.6);
         Assert.Single(w.Attempts, h => h.Target.Id == 1);
         Assert.Equal(effect == "Fireball" ? 1 : 4, Areas(w).Length);
         Assert.Equal(4, w.Runtime.Projectiles.Count);
@@ -35,8 +60,9 @@ public class ProjectileSkillProfileTests
         w.Runtime.Release(new(Profile("KineticBlast", ("projectiles_return", 1)) with { Range = 20 },
             owner, owner, 1, new(10, 10), new(110, 10)) { ReturnAnchor = owner });
         w.Advance(.2);
-        Assert.Equal(4, Areas(w).Length); Assert.Equal(1, Assert.Single(w.Runtime.Projectiles).Phase);
-        w.Advance(2);
+        Assert.Empty(Areas(w)); Assert.Equal(1, Assert.Single(w.Runtime.Projectiles).Phase);
+        w.Advance(.4); Assert.Equal(4, Areas(w).Length);
+        w.Advance(2.2);
         Assert.Equal(8, Areas(w).Length); Assert.Empty(w.Runtime.Projectiles);
     }
 
@@ -167,9 +193,10 @@ public class ProjectileSkillProfileTests
     public void KB_profiles_emit_separate_scaled_sector_clusters(string effect, int count, int blast, int placement, double multiplier)
     {
         var p = Profile(effect); var w = new ProjectileRuntimeProbe(); w.Target(1, 40, 10);
-        w.Release(p); w.Advance(.4);
+        w.Release(p); w.Advance(.6);
         Assert.Equal(count, Areas(w).Length);
-        Assert.All(Areas(w), a => { Assert.Equal(blast, a.Radius); Assert.InRange((a.Position - new ProjectileVector(39, 10)).Length, blast + 1.001, placement + .001); });
+        var impact = Assert.Single(w.Events, e => e.Kind == ProjectileEventKind.End).Position;
+        Assert.All(Areas(w), a => { Assert.Equal(blast, a.Radius); Assert.Equal(placement, (a.Position - impact).Length, 7); });
         Assert.Single(w.Attempts); Assert.Equal("direct", w.Attempts[0].Stage);
         Assert.Equal(multiplier, p.ContactArea!.Multiplier);
         Assert.True(p.ContactArea.SectorPlacement); Assert.True(p.ContactArea.RespectTerrain);
@@ -193,7 +220,7 @@ public class ProjectileSkillProfileTests
             ("modifiers_to_number_of_projectiles_instead_apply_to_splitting", 1), ("projectile_number_to_split", 4));
         Assert.Equal(1, p.Count); Assert.Equal(9, p.ContactArea!.Count); Assert.True(p.CannotSplit);
         var w = new ProjectileRuntimeProbe(); w.Target(1, 40, 10); w.Target(2, 70, 20);
-        w.Release(p); w.Advance(.4);
+        w.Release(p); w.Advance(.9);
         Assert.Equal(9, Areas(w).Length); Assert.Single(w.Events, e => e.Kind == ProjectileEventKind.Spawn);
     }
 
@@ -217,10 +244,26 @@ public class ProjectileSkillProfileTests
     }
 
     [Fact]
+    public void Terrain_omits_slots_without_moving_other_centres_or_compressing_their_times()
+    {
+        var wall = new ProjectileRuntimeProbe { Blocked = (x, _) => x >= 60 };
+        wall.Release(Profile("KineticBlast")); wall.Advance(1);
+        var impact = Assert.Single(wall.Events, e => e.Kind == ProjectileEventKind.End);
+        var open = new ProjectileRuntimeProbe();
+        open.Release(Profile("KineticBlast") with { Range = impact.Position.X - 10 }); open.Advance(1);
+        Assert.Equal(4, Areas(open).Length); Assert.InRange(Areas(wall).Length, 1, 3);
+        Assert.All(Areas(wall), actual =>
+        {
+            var slot = Assert.Single(Areas(open), candidate => candidate.At == actual.At);
+            Assert.Equal(slot.Position.X, actual.Position.X, 7); Assert.Equal(slot.Position.Y, actual.Position.Y, 7);
+        });
+    }
+
+    [Fact]
     public void Large_primary_victim_and_neighbors_can_receive_independent_KB_area_hits()
     {
         var w = new ProjectileRuntimeProbe(); w.Targets.Add(new(new(1), 2, _ => new(40, 10), 60));
-        w.Release(Profile("KineticBlast")); w.Advance(.1);
+        w.Release(Profile("KineticBlast")); w.Advance(.25);
         Assert.Equal(5, w.Attempts.Count(h => h.Target.Id == 1));
         Assert.All(w.Attempts.Where(h => h.IsArea), h => Assert.Equal(.6, h.Multiplier));
     }
@@ -279,7 +322,7 @@ public partial class OwnAuraGatewayTests
             {
                 Assert.True(f.Use("ground", skillIndex).IsCompletedSuccessfully);
                 var session = Assert.IsType<Program.ProjectileSession>(f.Conn.ProjectileRuntime);
-                for (int i = 0; i < 120 && direct.Life == 10000; i++)
+                for (int i = 0; i < 120 && (direct.Life == 10000 || nearby.Life == 10000); i++)
                     session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.TickQuanta);
                 Assert.True(direct.Life < 10000);
                 Assert.True(nearby.Life < 10000, "At least one independent area must hit an off-path neighbour.");
