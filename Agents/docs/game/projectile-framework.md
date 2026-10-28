@@ -75,6 +75,11 @@ already released flights continue independently.
 supply presentation directly through `ProjectileOffense`. The common host owns object lifecycle, terrain
 height, arcs, redirects and effect cleanup. Core actor/team contracts are source-neutral; the current Gateway
 damage adapter targets monsters. Live hostile projectile adapters remain unimplemented.
+Area event effects use the actual event radius and the selected art's exported radius to set uniform native scale.
+Both callback and payload effects use this conversion; art without a known radius keeps its native scale.
+Endpoint logs include the stop reason, position and projectile-grid state; area logs include art, radius and scale.
+Without a captured height grid, flights use the client's terrain sampling, without the five-step torso offset.
+This avoids guessed absolute world heights but does not solve ground clipping or platform/doodad surfaces.
 
 Automated checks exercise the production runtime and session, including held-output gameplay, moving
 targets, walls, evasion, continuation combinations, real item stat sources and lifetime boundaries.
