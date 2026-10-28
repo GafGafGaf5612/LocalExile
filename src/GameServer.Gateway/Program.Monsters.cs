@@ -41,7 +41,7 @@ partial class Program
         var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
             mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)))
         {
-            Ranged = variety.GrantedEffects is [int first, ..] && Skills.IsAttack(first) && Skills.IsProjectile(first)
+            Ranged = variety.GrantedEffects is [int first, ..] && Skills.IsRangedAttack(first)
         };
         var skill = variety.GrantedEffects is [int effect, ..]
             ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;

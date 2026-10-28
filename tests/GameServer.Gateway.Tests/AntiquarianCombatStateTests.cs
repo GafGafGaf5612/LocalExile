@@ -3,6 +3,15 @@ namespace GameServer.Gateway.Tests;
 public class AntiquarianCombatStateTests
 {
     [Fact]
+    public void Real_monster_Melee_projectile_umbrella_does_not_make_the_hit_ranged()
+    {
+        if (!File.Exists("data/tables/ActiveSkills.json")) return;
+        int melee = Program.Skills.EffectRow("Melee");
+        Assert.True(Program.Skills.IsProjectile(melee));
+        Assert.True(Program.Skills.IsMelee(melee));
+        Assert.False(Program.Skills.IsRangedAttack(melee));
+    }
+    [Fact]
     public void Adrenaline_has_one_deadline_and_source_death_and_transfer_are_explicit()
     {
         var state = new AntiquarianCombatState();
