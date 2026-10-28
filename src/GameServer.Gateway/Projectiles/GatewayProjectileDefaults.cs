@@ -4,7 +4,11 @@ using GameServer.Core.Projectiles;
 static class GatewayProjectileDefaults
 {
     public static ProjectileProfile Resolve(string metadata, Func<string, int> get, double speed, bool attack) =>
-        GatewayProjectileModifiers.Resolve(new(metadata)
+        GatewayProjectileModifiers.Resolve(Create(metadata, get, speed), get, attack);
+
+    /// <summary>Unresolved common baseline. Attach intrinsic stages before resolving modifiers once.</summary>
+    public static ProjectileProfile Create(string metadata, Func<string, int> get, double speed) =>
+        new(metadata)
         {
             Speed = speed,
             Count = get("base_number_of_projectiles") is > 0 and var count ? count : 1,
@@ -13,5 +17,5 @@ static class GatewayProjectileDefaults
             SkipDeniedReturnContacts = true,
             ExcludeTurnaroundTarget = true,
             ReturnOvershoot = 150
-        }, get, attack);
+        };
 }
