@@ -167,9 +167,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         using var game = new GatewayCharacter(classRow: 0, baseClass: 1, choice: "Antiquarian", level: 60);
         var conn = game.State;
         conn.PlayerLife = 123;
-        conn.Clock.Stop(); conn.Clock.Reset();
-        conn.EnduringCryRecovery.Begin(-2, 1, 10);
-        conn.SentEnduringCryUntil = -1;
+        conn.Clock.Stop();
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        conn.EnduringCryRecovery.Begin(now - 2, 1, 10);
+        conn.SentEnduringCryUntil = now - 1;
         var packet = Program.AntiquarianPresentation(conn)!;
         Assert.NotNull(packet);
         var correction = InstanceProtocol.LifeUpdate(Program.PlayerId, 123);
