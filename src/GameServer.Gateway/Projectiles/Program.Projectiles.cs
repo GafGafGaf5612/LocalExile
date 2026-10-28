@@ -249,8 +249,8 @@ partial class Program
             {
                 string? flightVisual = (p.Use.Payload as ProjectileOffense)?.FlightVisual ?? presentation.FlightVisual;
                 uint id = Conn.NextObjectId++;
-                var height = TerrainHeights.At(Conn.Layout.Id, Conn.Seed, x, y) is int ground
-                    ? new ProjectileHeight(ground + 5) : ProjectileHeight.Terrain;
+                var height = ProjectileHeight.Flight(TerrainHeights.At(Conn.Layout.Id, Conn.Seed, x, y),
+                    Environment.GetEnvironmentVariable("Game_PROJECTILE_HEIGHT"));
                 var visual = new Visual(id, height);
                 visuals[p.Id] = visual; Conn.ProjectileObjects.Add(id);
                 if (p.Profile.Lobbed) BeginArc(p, visual);
@@ -350,7 +350,10 @@ partial class Program
                 visual.Height = ProjectileHeight.Terrain;
                 return;
             }
-            var arc = new ProjectileArc(p.Distance, p.Remaining, startGround + (p.GroundBounces == 0 ? 5 : 0), endGround);
+            int start = p.GroundBounces == 0
+                ? ProjectileHeight.Flight(startGround, Environment.GetEnvironmentVariable("Game_PROJECTILE_HEIGHT")).Marker
+                : startGround;
+            var arc = new ProjectileArc(p.Distance, p.Remaining, start, endGround);
             visual.Arc = arc;
             for (int segment = 1; segment < ProjectileArc.Segments; segment++)
             {

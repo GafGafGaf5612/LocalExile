@@ -531,7 +531,8 @@ and can require explicit recipes.
   Pause freezes the game horizon, transfer/retirement invalidates epochs, and released shots survive later actions.
   Real-input held-output, moving-target, wall, evasion, pierce, return, pause, transfer, impale and actor-scale checks
   exercise this same runtime. Native bow/skill controls and animation alignment still require client validation.
-  Captured ground uses terrain plus torso height; missing captures use native terrain sampling without a torso offset.
+  Straight flight uses captured ground plus `Game_PROJECTILE_HEIGHT` (default 5); missing captures use the bare offset.
+  Creation, glide and stop retain the same height; independent effects still follow client terrain.
   Platforms/doodads still need a surface model (#182). Integer walk estimates and shared radius remain approximations.
   Code: Core `Projectiles/`, Gateway `Projectiles/`, `Program.Bows.cs`, `Program.Combat.cs` and `ClientState.cs`.
   Docs: [framework](../docs/game/projectile-framework.md), [11](../docs/protocol/11-skills.md) section 10.
