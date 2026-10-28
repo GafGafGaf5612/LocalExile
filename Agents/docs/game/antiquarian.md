@@ -86,6 +86,7 @@ LocalExile v1 uses one one-second recovery interval; another accepted stun refre
 The resource writer integrates exact elapsed game time and consumes each earned fraction once.
 Source removal stops future recovery, preserving only already earned recovery; death clears all debt.
 The native regeneration projection is excluded from the writer's baseline to avoid double recovery.
+Temporary recovery changes also send authoritative Life, correcting native prediction overshoot at expiry.
 Unsupported global stun thresholds/immunities and non-melee stun engines retain their existing boundaries.
 
 ## Projectile and shield consumers

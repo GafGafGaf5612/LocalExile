@@ -159,4 +159,21 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(game.State.PlayerMaxLife * .08 * 3.175, game.State.EnduringCryRecovery.Take(after + 10), 6);
         Assert.Equal(0, game.State.EnduringCryRecovery.Take(after + 11));
     }
+
+    [Fact]
+    public void Ending_temporary_recovery_corrects_native_predicted_Life_even_without_a_later_recovery_tick()
+    {
+        if (!DataAvailable()) return;
+        using var game = new GatewayCharacter(classRow: 0, baseClass: 1, choice: "Antiquarian", level: 60);
+        var conn = game.State;
+        conn.PlayerLife = 123;
+        conn.Clock.Stop(); conn.Clock.Reset();
+        conn.EnduringCryRecovery.Begin(-2, 1, 10);
+        conn.SentEnduringCryUntil = -1;
+        var packet = Program.AntiquarianPresentation(conn)!;
+        Assert.NotNull(packet);
+        var correction = InstanceProtocol.LifeUpdate(Program.PlayerId, 123);
+        Assert.True(packet.AsSpan().IndexOf(correction) >= 0);
+        Assert.Null(Program.AntiquarianPresentation(conn));
+    }
 }
