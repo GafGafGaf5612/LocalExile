@@ -431,6 +431,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   reflect actual instances/pools and refresh player/selected stats on the normal tick. General/resource/attack/
   physical leeching hit damage and Energy Leech's full-ES MORE/quality increased bonuses have separate buckets
   and actual support/contact controls; speed/defence/ailment/DoT consumers remain open.
+  Attack-only ES overleech retains attack instances (including Ghost Reaver conversion) while removing spell
+  instances at full ES, preserving original expiry and one shared cap. Actual mod/contact and source-removal
+  controls pass. Ordinary Life-overleech projection now respects explicit zero replacements; other sources remain open.
   Code: `LeechLimits.cs`, `LeechSources.cs`, `LeechRecoveryState.cs`, `LeechSession.cs`, Gateway (`Program.Leech`, resource writer).
   Docs: [20](../docs/protocol/20-damage.md) §5b.
 - Ordinary Life/Mana regeneration: flat and maximum-pool percentage sources receive regeneration and recovery increases.

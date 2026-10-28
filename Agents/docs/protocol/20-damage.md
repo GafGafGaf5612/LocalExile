@@ -830,8 +830,24 @@ Lifecycle controls synchronize on the send gate and pause the owner clock after 
 wall-clock delay. A two-flight exclusion control permits legitimate entropy expiry; exact expiry/no-redraw rules
 remain in the explicit-time Core tests. These choices preserve gameplay assertions under shared-machine load.
 
-Still open: other conversions, conditional/weapon-family sources and instant percentages, attack-only
-ES overleech, skill-specific recovery-speed ownership, legacy instant flags, speed/defence/ailment/DoT leech-state consumers,
+Attack-only ES overleech now preserves each instance's attack origin, including Life-source instances converted by
+Ghost Reaver. Full ES removes spell instances while retaining attack instances when the corresponding item stat is
+active. Both categories remain in one queue under one total cap; filtering does not restart duration, change the
+creation-time base rate or bank recovery accumulated at full ES. Gaining/removing the modifier changes retention
+at the next full-pool check, including existing instances. Unconditional ES overleech still retains both categories.
+The Life-overleech virtual now projects its ordinary raw source, and an explicit zero replacement disables retention.
+Other sources of that virtual, including the incomplete Immortal Ambition conversion, are not certified by this mapping.
+
+Evidence: actual Stats row 12087 and Mods `ESLeechFromAttacksNotRemovedOnFullESUnique__1`, pinned PoB stat description
+6560 and unique claw data. Decision: retain an immutable per-instance hit-family tag rather than expanding the
+attack-only modifier to all leech or giving attacks a second independent cap. PoB's generic overleech display flag
+alone does not retain this source qualification. Real-mod contacts cover ordinary melee/bow, gem area/projectile
+attacks and excluded spells, plus source removal; model controls cover mixed caps, unchanged expiry and conversion.
+Validation here is direct code review plus automated controls. The review skill's dedicated Bugbot tool was
+unavailable; continuing those checks was chosen over waiting for the owner. No independent tool review is claimed.
+
+Still open: other conversions, conditional/weapon-family sources and instant percentages,
+skill-specific recovery-speed ownership, legacy instant flags, speed/defence/ailment/DoT leech-state consumers,
 remaining cap conditions and current-branch native recovery/prediction/lifecycle parity. These are explicit follow-up
 requirements, not completed by the ordinary engine. No current-branch client/server was launched for these controls.
 

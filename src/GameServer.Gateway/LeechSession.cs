@@ -5,7 +5,7 @@ sealed class LeechSession
     public LeechRecoveryState Mana { get; } = new();
     public LeechRecoveryState EnergyShield { get; } = new();
     LeechLimits.Snapshot? limits;
-    bool keepLife, keepEnergyShield;
+    bool keepLife, keepEnergyShield, keepAttackEnergyShield;
     bool convertLifeToEnergyShield;
     public bool ConvertsLifeToEnergyShield => convertLifeToEnergyShield;
     double lifeInstant, manaInstant, shieldInstant;
@@ -18,8 +18,11 @@ sealed class LeechSession
         limits = value;
         convertLifeToEnergyShield = replacement("virtual_leech_energy_shield_instead_of_life") is int converted
             ? converted != 0 : get("keystone_ghost_reaver") != 0 || get("leech_energy_shield_instead_of_life") != 0;
-        keepLife = get("life_leech_does_not_stop_at_full_life") != 0 || get("virtual_life_leech_does_not_stop_at_full_life") != 0;
+        keepLife = replacement("virtual_life_leech_does_not_stop_at_full_life") is int lifeOverleech
+            ? lifeOverleech != 0 : get("life_leech_does_not_stop_at_full_life") != 0
+                || get("virtual_life_leech_does_not_stop_at_full_life") != 0;
         keepEnergyShield = get("energy_shield_leech_does_not_stop_on_full_energy_shield") != 0;
+        keepAttackEnergyShield = get("energy_shield_leech_from_attacks_does_not_stop_on_full_energy_shield") != 0;
         recoverLife = get("cannot_recover_life") == 0;
         recoverEnergyShield = get("cannot_recover_energy_shield") == 0;
         lifeInstant = Instant("life"); manaInstant = Instant("mana"); shieldInstant = Instant("energy_shield");
@@ -40,7 +43,8 @@ sealed class LeechSession
     }
 
     public (double Life, double Mana, double EnergyShield) Hit(double now,
-        (double Life, double Mana, double EnergyShield) amounts, bool lifeFull, bool manaFull, bool shieldFull)
+        (double Life, double Mana, double EnergyShield) amounts, bool lifeFull, bool manaFull, bool shieldFull,
+        bool attack = false)
     {
         if (limits is null) return default;
         ClearFull(now, lifeFull, manaFull, shieldFull);
@@ -48,16 +52,17 @@ sealed class LeechSession
         {
             var resource = limits.Resources[index];
             if (resource.CannotLeech || full && !keep) return 0;
-            double value = State(resource.Pool).Grant(now, amount, resource.MaximumPool, resource.MaximumPerInstance, instant);
+            double value = State(resource.Pool).Grant(now, amount, resource.MaximumPool, resource.MaximumPerInstance, instant, attack);
             return recover && !full ? value : 0;
         }
         // Life and ES source categories create independent ES instances under Ghost Reaver, each with its own cap
         // and duration. They share the ES recovery rate/cap; Life-specific rate, instant and recovery modifiers do not act.
+        bool keepShield = keepEnergyShield || attack && keepAttackEnergyShield;
         double convertedShield = convertLifeToEnergyShield && !limits.Resources[0].CannotLeech
-            ? Grant(2, amounts.Life, shieldFull, keepEnergyShield, shieldInstant, recoverEnergyShield) : 0;
+            ? Grant(2, amounts.Life, shieldFull, keepShield, shieldInstant, recoverEnergyShield) : 0;
         return (convertLifeToEnergyShield ? 0 : Grant(0, amounts.Life, lifeFull, keepLife, lifeInstant, recoverLife),
             Grant(1, amounts.Mana, manaFull, false, manaInstant, true),
-            convertedShield + Grant(2, amounts.EnergyShield, shieldFull, keepEnergyShield, shieldInstant, recoverEnergyShield));
+            convertedShield + Grant(2, amounts.EnergyShield, shieldFull, keepShield, shieldInstant, recoverEnergyShield));
     }
 
     public void ClearFull(double now, bool life, bool mana, bool shield)
@@ -66,7 +71,11 @@ sealed class LeechSession
         if (mana) ManaInstantCarry = 0;
         if (life && !keepLife) Life.Clear(now);
         if (mana) Mana.Clear(now);
-        if (shield && !keepEnergyShield) EnergyShield.Clear(now);
+        if (shield && !keepEnergyShield)
+        {
+            if (keepAttackEnergyShield) EnergyShield.ClearNonAttack(now);
+            else EnergyShield.Clear(now);
+        }
     }
 
     public (double Life, double Mana, double EnergyShield) TakeRecovery(double now) =>

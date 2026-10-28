@@ -551,6 +551,38 @@ Data 18 pass (`core-leech-conditions.trx`, `data-leech-conditions.trx`), and the
 4,457 (`gateway-leech-conditions-verified.trx`): 5,036 total, no skips. The prior failed receipts remain intact.
 The exact inventory remains 357 virtual stats, 82 partial/275 pending; no completion status was inferred from tests.
 
+## Attack-only ES overleech and Life retention overrides
+
+Nine source/contact regressions reproduce six failures (`overleech-reproduced.trx`): ordinary melee/bow and gem
+area/projectile attacks drop their ES instances at full ES, the Life retention virtual is missing its ordinary raw
+source, and a zero virtual replacement fails to disable retention. Two spell controls and the positive replacement
+already pass. The real item source is Stats row 12087 via Mods `ESLeechFromAttacksNotRemovedOnFullESUnique__1`;
+pinned PoB stat description 6560 explicitly limits it to attack effects.
+
+Each timed instance now retains its attack origin. At full ES the attack-only modifier removes nonattack instances
+without restarting retained duration or splitting the shared recovery cap. Ghost Reaver preserves that origin for
+both converted and native instances. Source changes apply to existing instances at full-pool checks; unconditional
+ES overleech still covers both categories. The Life virtual projects its ordinary base source and respects zero.
+Other virtual sources and Immortal Ambition remain separate incomplete work.
+
+Decision: store the hit family on the instance rather than treating the item stat as unconditional or maintaining
+separate attack/spell caps. A generic PoB display flag is insufficient evidence to discard the explicit attack scope.
+The damage module records this decision and the alternatives. No native sessions were started or interrupted.
+
+The local review skill was inspected for an independent pass. It requires a dedicated Bugbot subagent tool that
+is not present in this session. Continue direct code review and repository tests rather than interrupting the
+unavailable owner or claiming that an independent tool reviewed the patch. This limitation is not a gameplay blocker.
+
+The first focused run passed 38 and failed four removal controls (`overleech-focused.trx`): the fixture refreshed
+back to its actual zero-ES equipment, so it was no longer full when checking removal. Restore the controlled full
+pool before that assertion and independently check that the raw item source disappeared. All 42 focused cases
+then pass (`overleech-focused-corrected.trx`), including 17 new source/retention/override cases and existing recovery,
+session and Ghost Reaver controls. No production pool behavior was changed to satisfy the fixture.
+
+Final validation: clean solution build (`build-overleech.log`), Core 561, Data 18 and Gateway 4,474 pass with no
+skips (`core-overleech.trx`, `data-overleech.trx`, `gateway-overleech.trx`): 5,053 total. The exact 357-row audit
+still reports 82 partial/275 pending; the supporting retention fixes do not certify the unresolved stat families.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

@@ -3,6 +3,7 @@ using GameServer.Core.World;
 /// <summary>Per-type leech coefficients from raw sources. Panel scopes overlap and are never inputs here.</summary>
 sealed record LeechSources(DamagePacket Life, DamagePacket Mana, DamagePacket EnergyShield)
 {
+    public bool Attack { get; init; }
     public static LeechSources From(Func<string, int> get, bool attack, Func<string, int>? local = null)
     {
         DamagePacket Pool(string pool)
@@ -34,7 +35,7 @@ sealed record LeechSources(DamagePacket Life, DamagePacket Mana, DamagePacket En
             }
             return result;
         }
-        return new(Pool("life"), Pool("mana"), Pool("energy_shield"));
+        return new(Pool("life"), Pool("mana"), Pool("energy_shield")) { Attack = attack };
     }
 
     // Preserve the existing whole direct-hit total while retaining its post-mitigation type proportions.

@@ -70,7 +70,7 @@ partial class Program
         }
         double now = conn.Clock.Elapsed.TotalSeconds;
         var instant = session.Hit(now, amounts, conn.PlayerLife >= conn.PlayerMaxLife,
-            conn.PlayerMana >= UnreservedMana(conn), conn.EnergyShield.Current >= conn.EnergyShield.Maximum);
+            conn.PlayerMana >= UnreservedMana(conn), conn.EnergyShield.Current >= conn.EnergyShield.Maximum, sources.Attack);
         uint life = conn.PlayerLife, mana = conn.PlayerMana;
         // Instant portions resolve in this hit transaction, so a later enemy hit sees the recovered resource.
         // Keep sub-point recovery between hits, and discard overflow at a full pool.

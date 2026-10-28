@@ -73,6 +73,9 @@ and [damage module](../protocol/20-damage.md#5b-character-panel-leech-limits). D
 as independent leech amounts in combat.
 Actual leech/full-ES condition flags now drive evidenced hit-damage scopes and Energy Leech's full-ES/quality
 bonuses, with qualified support, contact and periodic refresh controls; other condition consumers remain open.
+Attack-only ES overleech now retains qualified attack instances under the same total cap, with real item-source,
+mixed-instance, expiry and Ghost Reaver controls. Ordinary Life-overleech projection and zero replacement are fixed;
+the other conversion/conditional/native requirements remain open.
 
 ## Leech limits and prohibitions
 

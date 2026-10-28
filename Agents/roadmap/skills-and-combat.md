@@ -200,9 +200,11 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   support and qualified hand inputs. Native checks for this composition/recovery remain pending. The ordinary engine
   uses separate duration, total recovery and maximum-rate rules (damage §5b). Ghost Reaver now has independent
   converted/native ES instances, cap/recharge effects and source/refund controls. Continue other conversions,
-  conditional and weapon-family sources, skill-specific recovery speeds, attack-only ES overleech and speed/defence/
+  conditional and weapon-family sources, skill-specific recovery speeds and speed/defence/
   ailment/DoT leech-state consumers. Actual leech/full-ES flags and ordinary/selected hit-damage conditions now have
   support, contact and idle-refresh controls; do not add overlapping displayed scopes or substitute regeneration for leech.
+  Attack-only ES overleech now preserves instance origin and the shared cap; ordinary Life retention now honors zero.
+  Continue other Life-retention virtual sources and native validation; do not broaden the attack-only item scope.
   Native conversion/prohibition interaction remains unverified; the conservative source-plus-destination policy
   and the alternative are recorded in damage §5b and the review report.
   Ward and unsupported conditional mechanics still need their own systems and evidence.
