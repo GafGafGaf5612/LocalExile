@@ -89,7 +89,7 @@ partial class Program
         int variation = SkillArtVariation(conn, gem.Gem);
         profile = profile with { Id = Art.Projectile(profile.Id, variation) };
         bool spell = !Skills.IsAttack(gem.Effect);
-        var shot = new ProjectileOffense(SupportedHit(conn, skillId), spell, conn.Pools.Accuracy,
+        var shot = new ProjectileOffense(SupportedHitFor(conn, skillId, suppress: false), spell, conn.Pools.Accuracy,
             SupportedReleaseCriticalChance(conn, skillId), SupportedCriticalMultiplier(conn, skillId), gem.Name)
         {
             Effect = gem.Effect, Level = gem.Level, Quality = gem.Quality,

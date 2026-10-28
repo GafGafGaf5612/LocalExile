@@ -9,6 +9,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   The native window handler and visible state were verified through the real client.
   Its placement supports the hideout editor; storage transfers were not added by this change.
   See [21](../docs/protocol/21-hideouts.md), Heist Locker.
+- Horticrafting Station (2026-10-27): placed beside the ordinary bench in every selected hideout; interaction opens
+  the native recipe browser (0x7b kind 0x39).
+  C→S 0x274 carries the selected HarvestCraftOptions HASH16 (captured live: ReforgeFire 0xa3e5); S→C 0x276 carries the
+  crafted item id and clears the panel's pending state, so Craft can be clicked repeatedly without reopening.
+  Targeted/affinity reforges, augments and modifier conversions execute on the item in HarvestCraftingItem; the exact
+  Wild/Vivid/Primal/Sacred lifeforce cost is split across the main inventory and personal stash and commits with the
+  item atomically.
+  Refusals spend nothing; unsupported influence, exchange, divination-card, gem, corrupted-map and quality-enchant
+  recipes are reported in chat and wait for their prerequisite systems.
+  Automated tests cover raw rows/costs, every supported operation family, payment, insufficient funds and save
+  rollback; station, window and the request were confirmed live.
+  See [21](../docs/protocol/21-hideouts.md), Horticrafting Station.
 - Portal Scroll and the Portal skill (its 2.5 s cast): outside towns and hideouts a portal opens beside the player,
   replacing the previous one; from a map it leads to the hideout, anywhere else to the last town.
   That town or hideout gets a portal back, which brings the player to the portal's cell of the same instance;
@@ -50,11 +62,6 @@ Part of [Status](../Status.md); what to build next in this area is in
   Map-device, Nessa and stash movement/rotation and reconnect persistence were verified in the real client.
   Adding/removing decorations and changing their appearance remain unimplemented.
   See [21](../docs/protocol/21-hideouts.md), Moving installed furniture and NPCs.
-- Horticrafting Station: placed beside the ordinary bench in every selected hideout;
-  interaction approaches and opens the native Harvest recipe browser (0x7b kind 0x39).
-  Recipe execution/payment are not implemented.
-  Automated coverage; station and window confirmed working in the real client.
-  See protocol/21-hideouts.md.
 - Ordinary crafting bench (2026-10-25, automated coverage; live client verification pending): all 765 active recipes
   and their 130 recipe flags are available.
   Exact modifiers, class masks, socket/link recipes, flask enchantments, replacement/removal and rare-affix rerolls

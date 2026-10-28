@@ -390,6 +390,12 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x1428cf720` | Fn | 15801: 3004 OR (2730 AND 2532) |
 | `0x1400e4fc0` | Fn | registers skill-disabled virtual 15798 |
 | `0x1428cf770` | Fn | 15798: aura branch checks skill 15801 and caster 11075; other restrictions separate |
+| `0x1428b0750` | Fn | virtual double-armour chance 12268; [model/evidence](../game/steel-willed-armour.md) |
+| `0x1428b0854` | Code | reads Steel Willed per-recent-enemy-hit input 20680 |
+| `0x1428b08eb` | Code | reads recent enemy-hit counter 4534 |
+| `0x1428b0962` | Code | multiplies per-hit input by recent count |
+| `0x1428b0c24..0x1428b0c36` | Code | caps the per-hit contribution at 30 |
+| `0x1428b0be3` / `0x1428b0c3f` | Code | reads generic chance 8404 / adds it after the contribution cap |
 | `0x1435db980` | VT | ActiveSkillManager (Actor +0x598; skills at +0x158, sorted by instance +0x40) |
 | `0x141eea6a0` | Fn | ActiveSkillManager::SkillInstanceAdded (manager slot 7) |
 | `0x141eea440` | Fn | find/create skill cooldown record (requires virtual cooldown count) |

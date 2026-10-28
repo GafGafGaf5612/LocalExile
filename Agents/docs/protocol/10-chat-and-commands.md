@@ -134,6 +134,11 @@ compact uint n, n × (compact uint stat key, compact int value)
 
 ## 4. Commands (Gateway, `Program.Commands.cs` `Commands`)
 
+`/hit`, `/spellhit` and `/blockhit` are synthetic incoming enemy contacts for the
+[recent-hit armour model](../game/steel-willed-armour.md), including blocked and zero-damage results.
+They refuse paused, leaving, closed or dead owners before combat mutation.
+`/set_stat` can replace raw chance inputs 20680/8404; authoritative outputs 4534/12268 always come from contact history.
+
 | Command | Effect |
 |---|---|
 | `/commands [page \| name]`, `/com …` | lists the commands, 8 per page (`/com 2`, `/com 3`, …; after four blank lines a green header, then each command's syntax only), or the full usage of one command (`/com item`; otherwise every command whose name contains the text) |

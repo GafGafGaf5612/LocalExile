@@ -75,7 +75,8 @@ partial class Program
     // The character's stats from its allocated passives and the global mods of its active equipped items (ItemModStats),
     // by client stat key. Worn items whose requirements the class, the passives and the other active items do not meet are
     // inactive (ItemModStats.Inactive): remembered per character for the weapon profile and the gem skills.
-    static Dictionary<uint, int> CharacterStatSources(ClientState conn, IEnumerable<ushort>? nodes = null, int? level = null)
+    static (Dictionary<uint, int> Stats, AttributeModifiers Attributes) CharacterStatSources(ClientState conn,
+        IEnumerable<ushort>? nodes = null, int? level = null)
     {
         var items = ItemsOf(conn);
         // A level change can trim the list while /set_stat builds pools outside the combat lock.
@@ -87,9 +88,27 @@ partial class Program
             masteries = conn.MasteryEffects;
         }
         var passives = Passives.Stats(nodes, masteries);
-        int Get(string name) => Stats.Key(name) is uint k ? passives.GetValueOrDefault(k) : 0;
+        // Only attributes need a wide source view. Keep each raw key until overrides have replaced its entire total.
+        var passiveAttributes = new Dictionary<string, long>();
+        foreach (ushort node in nodes)
+        {
+            var effects = masteries.TryGetValue(node, out ushort effect) ? Passives.FindEffect(effect)?.Stats : null;
+            foreach (var (key, value) in (Passives.Find(node)?.Stats ?? []).Concat(effects ?? []))
+            {
+                string name = Stats.Name(key);
+                if (AttributeModifiers.IsInput(name))
+                    passiveAttributes[name] = passiveAttributes.GetValueOrDefault(name) + value;
+            }
+        }
         var c = Skills.ClassFor(conn.ClassRow);
-        var (ps, pd, pi) = CharacterStats.Attributes(Get);
+        Dictionary<uint, int> dev;
+        lock (conn.Monsters) dev = new(conn.PlayerStats);
+        Dictionary<string, long> RawAttributes(IEnumerable<Item> active)
+        {
+            var raw = ItemModStats.RawAttributes(active, Items.Mods);
+            foreach (var (name, value) in passiveAttributes) raw[name] = raw.GetValueOrDefault(name) + value;
+            return raw;
+        }
         int god = conn.God ? 1000 : 0;
         var worn = ItemModStats.EquipmentRows.SelectMany(items.Items)
             .Select(i => (i, t: Items.ByHash(i.Item.TypeHash)))
@@ -98,8 +117,9 @@ partial class Program
                     ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, Items.Mods))
                 : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
         var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
-        var (inactive, active) = ItemModStats.ResolveEquipment(worn,
-            (c.Strength + ps + god, c.Dexterity + pd + god, c.Intelligence + pi + god), level ?? conn.Pools.Level, Items.Mods, before);
+        var (inactive, active) = ItemModStats.ResolveEquipment(worn, level ?? conn.Pools.Level,
+            active => AttributeInputs(RawAttributes(active.Select(w => w.Item)), dev)
+                .Apply(c.Strength + god, c.Dexterity + god, c.Intelligence + god), before);
         // Item activation depends on the item, not on socketed gems. Checking gems here used the previous
         // connection's/initial pools and disabled the entire item's stats and unrelated gems before pools existed.
         // Individual gem requirements are checked against the completed pools when socketing or casting.
@@ -108,8 +128,18 @@ partial class Program
             Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
                 string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
                     $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
-        return WithFortification(conn, WithCharges(conn, ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats))));
+        var rawAttributes = RawAttributes(active);
+        var sources = ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
+        // Clamp only this outgoing integer view; the authoritative attribute inputs remain wide beside it.
+        foreach (var (name, value) in rawAttributes)
+            if (Stats.Key(name) is uint key) sources[key] = AttributeModifiers.Signed(value);
+        return (WithFortification(conn, WithCharges(conn, sources)), AttributeInputs(rawAttributes, dev));
     }
+
+    // Only raw attribute keys are inputs. A final pool/panel attribute must never feed the flat bucket on a rebuild.
+    static AttributeModifiers AttributeInputs(IReadOnlyDictionary<string, long> raw, IReadOnlyDictionary<uint, int> dev) =>
+        AttributeModifiers.FromWide(name => Stats.Key(name) is uint key && dev.TryGetValue(key, out int value)
+            ? value : raw.GetValueOrDefault(name));
 
     internal static CharacterStats.Pools PoolsFor(ClientState conn, int level)
     {
@@ -123,12 +153,13 @@ partial class Program
     static CharacterStats.Pools BuildPoolsFor(ClientState conn, int level)
     {
         // The stat sources first: they decide which worn items are inactive, which the weapon profile reads.
-        var sources = CharacterStatSources(conn, level: level);
+        var snapshot = CharacterStatSources(conn, level: level);
+        var sources = snapshot.Stats;
         // Detach forbidden self auras before any pool bonus is sampled. No restoration here: it needs completed pools.
         SuspendRestrictedOwnAuras(conn, new(sources));
         var weapons = WeaponProfileFor(conn);
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
-        var bonus = PassiveBonus(sources, weapons);
+        var bonus = PassiveBonus(sources, weapons, snapshot.Attributes);
         var gear = EquippedBaseDefences(conn);
         bonus = bonus with { Armour = bonus.Armour + gear.Armour, Evasion = bonus.Evasion + gear.Evasion,
             EnergyShield = bonus.EnergyShield + gear.EnergyShield };
@@ -254,7 +285,7 @@ partial class Program
     // damage, the base resistances (base_resist_all_elements_% applies to fire, cold and lightning), the shield-specific
     // block nodes when a shield is equipped, critical strike chance and multiplier, and reservation efficiency and aura
     // effect.
-    static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons)
+    static CharacterStats.Bonus PassiveBonus(Dictionary<uint, int> stats, WeaponProfile weapons, AttributeModifiers attributes)
     {
         int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         int allRes = Get("base_resist_all_elements_%");
@@ -366,9 +397,8 @@ partial class Program
             + Get("combined_armour_and_evasion_rating_+%");
         int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
         int evasionPct = Get("evasion_rating_+%") + defencesPct;
-        var (strength, dexterity, intelligence) = CharacterStats.Attributes(Get);
         return new CharacterStats.Bonus(
-            Strength: strength, Dexterity: dexterity, Intelligence: intelligence,
+            Attributes: attributes,
             Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
             ManaPerFourStrength: Get(StrengthMana.PerFourStrength),
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,

@@ -539,6 +539,7 @@ partial class Program
         if (conn.Sale is not null) await CloseSale(remote, stream, ciphers, conn, accepted: false);
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         conn.BenchOpen = false;
+        conn.HarvestOpen = false;
         if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
         var notes = new List<string>();
         var items = ItemsOf(conn);

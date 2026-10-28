@@ -103,6 +103,8 @@ partial class Program
     {
         lock (conn.Monsters)
         {
+            if (conn.PlayerLife != 0) return; // An older notification cannot clear a resurrected owner's new contacts.
+            conn.InvalidateIncomingHits();
             FortificationOf(conn).Clear();
             ClearRageOnDeath(conn);
         }
@@ -336,6 +338,7 @@ partial class Program
                 criticalContext = currentCritical;
                 await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
             }
+            await SendRecentEnemyHits(remote, stream, ciphers, conn);
             await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             if (conn.PlayerLife == 0)
@@ -478,7 +481,8 @@ partial class Program
         if (Stats.Key("delirium_aura_damage_over_time_+%_final") is uint moreDot)
             perSecond *= Math.Max(0, 1 + playerStats.GetValueOrDefault(moreDot) / 100.0);
         perSecond *= ChargeDamageMore(playerStats);
-        var damageOverTime = new DamageOverTime(DamageType.Fire, perSecond, seconds);
+        var damageOverTime = new SkillDamageContext(SkillHitKind.Spell, playerStats)
+            .OverTime(new DamageOverTime(DamageType.Fire, perSecond, seconds));
         var hits = new List<(uint Id, SpawnedMonster M, uint Life, int Damage)>();
         var entered = new List<(uint Id, ushort Buff)>();
         var left = new List<(uint Id, ushort Buff)>();
@@ -614,6 +618,7 @@ partial class Program
         lock (conn.Monsters)
         {
             if (conn.PlayerLife > 0) return;
+            conn.InvalidateIncomingHits();
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.HitRecovery.Clear();
@@ -760,7 +765,7 @@ partial class Program
                 });
             else if (label == "0x01b3 class attributes")
                 await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
-                    () => InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), label);
+                    () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)), label);
             else await Send(remote, stream, ciphers, bytes, label);
         // An area change creates a new player object, so the running auras' buffs must be put on it again.
         await SendOwnAuraChanges(remote, stream, ciphers, conn, replay: true);

@@ -207,7 +207,8 @@ partial class Program
             }
             if (MonsterBlocks(target, random, shot.Spell)) return ProjectileHitResult.Blocked;
             double more = contact.Multiplier * (contact.Phase > 0 ? shot.ReturnMultiplier : 1);
-            var packet = shot.Hit.Scale(more);
+            var packet = new SkillDamageContext(shot.Spell ? SkillHitKind.Spell : SkillHitKind.Attack,
+                CharacterPlayerStats(Conn)).Hit(shot.Hit).Scale(more);
             if (!shot.Spell)
             {
                 double stored = target.Impale.Bonus;

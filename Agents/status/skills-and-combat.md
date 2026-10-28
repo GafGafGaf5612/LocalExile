@@ -56,9 +56,27 @@ Part of [Status](../Status.md); what to build next in this area is in
   Eleven native controls verify actual player Life loss, source toggles, resistance ordering and relog.
   Extra physical/elemental reductions stay with their own types; the native final Armour rating is unchanged.
   Mixed monster packets, block, suppression, ES, Fortification and DoT separation have automated coverage.
-  Native controls use a raw source on an unascended Marauder; Incorruptible selection, recent-hit doubling
-  and partial armour percentages remain separate.
+  Native controls use a raw source on an unascended Marauder; Incorruptible selection and partial armour
+  percentages remain separate.
+  Recent-hit doubling composes in automated tests and fresh ordered joint native controls at `c9cd1864`.
   See [20](../docs/protocol/20-damage.md) section 2e.
+
+- Increased attributes (#285): typed and all-attribute percentages scale the complete class/passive/active-gear
+  flat bucket once, using the documented PoB rounding model.
+  Historical evidence at `60044ad` has thirteen native controls for 3% Strength, additive increases, derived pools and
+  matching requirement values on an unascended Marauder.
+  A Plate Vest stops contributing below its requirement and resumes when the final attributes recover.
+  Calculated zero attributes stay zero; source clearing and relog restore the expected base values.
+  Own-item percentage retention, cascading activation, passive refunds and weapon swaps have automated coverage.
+  Current-main composition with mana per final Strength, inactive weapons and raw zero/off overrides has regressions.
+  Eleven current-main native controls verify final Strength groups, additive increases, mana and equipment requirements.
+  Maximum mana follows 47 to 111, then 127/145 as attributes rise; 100% mana increases it to 290 once.
+  Source removal and the ordinary vest's requirement disable/restore pass at rebased source `00b246f2`.
+  Ordered joint native validation at `c9cd1864` also verifies final attributes feeding mana-to-armour conversion.
+  Odd final Intelligence keeps its half mana until converted pools round; 16 Strength / 7 Intelligence gives 15 mana.
+  Inactive-weapon, cascading-equipment, passive-refund and active-aura composition remain automated-only.
+  The evidence does not establish official-server fractional parity or enable Phrecia class selection.
+  See [11](../docs/protocol/11-skills.md) section 4 and [13](../docs/protocol/13-items.md) section 2d.
 
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
@@ -98,9 +116,31 @@ Part of [Status](../Status.md); what to build next in this area is in
   The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
   Native fixed-hit checks verify thresholds, additive 204/214, modifier removal and maximum-mana lightning.
   Weapon physical panel checks show 2â€“5 becoming 6â€“15; relog clears the development inputs.
-  Native checks use raw stats on an unascended character; selection and recent-hit armour doubling remain separate.
+  Native checks use raw stats on an unascended character; selection remains separate.
+  Recent-hit armour defence is implemented below; current-main composition awaits native verification.
   Code: `ArmourAttackDamage`, Gateway (`CharacterPlayerStats`), `SkillCatalog.Unarmed.IncreasedDamage`.
   Docs: [20](../docs/protocol/20-damage.md) Â§2d.
+- Steel Willed incoming-hit armour: prior accepted enemy contacts supply a four-second authoritative counter.
+  The per-hit contribution caps at 30%, then the real generic double-armour chance adds before a 0..100 clamp.
+  One decision supplies physical and enabled chaos mitigation; blocked and zero contacts count without armour RNG.
+  Permanent armour and the outgoing attack bonus remain unchanged.
+  Parsed development routes, mixed monster packets, idle expiry, pause and stale swings pass tests.
+  Connection lifecycle, AI collection epochs and queued full/partial stat sends also have automated coverage.
+  Rage, own-aura and Mageblood full writers acknowledge their exact encoded pair after gated construction.
+  Return-to-previous-pair, queued expiry and rejected-send regressions cover these remaining full writers.
+  Dirty aura prefixes and Fortification tails build in wire order across expiry, with decoded-pair/idle checks.
+  Eighteen historical native checks at original head `777b292` verified 50/33 Life loss and a real Zombie hit.
+  They covered unchanged 500 armour/outgoing 102, the 30% cap, additive 50%, pause/expiry and full-refresh counters.
+  Death, resurrection, area change and relog clear history under explicit LocalExile model v1.
+  Current-main mixed physical/chaos, charges/resists/Fortification/ES and parsed suppression regressions pass.
+  Queued hits sample changed sources and final defences at contact, including lazy own-aura suspension.
+  Ordered joint validation at `c9cd1864` passes 28 native controls with final attributes and mana conversion active.
+  Permanent Armour 251 stays unchanged as a physical 100 hit removes 67 Life normally or 50 when doubling is certain.
+  A raw40 single-contact source verifies cap30 plus generic20; full refresh and idle expiry retain generic20.
+  Four-contact timing and the forced Fortification/aura/Rage/Mageblood deadline races have automated coverage.
+  Class admission and suppression-to-armour chance integration remain separate work.
+  See [Steel Willed armour](../docs/game/steel-willed-armour.md).
+
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /
@@ -240,6 +280,23 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native grey-icon prediction and persistent restricting equipment remain unverified.
   The suspend/restore lifecycle is explicit LocalExile policy, not proven GGG behavior; Phrecia play stays gated.
   See [11](../docs/protocol/11-skills.md) section 10c.
+- **Spell skills deal no damage (#293):** raw caster key 5341 suppresses supported Spell hit packets and RF enemy burn.
+  Physical, elemental and chaos spell damage, supported projectiles and areas share the final packet restriction.
+  Selected native record ranges, average damage and DPS use that packet, including inherited main-hand zero rows.
+  Casting, costs, timing, visuals, zero-hit callbacks, attacks and aura-granted attack bonuses retain their scope.
+  RF self-burn continues independently; source changes follow existing impact/tick resolution without pool rebuilds.
+  Automated supported constructors, dispatch/Life, in-flight changes, aura controls and RF tick checks pass.
+  Current-main controls cover Rage/charge contacts, quality, Mana sources, Mageblood, chaos armour
+  and cosmetic identity.
+  Unpaid release guards, utility reservation/cooldowns and RF fractional carry keep their existing behavior.
+  Eleven historical native checks at original head `e80a81c` cover Fireball/Ice Nova, paid casts and attacks.
+  Native Fireball action rows clear ranges and DPS; RF keeps its self-burn while its enemy damage stops/resumes.
+  Those controls cover source changes and relog at the historical head.
+  Fresh ordered joint controls at `c9cd1864` verify Fireball 200 / zero, attack 100 and restored Fireball 200.
+  Final attributes and converted pools remain active in that same unascended Marauder session.
+  Rampager 49937 supplies the source, but class admission, owner execution and the node's other mechanics are separate.
+  Code: `SkillDamageContext`, `SupportedHit`, `SpellHit`, `BurnAround`, `GemSkills`.
+  Docs: [20](../docs/protocol/20-damage.md) section 2f.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
@@ -394,8 +451,8 @@ and may require explicit registrations. The old flight engine and its test-only 
 - **Selected spell hit damage panel (#188).** Spell total/per-type ranges and pre-crit average damage/DPS
   now use the same converted packet as projectile and area combat.
   All range fields are explicit, including zeros for absent types; hitless spells clear inherited weapon DPS/per-use.
-  Initial player creation and later skill refresh both pass separate character conversion inputs.
-  Attack displays, modifier precedence and the existing level-only conversion rule are preserved.
+  Final selected spell records use the supported combat packet for spell and inherited main-hand ranges.
+  This includes explicit zero ranges after spell damage suppression, without changing attack displays.
   Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
   Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.
   A conversion/gain control split Fireball into fire and chaos rows and dealt a noncritical 14-damage server hit.
