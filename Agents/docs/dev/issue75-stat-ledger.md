@@ -66,7 +66,8 @@ formatting remain open; [review](issue75-review.md#accuracy-weighted-attack-aver
 Partial: 24 scoped coefficient aliases and three speed aliases now compose qualified actor/support/hand sources,
 including general/elemental inputs, physical/chaos ES and combined Life/Mana. Real supports and fractional unit
 composition have automated controls. Ordinary direct hits now create timed/instant resource recovery with separate
-instance duration, total recovery and caps. Conditional sources, conversions, weapon-family conditions, skill-specific
+instance duration, total recovery and caps. Ghost Reaver preserves distinct converted/native ES instances and applies
+its cap/recharge changes, with actual node/refund controls. Conditional sources, other conversions, weapon-family conditions, skill-specific
 recovery speeds and native getter/recovery parity remain open. See [review](issue75-review.md#ordinary-active-leech-recovery)
 and [damage module](../protocol/20-damage.md#5b-character-panel-leech-limits). Do not add overlapping display scopes
 as independent leech amounts in combat.

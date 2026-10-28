@@ -6,6 +6,8 @@ sealed class LeechSession
     public LeechRecoveryState EnergyShield { get; } = new();
     LeechLimits.Snapshot? limits;
     bool keepLife, keepEnergyShield;
+    bool convertLifeToEnergyShield;
+    public bool ConvertsLifeToEnergyShield => convertLifeToEnergyShield;
     double lifeInstant, manaInstant, shieldInstant;
     bool recoverLife = true, recoverEnergyShield = true;
     public bool InstantLifeChanged, InstantManaChanged;
@@ -14,6 +16,8 @@ sealed class LeechSession
     public void Configure(double now, LeechLimits.Snapshot value, Func<string, int> get, Func<string, int?> replacement)
     {
         limits = value;
+        convertLifeToEnergyShield = replacement("virtual_leech_energy_shield_instead_of_life") is int converted
+            ? converted != 0 : get("keystone_ghost_reaver") != 0 || get("leech_energy_shield_instead_of_life") != 0;
         keepLife = get("life_leech_does_not_stop_at_full_life") != 0 || get("virtual_life_leech_does_not_stop_at_full_life") != 0;
         keepEnergyShield = get("energy_shield_leech_does_not_stop_on_full_energy_shield") != 0;
         recoverLife = get("cannot_recover_life") == 0;
@@ -47,9 +51,13 @@ sealed class LeechSession
             double value = State(resource.Pool).Grant(now, amount, resource.MaximumPool, resource.MaximumPerInstance, instant);
             return recover && !full ? value : 0;
         }
-        return (Grant(0, amounts.Life, lifeFull, keepLife, lifeInstant, recoverLife),
+        // Life and ES source categories create independent ES instances under Ghost Reaver, each with its own cap
+        // and duration. They share the ES recovery rate/cap; Life-specific rate, instant and recovery modifiers do not act.
+        double convertedShield = convertLifeToEnergyShield && !limits.Resources[0].CannotLeech
+            ? Grant(2, amounts.Life, shieldFull, keepEnergyShield, shieldInstant, recoverEnergyShield) : 0;
+        return (convertLifeToEnergyShield ? 0 : Grant(0, amounts.Life, lifeFull, keepLife, lifeInstant, recoverLife),
             Grant(1, amounts.Mana, manaFull, false, manaInstant, true),
-            Grant(2, amounts.EnergyShield, shieldFull, keepEnergyShield, shieldInstant, recoverEnergyShield));
+            convertedShield + Grant(2, amounts.EnergyShield, shieldFull, keepEnergyShield, shieldInstant, recoverEnergyShield));
     }
 
     public void ClearFull(double now, bool life, bool mana, bool shield)

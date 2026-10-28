@@ -114,6 +114,7 @@ static class PanelStats
         .. Hands(h => new($"{h}_local_life_gain_per_target", ["base_life_gain_per_target"], Local: ["local_life_gain_per_target"])),
         .. Hands(h => new($"{h}_local_mana_gain_per_target", ["mana_gain_per_target"], Local: ["local_mana_gain_per_target"])),
         .. HandLeech("life"), .. HandLeech("mana"),
+        new("virtual_leech_energy_shield_instead_of_life", ["leech_energy_shield_instead_of_life", "keystone_ghost_reaver"], Flag: true),
         // Defence
         new("virtual_energy_shield_delay_-%", ["energy_shield_delay_-%"]),
         new("virtual_block_recovery_+%", ["block_recovery_+%", "base_stun_recovery_+%", "stun_recovery_+%"]),

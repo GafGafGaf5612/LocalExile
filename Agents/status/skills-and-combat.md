@@ -424,7 +424,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   sources and post-mitigation direct damage. Their duration, total recovery, cap and generic recovery multipliers
   are distinct. Instant portions recover inside the hit transaction; the existing resource writer integrates timed
   portions and exact expiry boundaries. Full-pool removal, unconditional overleech, prohibition, pause/death/transfer
-  cleanup and real support contacts have automated controls. Specialized conversions/conditions, skill-specific
+  cleanup and real support contacts have automated controls. Ghost Reaver now creates separate converted/native
+  ES instances, doubles the total ES cap and disables recharge; actual node sources and parsed refund have controls.
+  Plain conversion does not add those keystone side effects. Other conversions/conditions, skill-specific
   recovery-speed ownership, leech-state consumers and current native recovery/prediction parity remain open.
   Code: `LeechLimits.cs`, `LeechSources.cs`, `LeechRecoveryState.cs`, `LeechSession.cs`, Gateway (`Program.Leech`, resource writer).
   Docs: [20](../docs/protocol/20-damage.md) §5b.

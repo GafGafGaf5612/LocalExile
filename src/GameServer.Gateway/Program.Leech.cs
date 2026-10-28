@@ -41,9 +41,14 @@ partial class Program
     {
         if (!target.Hostile || target.Dead || target.Life == 0 || conn.Closed || conn.LeavingArea || conn.Paused || conn.PlayerLife == 0) return;
         var amounts = sources.Amounts(taken, directDamage);
-        if (target.Mods.Effects["cannot_have_life_leeched_from"] != 0) amounts.Life = 0;
-        double now = conn.Clock.Elapsed.TotalSeconds;
         var session = LeechOf(conn);
+        if (target.Mods.Effects["cannot_have_life_leeched_from"] != 0) amounts.Life = 0;
+        if (target.Mods.Effects["cannot_have_energy_shield_leeched_from"] != 0)
+        {
+            amounts.EnergyShield = 0;
+            if (session.ConvertsLifeToEnergyShield) amounts.Life = 0;
+        }
+        double now = conn.Clock.Elapsed.TotalSeconds;
         var instant = session.Hit(now, amounts, conn.PlayerLife >= conn.PlayerMaxLife,
             conn.PlayerMana >= UnreservedMana(conn), conn.EnergyShield.Current >= conn.EnergyShield.Maximum);
         uint life = conn.PlayerLife, mana = conn.PlayerMana;

@@ -468,6 +468,44 @@ Decisions and alternatives are also in [damage §5b](../protocol/20-damage.md#5b
 The ledger moves 15 specifically audited limit/prohibition rows to partial: 82 partial, 275 pending, zero complete.
 No live process was launched or stopped. The persistent 357-stat goal remains active.
 
+## Ghost Reaver conversion and keystone behavior
+
+The extracted passive 24426 grants `keystone_ghost_reaver`, but the consumer previously ignored it. Five initial
+regressions fail against the ordinary engine (`ghost-reaver-reproduced.trx`): conversion, independent instance
+timing, ES-based limits/modifiers, plain conversion and source-removal behavior. They now pass. A focused combined
+run passes 105 cases (`ghost-reaver-focused.trx`). The initial node-labelled filter matched only the five model
+tests: the contact method contains `Ghost_Reaver`, so `GhostReaver` did not select it. The first full run caught
+four fixture assertions indexing an intentionally omitted zero-valued alias after refund. Those now use the
+dictionary's zero default; the contact filter explicitly selects the methods. The original receipts are retained.
+The corrected filter passes all 15 new cases (`ghost-reaver-contact-final.trx`), including actual passive sources,
+parsed refund across four hit paths, zero replacement, separate caps and source/destination prohibition controls.
+
+The keystone now doubles the total ES recovery cap without changing per-instance capacity and prevents recharge.
+The plain conversion source changes neither cap nor recharge. Converted Life-source grants and native ES grants
+create separate ES instances sharing the one total cap. ES pool/caps, total recovery, generic recovery and instant
+percentage apply; Life-specific recovery modifiers do not replace those. Existing instances retain their type when
+the source is removed. A virtual conversion override of zero suppresses conversion independently of the other
+keystone effects. Target ES-leech immunity gates both converted and native ES while leaving Mana available.
+
+Evidence: this client's `ReminderTextKeystoneGhostReaver`, actual passive/Stats rows, pinned PoB 3.29 tree node
+24426, and [Mark_GGG's separate-instance clarification](https://www.reddit.com/r/PathOfExileBuilds/comments/mrgqh3/comment/gxksr13/?context=3).
+[The adjacent explanation](https://www.reddit.com/r/PathOfExileBuilds/comments/mrgqh3/comment/gw9c1w0/?context=3)
+also confirms that each instance stores its own immutable rate/duration and modifiers act on the sum.
+
+Decision: implement separate instances rather than translating PoB's combined average-duration output literally
+into one runtime instance. The alternative produces slower recovery over a longer duration and contradicts GGG's
+clarification. Preserve source-level Life prohibitions and destination ES prohibitions conservatively, matching
+pinned PoB's explicit checks; ignoring the source prohibition could grant recovery from a blocked source. Exact
+native conversion/prohibition interaction is still unverified and recorded in the module. Other conversions,
+conditional sources, attack-only overleech and leech-condition consumers remain open.
+
+This adds 15 model/keystone/contact controls without upgrading any row to complete. The 357-stat goal remains
+active; no live processes were started/stopped and no changes were published.
+Final validation: solution build has zero warnings/errors (`build-ghost-reaver-final.log`); Core 561 and Data 18
+pass (`core-ghost-reaver.trx`, `data-ghost-reaver.trx`), and the corrected complete Gateway suite passes 4,434
+(`gateway-ghost-reaver-final.trx`): 5,013 total, no skips. The exact 357-row audit remains 82 partial/275 pending.
+The first full Gateway receipt retains four failed fixture assertions and 4,430 passing cases for comparison.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

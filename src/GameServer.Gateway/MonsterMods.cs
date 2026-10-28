@@ -170,6 +170,7 @@ sealed class MonsterModCatalog(ModCatalog mods, string folder = "data")
         "life_regeneration_rate_per_minute_%", "rare_monster_mod_spell_damage_taken_+%_final", "base_damage_taken_+%",
         "monster_base_block_%", "base_cannot_be_stunned", "hit_damage_+%_per_10%_missing_enemy_life",
         "self_take_no_extra_damage_from_critical_strikes", "avoid_impale_%", "cannot_have_life_leeched_from",
+        "cannot_have_energy_shield_leeched_from",
     };
 
     /// <summary>Stats that only stop something the server does not do to monsters yet (ailments on monsters, curses,

@@ -198,9 +198,12 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Ordinary active leech now has an accepted-hit and resource-writer implementation; official fractional endpoint rounding is unmeasured.
   The current branch now recomputes all 24 scoped leech coefficients and three speed aliases from raw actor,
   support and qualified hand inputs. Native checks for this composition/recovery remain pending. The ordinary engine
-  uses separate duration, total recovery and maximum-rate rules (damage §5b). Continue Ghost Reaver/other conversions,
+  uses separate duration, total recovery and maximum-rate rules (damage §5b). Ghost Reaver now has independent
+  converted/native ES instances, cap/recharge effects and source/refund controls. Continue other conversions,
   conditional and weapon-family sources, skill-specific recovery speeds, attack-only ES overleech and leech-state
   consumers; do not add overlapping displayed scopes together or substitute regeneration for leech.
+  Native conversion/prohibition interaction remains unverified; the conservative source-plus-destination policy
+  and the alternative are recorded in damage §5b and the review report.
   Ward and unsupported conditional mechanics still need their own systems and evidence.
   Weapon-local typed damage and multiplicative physical quality now feed ordinary and supported attacks,
   with correct melee/projectile context and active-hand sources. Pool/charge/timing/block conditions use active gear.

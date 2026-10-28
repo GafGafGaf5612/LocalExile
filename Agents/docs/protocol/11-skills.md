@@ -2134,7 +2134,8 @@ Pinned PoB `16de4b82` supplies the three support stat sets and the general/eleme
 Scope composition follows those descriptions; current native getter/formatting parity remains unverified.
 Decision: derive each total once from raw sources rather than summing overlapping derived aliases or rounding
 actor/support fractions separately. Ordinary active leech now consumes raw qualified sources at accepted contacts
-and uses separate instance duration, total recovery and cap rules (damage §5b). Conditional sources, conversions,
+and uses separate instance duration, total recovery and cap rules (damage §5b). Ghost Reaver converts independent
+Life-source grants to ES and applies its cap/recharge effects. Conditional sources, other conversions,
 skill-specific recovery-speed ownership and native validation remain open in the review ledger.
 
 Selected impale chance now recomputes all three virtual totals from the raw actor, own support and each hand's

@@ -74,6 +74,7 @@ static class LeechLimits
                 * Math.Max(0, 100 + Input($"maximum_{pool}_leech_rate_+%") + Input("maximum_leech_rate_+%")
                     + Input("map_player_maximum_leech_rate_+%"));
             if (pool == "energy_shield" && Flag("maximum_energy_shield_leech_amount_per_leech_is_doubled")) instance *= 2;
+            if (pool == "energy_shield" && Flag("keystone_ghost_reaver")) rate *= 2;
             instance = Math.Max(0, replacement?.Invoke(instanceVirtual) ?? instance);
             rate = Math.Max(0, replacement?.Invoke(rateVirtual) ?? rate);
             if (blocked) (instance, rate) = (0, 0);

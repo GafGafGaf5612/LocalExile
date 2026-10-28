@@ -792,7 +792,23 @@ Decisions and alternatives:
 - Extend the existing resource writer instead of adding another timer. A single writer avoids competing periodic pool
   updates. Immediate leech stays inside the hit lock; notification latency cannot delay its defensive benefit.
 
-Still open: Ghost Reaver and other conversions, conditional/weapon-family sources and instant percentages, attack-only
+Ghost Reaver now converts each Life-source grant into its own ES instance, separate from native ES leech from the
+same hit. [Mark_GGG explicitly confirms separate instances](https://www.reddit.com/r/PathOfExileBuilds/comments/mrgqh3/comment/gxksr13/?context=3).
+Converted instances use ES maximum pool, instance cap, total recovery, instant percentage and generic recovery;
+Life-specific values do not substitute for them. All ES instances share the same total cap. The actual extracted
+passive 24426 supplies `keystone_ghost_reaver`; `ReminderTextKeystoneGhostReaver` and pinned PoB's 3.29 tree agree
+that this also doubles the total ES cap and disables recharge. The plain `leech_energy_shield_instead_of_life`
+source only converts. The virtual conversion flag publishes/clears, preserving explicit developer replacements.
+Refund affects new grants and current cap/recharge settings; it does not reclassify old instances.
+
+Decision: preserve independent converted/native instances instead of summing their coefficients or extending one
+instance's duration. Primary GGG evidence takes precedence over treating PoB's combined average-duration output
+as a runtime instance model. Conservatively retain original source-level Life prohibitions and apply destination
+ES prohibitions as well, following pinned PoB `CalcOffence.lua:3403,3631,3678`; their exact native conversion
+interaction remains a specific validation requirement. Target ES-leech immunity blocks both converted and native
+ES grants while leaving Mana available. Existing Life instances from before conversion retain their original type.
+
+Still open: other conversions, conditional/weapon-family sources and instant percentages, attack-only
 ES overleech, skill-specific recovery-speed ownership, legacy instant flags, current leech-condition publication/consumers,
 remaining cap conditions and current-branch native recovery/prediction/lifecycle parity. These are explicit follow-up
 requirements, not completed by the ordinary engine. No current-branch client/server was launched for these controls.

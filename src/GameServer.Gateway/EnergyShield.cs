@@ -35,7 +35,8 @@ sealed class EnergyShield
         (uint)Math.Clamp(((long)Math.Max(0, flat) * Math.Max(0L, 100L + increased) + 50) / 100, 0, int.MaxValue);
     public static double Delay(Func<string, int> get) => 2 / Math.Max(0.01, 1 + get("energy_shield_delay_-%") / 100.0);
     public static double RechargePerMinute(uint max, Func<string, int> get) =>
-        get("cannot_recharge_energy_shield") != 0 || get("no_energy_shield_recharge_or_regeneration") != 0 ? 0 :
+        get("cannot_recharge_energy_shield") != 0 || get("no_energy_shield_recharge_or_regeneration") != 0
+            || get("keystone_ghost_reaver") != 0 ? 0 :
         max * 20.0 * Math.Max(0, 1 + get("energy_shield_recharge_rate_+%") / 100.0)
         * Math.Max(0, 1 + get("energy_shield_recovery_rate_+%") / 100.0);
     public static double RegenPerMinute(uint max, Func<string, int> get) =>
