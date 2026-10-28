@@ -1405,10 +1405,13 @@ the Server." (not during a capture tour). The room points (monster packs) still 
 The gate's transitions check compares the type and cell of every captured object. It filters the port's list with
 the recorder's own type names (walkmaps.js: AreaTransition, …Waypoint, …TownEntrance). The port finds every type
 with the AreaTransition component, so it also places BossArenaEntranceTransition, MerveilExitTransition,
-LabyrinthTownTransition, BellyArenaTransition and CoreTransition, which the recorder never keeps. With that filter,
-182 of the 186 captures match. The differences: 1_5_1, 1_5_2 and 2_10_7 capture a `GlowyFX` /
-`SlavePensIntroGround` object at a crater, which the port does not place. 2_Labyrinth_boss_2_end's capture lacks
-three arena gates the port places.
+LabyrinthTownTransition, BellyArenaTransition and CoreTransition, which the recorder never keeps. The recorder also
+keeps the two `Metadata/MiscellaneousObjects/AreaTransitionEffects` types, `GlowyFX` and `SlavePensIntroGround`
+(server-only Transitionable effects at Act 5's craters in 1_5_1, 1_5_2 and 2_10_7; their path contains
+"AreaTransition"). The port places them too (`AreaObjects.IsEffect`), with the type's `Animated` `animated_object` as
+the model (`crater_glow.ao`, `ground_shatter.ao`), not the record's virtual `.ao`. The Gateway keeps them out of its
+transitions; it does not send them yet. All 131 objects of the 30 matching loads of these areas match. Of the 186
+captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates the port places.
 
 ## 8. Tooling
 

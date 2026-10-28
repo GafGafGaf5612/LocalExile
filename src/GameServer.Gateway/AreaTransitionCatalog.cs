@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Data.Terrain.Generation;
 
 /// <summary>
 /// Every area's area transitions: where they are (the client's generated layout, captured per (area, seed) by
@@ -154,17 +155,22 @@ static class AreaTransitionCatalog
             // No capture: the layout the Gateway generated itself, read the same way.
             if (!Captured(id, seed))
                 return ServerLevels.For(id, seed)?.Objects
-                    .Where(o => o.Type.Contains("AreaTransition") || o.Type.EndsWith("TownEntrance"))
+                    .Where(o => IsTransition(o.Type))
                     .Select(o => new CapturedObject(o.Type, o.Model, o.X, o.Y, o.Rotation, o.Z)).ToList() is { Count: > 0 } made ? made : null;
             var file = JsonSerializer.Deserialize<CaptureFileData>(File.ReadAllText(CaptureFile(id, seed)), Json);
             // Quest exits extend AreaTransition under their own name (The Twilight Strand's SouthBeachTownEntrance).
-            return file?.Objects?.Where(o => o.ObjectType is { } t && (t.Contains("AreaTransition") || t.EndsWith("TownEntrance"))).ToList();
+            return file?.Objects?.Where(o => o.ObjectType is { } t && IsTransition(t)).ToList();
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
             return null;
         }
     }
+
+    // The AreaTransitionEffects types (Act 5's crater glow and ground shatter) are server-only effects beside an
+    // entrance, not exits: not sent yet (their Transitionable state is open, 08 §5).
+    static bool IsTransition(string type) =>
+        (type.Contains("AreaTransition") || type.EndsWith("TownEntrance")) && !AreaObjects.IsEffect(type);
 
     static Dictionary<ushort, AtlasArea>? Load()
     {

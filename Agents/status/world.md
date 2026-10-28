@@ -95,7 +95,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   port matches.
   A tour of 3 random seeds per matching area: 518 of 519 match; one is open (re/011 §8).
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
-  All 30 loads with a height capture match cell for cell; 182 of the 186 with a transitions capture match exactly.
+  All 30 loads with a height capture match cell for cell; 185 of the 186 with a transitions capture match exactly
+(Act 5's crater effects, `GlowyFX` and `SlavePensIntroGround`, are placed but not sent yet).
   The Gateway generates the supported areas itself (`ServerLevels.cs`): those whose seed-1 trace passes every gate
   check (`gate-baseline.json`); their walk grid, cell heights, transitions and waypoint need no capture.
   Entering any other area tells the player it is generated on the client and not supported by the server yet.

@@ -7,9 +7,17 @@ public sealed record PlacedTileObject(string Type, string Model, int X, int Y, f
 /// <summary>The area transitions and waypoints of a generated grid, placed as <see cref="DoodadStage"/>'s tile lines
 /// place tile objects (<c>0x142041200</c>): row by row, every tile origin's objects (the record master's Reskin copy
 /// when there is one; per sub-tile for a tile made of them), then the .tmd the .tdt names (+0x180), turned by the
-/// entry's orientation. What scripts/walkmaps captures from the client as &lt;area&gt;_seed&lt;seed&gt;.transitions.json.</summary>
+/// entry's orientation. What scripts/walkmaps captures from the client as &lt;area&gt;_seed&lt;seed&gt;.transitions.json.
+/// The transitions' server-only effects (<see cref="EffectsFolder"/>: Act 5's crater glow and ground shatter) are
+/// placed too.</summary>
 public static class AreaObjects
 {
+    /// <summary>The two server-only Transitionable effects a tile places beside an entrance (GlowyFX,
+    /// SlavePensIntroGround); no area transition themselves.</summary>
+    public const string EffectsFolder = "Metadata/MiscellaneousObjects/AreaTransitionEffects/";
+
+    public static bool IsEffect(string type) => type.StartsWith(EffectsFolder, StringComparison.OrdinalIgnoreCase);
+
     public static List<PlacedTileObject> Transitions(TerrainCache files, GenerationResult result)
     {
         var grid = result.Grid;
@@ -20,7 +28,7 @@ public static class AreaObjects
             {
                 if (grid[x, y] is not { IsOrigin: true } e) continue;
                 var tile = e.Tile;
-                if (!files.HasTransition(tile)) continue;
+                if (!files.HasTransition(tile) && !files.TileObjects(tile).Concat(files.SecondObjects(tile)).Any(o => IsEffect(o.Type))) continue;
                 int index = 0;
                 for (int k = 0; k < records.Count; k++)
                     if (x >= records[k].X && x < records[k].X + records[k].W && y >= records[k].Y && y < records[k].Y + records[k].H) index = k;
@@ -28,9 +36,10 @@ public static class AreaObjects
 
                 void Line(TileObject o, int cellX, int cellY, float angle)
                 {
-                    if (!files.IsTransitionType(o.Type)) return;
+                    if (!files.IsTransitionType(o.Type) && !IsEffect(o.Type)) return;
                     var (cx, cy) = Orientation.Map(e.Orientation, cellX, cellY, tile.Width * 23, tile.Height * 23);
-                    placed.Add(new PlacedTileObject(o.Type, o.VirtualModel(tile.Path), x * 23 + cx, y * 23 + cy,
+                    string model = IsEffect(o.Type) && EffectModel(files, o.Type) is { } own ? own : o.VirtualModel(tile.Path);
+                    placed.Add(new PlacedTileObject(o.Type, model, x * 23 + cx, y * 23 + cy,
                         TilePlacement.Angle(e.Orientation, angle), o.Z - e.HeightOffset * 7.8125f));
                 }
 
@@ -45,6 +54,14 @@ public static class AreaObjects
             }
         return placed;
     }
+
+    // An effect's model is its type's Animated animated_object (the record's virtual .ao is not what the client holds:
+    // 1_5_1's slave_crater_v01_01_glowyFX record is crater_glow.ao).
+    static string? EffectModel(TerrainCache files, string type) =>
+        files.Text(type + ".ot") is { } text
+            ? TerrainText.Lines(text).Select(l => l.Trim()).Where(l => l.StartsWith("animated_object", StringComparison.Ordinal))
+                .Select(l => l[(l.IndexOf('"') + 1)..l.LastIndexOf('"')]).FirstOrDefault()
+            : null;
 
     // As DoodadStage.SubTileDoodads: each sub-tile's mesh objects, turned by the slot's code inside its span.
     static void SubTiles(TerrainCache files, TileDef tile, string? reskin, Action<TileObject, int, int, float> line)
