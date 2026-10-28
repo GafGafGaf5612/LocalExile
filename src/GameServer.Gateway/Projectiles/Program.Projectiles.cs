@@ -238,7 +238,13 @@ partial class Program
             var p = value.Projectile;
             int x = (int)Math.Round(value.Position.X), y = (int)Math.Round(value.Position.Y);
             var presentation = PresentationFor(p);
-            if (presentation.EventEffect?.Invoke(value) is { } eventEffect) Effect(x, y, eventEffect, presentation.EffectLifetime);
+            if (value.Kind == ProjectileEventKind.End && p.ParentId == 0)
+                Console.WriteLine($"[gateway] {remote} projectile end use={p.UseId} entity={p.Id}"
+                    + $" reason={value.Reason} position={value.Position} metadata={p.Profile.Id}"
+                    + $" grid={Conn.Layout.Id}_seed{Conn.Seed} blocked={ProjectileGrid.Blocks(Conn.Layout.Id, Conn.Seed, x, y)?.ToString() ?? "unknown"}");
+            if (presentation.EventEffect?.Invoke(value) is { } eventEffect)
+                Effect(x, y, eventEffect, presentation.EffectLifetime,
+                    value.Kind == ProjectileEventKind.Area ? value.Radius : null);
             if (value.Kind == ProjectileEventKind.Spawn)
             {
                 string? flightVisual = (p.Use.Payload as ProjectileOffense)?.FlightVisual ?? presentation.FlightVisual;
@@ -286,13 +292,19 @@ partial class Program
                 });
             }
             else if (value.Kind == ProjectileEventKind.Area && p.Use.Payload is ProjectileOffense { AreaVisual: { } ao })
-                Effect(x, y, ao, presentation.EffectLifetime);
+                Effect(x, y, ao, presentation.EffectLifetime, value.Radius);
         }
 
-        void Effect(int x, int y, string ao, long lifetime)
+        void Effect(int x, int y, string ao, long lifetime, double? radius = null)
         {
             uint id = Conn.NextObjectId++;
-            var effect = new EffectObject(x, y, ao);
+            // Native area art radii are world units; simulation radii are grid cells.
+            float scale = radius is double r && Art.ArtRadius(ao) is int nativeRadius
+                ? (float)(r * (250d / 23) / nativeRadius) : 1;
+            var effect = new EffectObject(x, y, ao) { Scale = scale };
+            if (radius is not null)
+                Console.WriteLine($"[gateway] {remote} projectile area object={id} position=({x}, {y})"
+                    + $" radius={radius:0.###} art={ao} scale={scale:0.###}");
             var visual = new Visual(id, default);
             Conn.ProjectileObjects.Add(id);
             Packet(() =>

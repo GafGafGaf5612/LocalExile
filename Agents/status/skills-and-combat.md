@@ -345,6 +345,7 @@ and can require explicit recipes.
   Boolean fork sources grant one generation, and raw bow always-pierce sources bind to the same common profile.
   Return retains remaining continuation counts and the original lifetime; return pierce-all requires its own stat.
   Direct and area snapshots keep area increases/supports scoped to their damage stages.
+  Area effects scale to the committed radius when the selected art exports a native radius; unknown art stays unscaled.
   Skill explosions, pulses, children, forms, native art and specialized resources belong to skill definitions.
   Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
   Code: Core `Projectiles/`, Gateway `Projectiles/`; see the [framework guide](../docs/game/projectile-framework.md).
