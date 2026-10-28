@@ -79,7 +79,7 @@ public partial class OwnAuraGatewayTests
             }
             double freezeAt = f.Conn.Clock.Elapsed.TotalSeconds;
             using (Program.ProjectileMutation(f.Conn, advance: false))
-                Program.ApplyPlayerAilmentsLocked(f.Conn, GameServer.Core.World.DamagePacket.Empty,
+                Program.ApplyPlayerAilmentsLocked(f.Conn, GameServer.Core.World.DamagePacket.Of(GameServer.Core.World.DamageType.Cold, 100, 100),
                     GameServer.Core.World.DamagePacket.Of(GameServer.Core.World.DamageType.Cold,
                         f.Conn.PlayerMaxLife * .051, f.Conn.PlayerMaxLife * .051), true, false, freezeAt,
                     Program.CharacterPlayerStats(f.Conn));
