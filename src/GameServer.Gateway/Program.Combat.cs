@@ -35,7 +35,7 @@ partial class Program
 
     // A ground bow shot reserves pacing, its action token and stationary walk together with the input-time gate.
     internal static bool TryBeginBowAttack(ClientState conn, double requestedAt, double duration,
-        ushort skill, ushort sequence, out (int Action, int X, int Y) started)
+        ushort skill, ushort sequence, out (int Action, int X, int Y, SkillCriticalRoll CriticalRoll) started)
     {
         started = default;
         lock (conn.Monsters)
@@ -49,7 +49,7 @@ partial class Program
             conn.Walk.Order(x, y, requestedAt);
             conn.ChannelSkill = skill;
             conn.ChannelSkillSequence = sequence;
-            started = (action, x, y);
+            started = (action, x, y, CaptureSkillCriticalRoll(conn, skill));
             return true;
         }
     }
@@ -139,10 +139,12 @@ partial class Program
         }
         if (conn.ActionCount != action || (bow && !OrdinaryBowReleaseCurrent(conn, action, projectileEpoch))) { Console.WriteLine($"[gateway] {remote} attack on 0x{use.TargetId:x} cancelled before the swing"); return; }
         now = conn.Clock.Elapsed.TotalSeconds;
+        SkillCriticalRoll criticalRoll;
         lock (conn.Monsters)
         {
             target = m.Walk.Position(now);
             conn.NextAttackAt = AttackTiming.After(now, conn.NextAttackAt, duration);
+            criticalRoll = CaptureSkillCriticalRoll(conn, SkillCatalog.FirstSkillId);
         }
         if (Dist(stop, target) > weapon.Range + 2)
         {
@@ -160,7 +162,7 @@ partial class Program
         // A bow's target is an aim, not a reserved hit: its released arrow owns collision and damage.
         if (bow)
         {
-            await LaunchOrdinaryBow(remote, stream, ciphers, conn, stop, target, duration, action, projectileEpoch);
+            await LaunchOrdinaryBow(remote, stream, ciphers, conn, stop, target, duration, action, projectileEpoch, criticalRoll);
             return;
         }
         // The hit lands at the attack animation's contact keyframe (data/animation-contacts.json), not a fixed half: the
@@ -207,7 +209,7 @@ partial class Program
             var hit = AttackHitConverted(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee,
                 ConversionFor(conn, attackEffect, 1, attack: true));
             var ownRolled = hit.Roll(Random.Shared);
-            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration)
+            critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration, skillRoll: criticalRoll)
                 && GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom);
             int sourceCriticalMultiplier = AttackCriticalMultiplier(conn, player);
             int criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
@@ -1202,7 +1204,6 @@ partial class Program
                                     (rolled, crit) => MonsterDamage(target, rolled, crit, attack: true,
                                         ordinaryShot.ResistanceMods, ordinaryShot.Penetration).Damage,
                                     CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier),
-                                    extraCriticalRolls: ordinaryShot.CriticalChance > 0 ? CriticalExtraRolls(conn) : 0,
                                     criticalRandom: conn.CriticalRandom,
                                     cannotCrit: ordinaryShot.CriticalChance > 0 && CriticalProhibited(conn, attack: true),
                                     now: conn.Clock.Elapsed.TotalSeconds, reflect: stored => MonsterImpaleDamage(target, stored),

@@ -358,6 +358,32 @@ This is an allocation policy, not a claim about the official random stream. The 
 and [damage module](../protocol/20-damage.md) record these choices and alternatives. Special repeats, skill-specific
 exceptions and native validation remain open. No live processes were started or stopped.
 
+## Ordinary attack luck at swing admission
+
+Ordinary melee and bow attacks still resampled luck at contact/impact after the gem correction. Eighteen new
+before-fix cases reproduced both directions of Life, Focus and raw-luck changes for melee, object bows and
+ground bows (`ordinary-critical-admission-reproduced.trx`). Each now retains a `SkillCriticalRoll` from admission,
+including across a queued action confirmation and arrow release. Melee/object-bow capture after their walk-in
+when the swing reserves pacing; ground bows capture within their existing input gate. Prohibition remains live
+at contact, and attack accuracy confirmation remains independent.
+
+Two further approach controls prove that a Life change during the walk-in affects the ensuing swing; capturing
+at the initial click would be too early. Six existing signed-luck cases and two released-bow prohibition cases
+now assert the corrected lifetime. A recovery-input control exposed a wall-time assumption: initial catalog/stat
+loading could exhaust its one-second synthetic attack timer. It now restarts that fixture's clock before checking
+the existing pacing reservation. This changes no production timer or timeout and preserves the failed receipt
+`ordinary-critical-admission-focused.trx` (207 pass, one pacing assertion failure).
+The expanded focused run passes 210. The solution builds with zero warnings/errors; Core 561, Data 18 and
+Gateway 4,344 pass without skips, 4,923 total. Receipts: `ordinary-critical-admission-expanded.trx`,
+`core-ordinary-critical-admission.trx`, `data-ordinary-critical-admission.trx` and
+`gateway-ordinary-critical-admission.trx`.
+
+Decision: use swing/input admission rather than the click that begins an approach, release or impact. Keep the
+other ordinary-bow damage/chance/multiplier snapshots pending their own evidence instead of changing all offensive
+lifetimes as part of luck. [Skills](../protocol/11-skills.md) and [damage](../protocol/20-damage.md) record the choices,
+alternatives and primary GGG reference. The preceding shared gem-roll correction is local commit `d98597c`.
+Other agents' server processes remain active; this task has launched or stopped none. Native validation remains open.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

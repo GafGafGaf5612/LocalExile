@@ -157,6 +157,9 @@ public class PlayerHitRecoveryTests
         Assert.Equal(5, bow.Action);
         Assert.Equal((ushort)0x102, conn.ChannelSkill);
         Assert.True(conn.NextAttackAt > 0);
+        // Cold catalog/stat loading during the accepted use may outlast the one-second synthetic swing.
+        // Return this fixture's clock to its origin before checking the already-reserved pacing guard.
+        conn.Clock.Restart();
         Assert.False(global::Program.TryBeginBowAttack(conn, 0, 1, 0x102, 8, out _));
         Assert.Equal(5, conn.ActionCount);
     }

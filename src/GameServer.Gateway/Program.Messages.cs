@@ -52,7 +52,7 @@ partial class Program
                     _ = ConfirmAndLaunchOrdinaryBow(remote, stream, ciphers, conn,
                         InstanceProtocol.ActionStarted(PlayerId, bow.X, bow.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                         $"0x01ab bow attack at ({use.X}, {use.Y}) from ({bow.X}, {bow.Y}) (t={at:0.000})",
-                        (bow.X, bow.Y), (use.X, use.Y), duration, bow.Action, projectileEpoch);
+                        (bow.X, bow.Y), (use.X, use.Y), duration, bow.Action, projectileEpoch, bow.CriticalRoll);
                     continue;
                 }
                 // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an

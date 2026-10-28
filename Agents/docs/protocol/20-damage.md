@@ -517,8 +517,12 @@ its current critical chance and prohibition; attack accuracy confirmation remain
 Decision: keep the random value, not a cached boolean, so changes between targets still matter. Capture luck
 at admitted use rather than first impact. Allocate the values lazily to preserve the no-RNG behavior of rejected
 contacts; this is a local allocation policy. [Skills conditional critical policy](11-skills.md) records the primary
-GGG distinction and 22 new cases. Ordinary attack luck admission timing, special repeats
-and native parity remain open; the native virtual getter alone does not certify a roll's lifetime.
+GGG distinction and 22 new cases. Ordinary melee/object-bow uses now capture luck when their swing begins after
+any approach; ground bows capture within their input/pacing admission. The context survives queued confirmation,
+release and flight. Twenty additional controls cover Life/Focus/raw changes, both directions and walk-in timing.
+Decision: capture at swing admission rather than the earlier walk-in request or later contact; keep the existing
+bow damage/chance/multiplier snapshot pending its own evidence rather than changing unrelated lifetimes.
+Special repeats and native parity remain open; the native virtual getter alone does not certify a roll's lifetime.
 
 Gem projectile forward/piercing/return contacts now consume the selected profile under admitted sweeps.
 Evaded targets continue the flight without spending pierce budget, triggering impact/impale/on-hit effects or

@@ -106,6 +106,15 @@ public partial class ConditionalCriticalGatewayTests
                 .WaitAsync(TimeSpan.FromSeconds(5));
         }
 
+        public Task GroundUse()
+        {
+            var at = Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds);
+            var bytes = new LoginWriter().U16(InstanceProtocol.UseSkillAtLocationId).U32((uint)at.X).U32((uint)at.Y)
+                .U16(Skill).U16(0).U16(1).ToArray();
+            return Program.OnClientMessages("critical-ground-test", writer.GetStream(), ciphers,
+                [(InstanceProtocol.UseSkillAtLocationId, bytes)], [], Conn);
+        }
+
         public async Task HitLands()
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -223,14 +232,15 @@ public partial class ConditionalCriticalGatewayTests
     [InlineData(50u, 1, 2, true)]
     [InlineData(50u, 100, 2, true)]
     [InlineData(50u, -100, 2, false)]
-    public async Task Parsed_default_contact_uses_live_life_and_signed_luck(uint life, int ordinary, int calls, bool crit)
+    public async Task Parsed_default_contact_keeps_admission_life_and_signed_luck(uint life, int ordinary, int calls, bool crit)
     {
         var random = new Draws(9000, 0);
         using var f = new Contact(random);
         f.Set("extra_critical_rolls", ordinary);
         f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
+        f.Conn.PlayerLife = life;
         var use = f.Use();
-        f.Conn.PlayerLife = life; // Action already accepted; contact is still waiting.
+        f.Conn.PlayerLife = life == 50 ? 51u : 50u; // A later Life change cannot replace this action's luck.
         await use;
         Assert.Equal(calls, random.Calls);
         Assert.Equal(crit ? 2000u : 1000u, f.Target.MaxLife - f.Target.Life);
@@ -307,12 +317,12 @@ public partial class ConditionalCriticalGatewayTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Released_ordinary_bow_reads_life_luck_and_prohibition_at_impact(bool cannotCrit)
+    public async Task Released_ordinary_bow_keeps_use_luck_and_reads_prohibition_at_impact(bool cannotCrit)
     {
         var random = new Draws(9000, 0);
         using var f = new Contact(random, weaponName: "Crude Bow", distance: 60);
         f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
-        f.Conn.PlayerLife = 51;
+        f.Conn.PlayerLife = 50;
         uint firstObject = f.Conn.NextObjectId;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await f.SendGate.WaitAsync(timeout.Token);
@@ -339,7 +349,7 @@ public partial class ConditionalCriticalGatewayTests
             Assert.Equal(0, random.Calls);
             lock (f.Conn.Monsters)
             {
-                f.Conn.PlayerLife = 50;
+                f.Conn.PlayerLife = 51;
                 f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
             }
         }

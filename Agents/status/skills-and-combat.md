@@ -24,7 +24,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   and existing impact callbacks. Gem luck is captured at admitted use; each hit samples current chance/prohibition
   and confirms attack accuracy independently. Twenty-two new cases and four updated parsed use-time-luck controls
   cover the changed lifecycle. This correction is automated, not part of the older native captures.
-  Ordinary attack luck admission timing and special repeat/skill rules remain open.
+  Ordinary melee/object-bow now capture luck at swing admission after approach, and ground bows at their input
+  admission. Twenty added controls cover Life/Focus/raw changes before confirmation, plus walk-in timing;
+  eight existing signed-source/released-prohibition cases now assert admission luck. The other ordinary-bow
+  snapshots, special repeats and native reruns remain open.
   Successful paid ascendancy refunds and Focus/curse lifecycles remain separate integration work.
   See [11-skills.md](../docs/protocol/11-skills.md), conditional critical policy.
 

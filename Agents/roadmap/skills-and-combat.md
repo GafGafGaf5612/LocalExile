@@ -38,8 +38,9 @@ Selected flat/increased accuracy supports and raw actor overrides now compose be
 Area attacks consume that profile inside admitted contact, with miss/critical-confirmation and callback controls.
 Gem projectile forward/piercing/return evasion and critical confirmation are implemented with missed-contact
 continuation, budget and volley-exclusion controls. Gem uses now share one critical roll, with admitted-use luck
-and per-hit chance/prohibition/accuracy confirmation. Align ordinary attack luck with use admission and review
-special repeats. Complete remaining conditions, correct off-hand sources, and publish all matching chance/always-hit rows. Ordinary/selected main-hand
+and per-hit chance/prohibition/accuracy confirmation. Ordinary attack luck now follows swing/input admission;
+review other bow snapshots and special repeats. Complete remaining conditions, correct off-hand sources, and
+publish all matching chance/always-hit rows. Ordinary/selected main-hand
 average/DPS now includes normal-reference landing and critical-confirmation probabilities; dual-hand/multi-hit,
 integer-roll expectation and other sources remain open. Validate these paths natively when shared resources are free.
 See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).

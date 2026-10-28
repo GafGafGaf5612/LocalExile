@@ -8,6 +8,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
     public HitResistances.Mods ResistanceMods { get; init; }
     public ImpaleStats.Settings? ImpaleSettings { get; init; }
     public AttackAccuracyProfile? AccuracyProfile { get; init; }
+    public SkillCriticalRoll? CriticalRoll { get; init; }
     public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
@@ -42,8 +43,9 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         int hitChance = 100, Random? accuracyRandom = null)
     {
         var rolled = Hit.Roll(random);
-        bool critical = CriticalStrikePolicy.Roll(cannotCrit ? 0 : CriticalChance,
-            criticalRandom ?? random, extraCriticalRolls)
+        int chance = cannotCrit ? 0 : CriticalChance;
+        bool critical = (CriticalRoll?.Check(chance, criticalRandom ?? random)
+            ?? CriticalStrikePolicy.Roll(chance, criticalRandom ?? random, extraCriticalRolls))
             && EvasionEntropy.ConfirmsCritical(hitChance, accuracyRandom ?? random);
         int damage = mitigate?.Invoke(rolled, critical) ?? (int)Math.Round(rolled.MinTotal);
         if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier ?? CriticalMultiplier);

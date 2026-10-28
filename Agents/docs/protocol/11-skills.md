@@ -629,12 +629,14 @@ A nonzero signed extra adds exactly one following `Next(10000)` even if the firs
 Positive luck combines with OR, negative luck with AND, and zero luck uses only the original draw.
 This ordering is LocalExile's local RNG policy, not an established official-server RNG sequence.
 Cannot-crit flags take precedence and consume no critical draws, including under lucky conditions.
-The default attack uses this policy at accepted contact. Supported skills now retain a shared `SkillCriticalRoll`:
+Ordinary attacks and supported skills now retain a shared `SkillCriticalRoll`:
 luck is captured when their cost/admission commits, and all area targets, volley projectiles, piercing/return hits
 and existing impact-area callbacks compare the same roll against their current critical chance/prohibition.
 Channelled attack cycles start separate contexts. A blocked/evaded contact does not consume a critical draw.
-Ordinary bow arrows keep their existing released damage/chance/multiplier snapshot and sample conditional luck
-and cannot-crit flags from the live owner at impact; ordinary luck timing still needs alignment with use admission.
+Ordinary melee captures luck after its approach, when the swing reserves pacing. Object-targeted bows capture
+there too; ground bows capture inside their accepted input/pacing gate. Both carry the context through queued
+confirmation and release. Ordinary bow arrows retain the existing released damage/chance/multiplier snapshot;
+cannot-crit flags still read the live owner at impact. Broader snapshot lifetimes remain a separate review.
 No additional packet, accuracy or impale draw is introduced by the policy.
 
 [Mark_GGG's mechanics answer](https://www.pathofexile.com/forum/view-thread/1676002/filter-account-type/staff/page/1)
@@ -642,13 +644,19 @@ distinguishes the per-use random roll from each hit's critical-chance comparison
 luck acts when that roll is made (Diamond Flask answer). This corrects the prior assumption that each accepted
 gem hit should reroll luck. Native extra-roll getter evidence establishes the source formula, not its lifetime.
 Decision: retain one sampled number rather than caching a critical/noncritical boolean; changed chances and
-later prohibition must still affect each hit. Capture gem luck at admitted use rather than its first target.
+later prohibition must still affect each hit. Capture luck at admitted use rather than its first target.
 Random numbers are allocated lazily on the first admitted, non-prohibited positive-chance hit; this preserves
 the existing cancelled/missed-action RNG behavior without asserting an official allocation sequence.
 Critical accuracy confirmation remains a separate random test for each landed attack hit.
 Twenty-two new cases cover shared area/volley/pierce/return/impact-area rolls, signed luck, independent confirmation,
 separate uses and chance/prohibition changes between targets. Four parsed gem controls now verify use-time
-luck across a later Life change. Native and broader repeat/skill exceptions remain open.
+luck across a later Life change. A further 20 ordinary controls cover both directions of Life/Focus/raw-source
+changes behind queued confirmation for melee/object-bow/ground-bow, and changes during a melee approach.
+The first 18 reproduced contact-time resampling before correction. Existing release/prohibition and signed-source
+controls now assert admission luck. Decision: capture when the swing starts rather than the initial walk-in click,
+and carry that state through the released arrow rather than refreshing it at release/impact. Preserve the other
+bow snapshots pending specific evidence instead of changing all offensive lifetimes together.
+Native and broader repeat/skill exceptions remain open.
 
 `unarmed_melee_attack_critical_strike_multiplier_+` adds points to the ordinary multiplier only for an active
 empty-hand melee Attack context without Spell; an inactive-set weapon cannot arm that context.
