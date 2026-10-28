@@ -359,8 +359,8 @@ and can require explicit recipes.
   Both are user-selected development values, without official measurement or experiential basis.
   Secondary explosions use their own small-burst art and equipped MTX; native art scales to the actual blast radius.
   Fireball wall-contact damage and default/Stygian packets have regression coverage; visual visibility remains unverified.
-  Missing height grids leave flights at client-sampled ground, without the torso offset; official geometry/timing,
-  surface height and art equivalence still need client validation.
+  Flights retain fixed terrain-plus-offset height (bare offset without a grid); explosion effects follow client terrain.
+  Official geometry/timing, surface height and art equivalence still need client validation.
   Code: Core `Projectiles/`, Gateway `Projectiles/` and `Projectiles/Skills/`; see the
   [framework guide](../docs/game/projectile-framework.md).
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
