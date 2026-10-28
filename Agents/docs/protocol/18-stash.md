@@ -216,13 +216,18 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   (the item's max) and keeps the rest. A Shift + click split takes at most a full stack too.
 - **Repair.** Items a special tab can't show (an earlier build let any item into any tab) move at load into their slot,
   else into the first normal tab with room, and are saved there. One that finds no room stays where it is, saved.
-- **Filling a slotted tab (dev, `/item_tab <tab name> <count>`).** The tab is found by its name, ignoring case, or else by
+- **Filling a tab (dev, `/item_tab <tab name> <count>`).** The tab is found by its name, ignoring case, or else by
   the only tab whose StashType name starts with the text. Each item type with a slot of its own on that tab
   (`StashRules.Slots`) gets up to `count` more, at most 1000 per command. Each type goes into its own slot only, never
   the spare slots, and is capped by that slot's limit above; an item that doesn't stack gets one. A divination card is
   capped at its complete set, which is what the tab shows.
   `AccountStash.FillSlots` does all of it in one save, and an open tab gets one S→C 0xbf.
-  - Refused: normal, premium, quad, flask and gem tabs (no slot per type), and the `NotShown` tabs.
+  - Gem tab (StashType 18, 250 × 2): one of every creatable gem variant (`ItemCatalog.FullShopGems`, transfigured and
+    Vaal included), red, green, blue then white, actives before supports. They go into free cells in order
+    (`AccountStash.FillCells`), and a variant already there is not added again. The client sorts the gems into its colour
+    sub-tabs by itself (live 2026-10-28). The server can create 1044 variants and the tab has 500 cells, so the rest are
+    reported as finding no room.
+  - Refused: normal, premium, quad and flask tabs (no slot per type), and the `NotShown` tabs.
   - Skipped:
     - types the server can't write;
     - a slot already holding another type;
