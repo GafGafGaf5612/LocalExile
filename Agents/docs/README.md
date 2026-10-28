@@ -64,6 +64,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [game/ascendancies.md](game/ascendancies.md) | selection, points, saves and the Phrecia play gate |
 | [game/antiquarian.md](game/antiquarian.md) | all nine node consumers, verified-graph admission, legal builds and native acceptance |
 | [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |
+| [game/league-modes.md](game/league-modes.md) | Hardcore deaths, SSF isolation, Ruthless native rules and editable balance |
 
 ## Working notes (history)
 - `re/007`–`010`: the notes these documents were consolidated from (login TCP, handshake, message tables, live instance

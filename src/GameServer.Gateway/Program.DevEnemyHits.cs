@@ -56,6 +56,7 @@ partial class Program
             conn.RecentEnemyHits.Record(now);
             if (block) ChargesWhenHit(conn, blocked, spell);
             if (conn.PlayerLife == 0) { conn.InvalidateIncomingHits(); ClearAntiquarianOnDeath(conn); }
+            RecordHardcoreDeath(conn);
             hit = new(dealt, mitigation, conn.PlayerLife, conn.PlayerMana, manaBefore,
                 blocked, blockChance, suppressed, suppression);
             return true;

@@ -49,13 +49,13 @@ partial class Program
             Ranged = MonsterAttackIsRanged(variety)
         };
         var skill = variety.GrantedEffects is [int effect, ..]
-            ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
+            ? SkillsFor(conn).FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
         // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
         var stage = BossFights.For(variety.Id);
         // Its stats as the attack's (skill_is_non_pathing above all, and the stage's own time): without them the client sent
         // the action through its pathing step, played nothing and kept the monster in it (live 2026-10-21).
         var stageSkill = skill is not null && stage is not null
-            ? Skills.FindByRow(StageSkillId, stage.SkillEffect, level, (attack with { SkillId = StageSkillId, Seconds = stage.CastSeconds }).SkillStats())
+            ? SkillsFor(conn).FindByRow(StageSkillId, stage.SkillEffect, level, (attack with { SkillId = StageSkillId, Seconds = stage.CastSeconds }).SkillStats())
             : null;
         List<(uint, int)>? stats = skill is null ? null : [.. attack.Stats()];
         // The final maximum too: the client applies no modifier of its own (as for the player's maximum_life), so without it
@@ -353,6 +353,7 @@ partial class Program
                 conn.RecentEnemyHits.Record(now);
                 ChargesWhenHit(conn, blocked);
                 if (conn.PlayerLife == 0) { conn.InvalidateIncomingHits(); ClearAntiquarianOnDeath(conn); }
+                RecordHardcoreDeath(conn);
                 life = conn.PlayerLife;
                 mana = conn.PlayerMana;
                 if (!blocked && !a.Ranged && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))

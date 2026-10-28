@@ -75,6 +75,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   Twenty-eight native checks cover effective family levels, unrelated sources, removal, unchanged storage and relog.
   Family-specific execution and Phrecia native admission remain separate.
   Docs: [scope and compatibility gate](../docs/game/ascendancies.md).
+- Ruthless applies a configurable compounding XP multiplier from level 68 by default.
+  The numeric rate is LocalExile tuning because the retail server formula is not public.
+  Native Ruthless passive stat/point alternatives are selected for each Ruthless connection.
+  Automated configuration tests cover valid live edits and retaining the last valid snapshot after invalid input.
+  Native passive alternatives and the compounding level formula have automated coverage.
+  See [league modes](../docs/game/league-modes.md).
 
 ## Not working yet
 

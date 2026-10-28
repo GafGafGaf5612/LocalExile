@@ -52,11 +52,11 @@ partial class Program
     static IReadOnlyList<AuraCatalog.Aura> RestoreRememberedAuras(ClientState conn, IEnumerable<string> saved)
     {
         if (conn.Closed || conn.LeavingArea || conn.RageRetired || InTown(conn) || OwnAuraRestrictionValue(conn) != 0) return [];
-        var wanted = saved.ToHashSet(StringComparer.Ordinal);
+        var wanted = saved.Select(AuraCatalog.Family).ToHashSet(StringComparer.Ordinal);
         var candidates = new List<AuraCatalog.Aura>();
-        foreach (var gem in GemSkillEffects(conn.Character))
-            if (Skills.EffectId(gem.Effect) is { } effect && wanted.Contains(effect) && AuraCatalog.Supported(effect)
-                && !conn.Auras.Values.Any(a => a.EffectId == effect)
+        foreach (var gem in GemSkillEffects(conn))
+            if (SkillsFor(conn).EffectId(gem.Effect) is { } effect && wanted.Contains(AuraCatalog.Family(effect)) && AuraCatalog.Supported(effect)
+                && !conn.Auras.Values.Any(a => AuraCatalog.Family(a.EffectId) == AuraCatalog.Family(effect))
                 && GemSkillInstanceDisabled(conn, gem.Effect, gem.Id) is null
                 && SupportedReservation(conn, gem.Id) is { } reservation)
                 candidates.Add(new(gem.Id, gem.Effect, effect, gem.Name, conn.NextBuff++, AuraCatalog.BuffRow(effect),
@@ -136,6 +136,7 @@ partial class Program
             if (conn.Closed || conn.LeavingArea || conn.PlayerLife != 0
                 || expectedEpoch is int expected && expected != conn.IncomingHitEpoch
                 || conn.DeathNotificationEpoch == conn.IncomingHitEpoch) return;
+            RecordHardcoreDeath(conn);
             conn.InvalidateIncomingHits();
             conn.DeathNotificationEpoch = deathEpoch = conn.IncomingHitEpoch;
             FortificationOf(conn).Clear();
@@ -143,6 +144,9 @@ partial class Program
             ChargesOnDeath(conn);
             ClearAntiquarianOnDeath(conn);
         }
+        foreach (var (id, life) in RecoverRuthlessBossesOnDeath(conn))
+            await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(id, life), $"Ruthless campaign boss 0x{id:x} recovers to {life} life after player death");
+        PersistRuthlessVitals(conn, bestEffort: true);
         await SendVaalSouls(remote, stream, ciphers, conn);
         await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
@@ -237,7 +241,7 @@ partial class Program
         var own = skillId == 0 ? new Dictionary<uint, int>() : SupportedSkill(conn, skillId).Stats;
         int speed = CastSpeedPct(CharacterPlayerStats(conn));
         if (Stats.Key("base_cast_speed_+%") is uint k) speed += own.GetValueOrDefault(k);
-        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds is int duration
+        return SpellCastTiming.ForSkill(SkillsFor(conn), effect, speed)?.DurationMilliseconds is int duration
             ? (int)Math.Min(int.MaxValue, Math.Ceiling(duration / PlayerActionFactor(conn))) : null;
     }
 
@@ -414,13 +418,21 @@ partial class Program
                 await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [.. SuppressionChanceKeys.Select(k => (k, chance))]),
                     $"0x01b3 player Spell Suppression chance {chance}%");
             }
+            lock (conn.Monsters)
+                if (HardcoreProgressBlocked(conn)) continue;
             if (conn.Layout.Waypoint is { } waypoint
                 && Dist(conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds), (waypoint.GridX, waypoint.GridY)) <= WaypointActivationRange)
                 await ActivateWaypoint(remote, stream, ciphers, conn, "the player came near");
             // Gold within GoldAutoLootRange is picked up without a click.
             var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             foreach (var (id, gold) in conn.Instance.Ground.Within(at.X, at.Y, GoldAutoLootRange, IsGold))
+            {
                 await PickUpGold(remote, stream, ciphers, conn, id, gold, "auto-looted");
+                lock (conn.Monsters)
+                    if (HardcoreProgressBlocked(conn)) break;
+            }
+            lock (conn.Monsters)
+                if (HardcoreProgressBlocked(conn)) continue;
             // Quests that start when the player comes near a monster (a1q1: Hillock, "Kill Hillock").
             if (Quests.Watched(conn.Layout.Id) is { Count: > 0 } watched)
             {
@@ -450,6 +462,7 @@ partial class Program
     {
         double lifeCarry = 0, manaCarry = 0, burnCarry = 0, last = conn.Clock.Elapsed.TotalSeconds;
         double ratesAt = double.NegativeInfinity, lifeRate = 0, manaRate = 0, burnPerSecond = 0;
+        double nextVitalsSave = last + 5;
         Dictionary<uint, int> recoveryStats = [];
         int RecoveryStat(string name) => Stats.Key(name) is uint key ? recoveryStats.GetValueOrDefault(key) : 0;
         var cachedRf = conn.RighteousFire;
@@ -458,6 +471,11 @@ partial class Program
             await Task.Delay(RecoveryStepMs);
             if (conn.Closed) break;
             double now = conn.Clock.Elapsed.TotalSeconds;
+            if (conn.Ruthless && now >= nextVitalsSave)
+            {
+                PersistRuthlessVitals(conn, bestEffort: true);
+                nextVitalsSave = now + 5;
+            }
             double seconds = now - last;
             if (seconds <= 0) continue;
             await EndGracePeriod(remote, stream, ciphers, conn);
@@ -689,6 +707,8 @@ partial class Program
     // in that town it is the same as the checkpoint).
     static async Task Resurrect(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool inTown)
     {
+        // The native button is hidden for HC, but a forged 0x54 must not revive the old character in its source league.
+        if (conn.Hardcore || conn.HardcoreDeathRecorded) return;
         lock (conn.Monsters)
         {
             if (conn.PlayerLife > 0) return;
@@ -698,6 +718,7 @@ partial class Program
             conn.HitRecovery.Clear();
             conn.Ward.SetMaximum(conn.Pools.Ward); conn.Ward.Restore();
             conn.AuraDeathHandled = false;
+            conn.RuthlessDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
         }
@@ -733,7 +754,7 @@ partial class Program
     static PlayerObject PlayerForCreation(ClientState conn)
     {
         var (layout, name, classRow, pools) = (conn.Layout, conn.Character, conn.ClassRow, conn.Pools);
-        var cls = Skills.ClassFor(classRow);
+        var cls = SkillsFor(conn).ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
         RestoreRage(conn);
         RestoreVaalSouls(conn);
@@ -756,8 +777,8 @@ partial class Program
             Mana: (uint)Math.Min(conn.PlayerMana, (uint)Math.Max(0, (int)pools.Mana - reservedMana)), ManaReserved: (uint)reservedMana,
             Experience: conn.Experience,
             AnimatedObject: Environment.GetEnvironmentVariable("Game_PLAYER_AO") ?? cls.AnimatedObject,
-            Skills: [.. Skills.PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
-            Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
+            Skills: [.. SkillsFor(conn).PlayerDefaults(weaponStats), .. GemSkills(conn, [.. weaponStats, .. statList], characterInputs, weapon)], Stats: [.. weaponStats, .. statList],
+            Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, ItemsFor(conn))),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
         lock (conn.Monsters)
@@ -772,7 +793,7 @@ partial class Program
         RestoreFortification(conn);
         PrepareHideoutWaypoint(conn);
         var (layout, name, classRow) = (conn.Layout, conn.Character, conn.ClassRow);
-        var cls = Skills.ClassFor(classRow);
+        var cls = SkillsFor(conn).ClassFor(classRow);
         uint type = InstanceEntities.ObjectTypeHash(cls.ObjectType);
         conn.PeerType = type;
         const string creationLabel = "0x02b9 create current player";
@@ -784,8 +805,8 @@ partial class Program
             (creationLabel, []),
         };
         // The player's inventories (id = row + 1), needed by UI built on entering (flask bar → row 11), with the character's items.
-        var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items);
-        if (Items.Error is not null) Console.WriteLine($"[gateway] items: {Items.Error}");
+        var items = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, ItemsFor(conn));
+        if (ItemsFor(conn).Error is not null) Console.WriteLine($"[gateway] items: {ItemsFor(conn).Error}");
         foreach (var slot in InstanceInventories.PlayerDefaults)
         {
             var inside = items.Items(slot.Row);
@@ -805,7 +826,7 @@ partial class Program
         if (Environment.GetEnvironmentVariable("Game_GATEWAY_ENTER") == "1")
         {
             var tabs = PersonalStashOf(conn).Records((int)StashSelectAffinity);
-            bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items).WeaponSet == 1;
+            bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, ItemsFor(conn)).WeaponSet == 1;
             messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}, weapon set {(secondSet ? 2 : 1)}",
                 InstanceProtocol.EnterArea(tabs, secondSet)));
             // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:

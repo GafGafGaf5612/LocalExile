@@ -334,7 +334,15 @@ The generic [projectile framework](../docs/game/projectile-framework.md) owns pr
 the sole 30 Hz runtime. Catalog fallback provides basic flight; registered skill definitions supply special rules
 and can require explicit recipes.
 
-
+- Ruthless resolves native skill/gem, passive and mod alternatives per connection, including zero-valued overrides.
+  Ordinary characters in the same Gateway keep ordinary catalogs.
+  Hardcore death is terminal for the old connection; a queued level-up cannot revive it.
+  Hardcore migration and permanent Ruthless death have automated lifecycle coverage.
+  Earlier native checks were against the original fork; native checks on the current integration are recorded separately.
+  Native skill/passive/mod alternatives and late-action guards have automated coverage.
+  Main's projectile kill path retains Ruthless rewards, gem XP and active utility-flask restrictions.
+  Synchronous quest/gem commits retain the Hardcore terminal-progress guard; composed regressions pass.
+  See [league modes](../docs/game/league-modes.md).
 - Grace Period grants 60 seconds of entry protection outside towns and hideouts.
   First movement, a skill, a flask or expiry ends it; incoming damage, hostile targeting and RF damage are suppressed.
   The native buff uses floating-point seconds for its countdown; the icon was checked live, timer retest is pending.
@@ -709,4 +717,3 @@ and can require explicit recipes.
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent;
   an effect object follows the player only by 0x1ba glides.
   Combat auras, Heralds and banners are not implemented; only the simple auras above use buffs.
-  Ruthless and SSF change nothing in game; towns are shared across leagues.

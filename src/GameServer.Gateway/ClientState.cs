@@ -143,10 +143,17 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint Ticket => ticket;
     public uint Seed => seed;
     public string? Character { get; init; }
+    public Guid? CharacterId { get; init; }
+    public readonly Guid RuthlessVitalsSessionId = Guid.NewGuid();
     /// <summary>The account the character belongs to (Auth's resolve): its stash (AccountStash) is shared by all of them.</summary>
     public string? Account { get; init; }
     public string? League { get; init; }
     public bool Hardcore { get; init; }
+    public bool Ssf { get; init; }
+    public bool Ruthless { get; init; }
+    public double RuthlessGemExperienceCarry;
+    public bool RuthlessDeathHandled;
+    public bool HardcoreDeathRecorded;
     /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there. 0 before the
     /// character has entered a town (the death screen then has no Resurrect in Town).</summary>
     public ushort LastTown { get; init; }

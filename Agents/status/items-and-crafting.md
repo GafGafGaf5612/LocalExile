@@ -27,7 +27,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   flask charges gained and charge recovery multiply, partial charges are kept.
   Charges on dealing a critical strike (one 0.132 s cooldown), when hit and every 3 seconds; charges used and maximum
   charges with mods.
-  Towns, hideouts and resurrection fill every flask; a flask put on the bar in a hostile area starts empty.
+  Ordinary-mode towns, hideouts and resurrection fill every flask; a flask put on the bar in a hostile area starts empty.
   `Game_FLASK_CHARGES=full` brings back "every kill fills every flask".
   Not yet: fewer charges in acts 6 to 10 and maps; charges on taking a critical strike (monsters deal none) and at
   maximum frenzy charges (none here).
@@ -107,6 +107,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   backstop, the Foulborn rightmost variant and Enkindling (`UniqueCatalog`, `Program.Mageblood`;
   [13](../docs/protocol/13-items.md) §2e, §8a).
 
+- Ruthless uses native mod/flask alternatives, reduced tunable drops and vendor returns, and refuses bench crafting.
+  Entering town or a hideout does not refill its pools/flasks; supported vendors refill them instead.
+  Active utility flasks cannot gain charges, and native Ruthless durations/Onslaught values apply.
+  Automated pool-restoration and session-ownership checks cover area changes, reconnects and vendor refill persistence.
+  Drop, recipe, bench and flask-rule calculations have automated coverage; full retail balance remains partial.
+  See [league modes](../docs/game/league-modes.md).
 - Essence crafting (2026-10-25, automated verification; real-client use pending): all 105 craftable essences resolve
   their exact class-specific guaranteed mod from Essences.dat, including tier-8 and Desolation.
   Normal/rare eligibility, random-mod level caps, fractures, metamod refusal and repeated consumption from the Essence

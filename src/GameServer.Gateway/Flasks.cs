@@ -17,11 +17,12 @@ static class Flasks
     /// <summary>Gives each flask in the flask bar (life, mana and utility: <see cref="ItemCatalog.FlaskChargesOf"/>) up to
     /// <paramref name="charges"/> charges, up to its maximum with its mods (<see cref="FlaskCharges.Of"/>), saved now or, with <paramref name="saveNow"/> false, with the next save
     /// (PlayerInventories.ChangeUnsaved): the flasks that changed.</summary>
-    public static List<InventoryItem> Fill(PlayerInventories items, ItemCatalog catalog, int charges, bool saveNow = true)
+    public static List<InventoryItem> Fill(PlayerInventories items, ItemCatalog catalog, int charges, bool saveNow = true,
+        Func<InventoryItem, bool>? canGain = null)
     {
         List<InventoryItem> changed = [];
         foreach (var flask in items.Items(PlayerInventories.Flask))
-            if (catalog.ByHash(flask.Item.TypeHash) is { } type && catalog.FlaskChargesOf(type) is { } baseUse
+            if (canGain?.Invoke(flask) != false && catalog.ByHash(flask.Item.TypeHash) is { } type && catalog.FlaskChargesOf(type) is { } baseUse
                 && FlaskCharges.Of(baseUse, ItemModStats.Local(flask.Item, catalog.Mods)) is var use && flask.Item.Charges < use.MaxCharges &&
                 (saveNow ? items.Change(PlayerInventories.Flask, flask.Id, i => Gain(i, use, charges)) : items.ChangeUnsaved(PlayerInventories.Flask, flask.Id, i => Gain(i, use, charges))) is { } done)
                 changed.Add(done);
