@@ -372,33 +372,16 @@ partial class Program
             }
             else if (id == InstanceProtocol.ChannelUpdateId)
             {
-                // A channelled skill (Cyclone) goes on where the player now is: it moves there and, once per attack time, the
-                // skill hits around it (AreaSkillHit).
+                // A channelled skill (Cyclone) goes on where the player now is: it moves there. Its hits run on their own
+                // timer (RunChannel), at the skill's attack rate, wherever the player is.
                 var (cx, cy) = InstanceProtocol.ReadChannelUpdate(bytes);
                 double t = conn.ClockAt(readAt);
-                int channelAction;
                 using (ProjectileMutation(conn))
                 {
                     t = Math.Max(t, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
                     if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
-                    channelAction = conn.ActionCount;
                     conn.Walk.Teleport(cx, cy, t);
-                }
-                var channelled = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == conn.ChannelSkill);
-                if (conn.ChannelSkill != 0 && channelled.Name is not null && t >= conn.NextChannelHitAt)
-                {
-                    double every;
-                    lock (conn.Monsters) every = SupportedAttackSeconds(conn, conn.ChannelSkill);
-                    conn.NextChannelHitAt = t + every;
-                    if (!PayMana(conn, conn.ChannelSkill, out uint channelCost))
-                    {
-                        conn.ChannelSkill = 0;
-                        await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped: insufficient mana");
-                        continue;
-                    }
-                    if (channelCost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {channelCost}");
-                    _ = AreaSkillHit(remote, stream, ciphers, conn, conn.ChannelSkill, channelled, (cx, cy), (cx, cy),
-                        immediate: true, sequence: conn.ChannelSkillSequence, actionToken: channelAction);
+                    conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
                 }
             }
             else if (id == InstanceProtocol.ChannelEndId)

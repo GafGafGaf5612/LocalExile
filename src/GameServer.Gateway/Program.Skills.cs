@@ -14,9 +14,20 @@ partial class Program
     // refused (GemDisabled).
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
-        var player = FinalPlayerStats(conn).ToList();
-        return [.. Skills.PlayerDefaults(player), .. GemSkills(conn, player, CharacterPlayerStats(conn), WeaponFor(conn))];
+        // One build reads one snapshot of the character's stats: every gem's cast time and panel rows used to recompute
+        // the whole calculation (CharacterPlayerStats) per gem, inside the send gate.
+        var outer = StatsScope.Value;
+        if (outer is null) StatsScope.Value = (conn, CharacterPlayerStatsCore(conn, out _));
+        try
+        {
+            var player = FinalPlayerStats(conn).ToList();
+            return [.. Skills.PlayerDefaults(player), .. GemSkills(conn, player, CharacterPlayerStats(conn), WeaponFor(conn))];
+        }
+        finally { if (outer is null) StatsScope.Value = null; }
     }
+
+    /// <summary>The character's stats for the PlayerSkills build running on this flow, reused instead of recomputed.</summary>
+    static readonly AsyncLocal<(ClientState Conn, Dictionary<uint, int> Stats)?> StatsScope = new();
 
     // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
     // (the client derives nothing itself: 11-skills.md §4).
@@ -90,8 +101,11 @@ partial class Program
     }
 
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
-    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn) =>
-        CharacterPlayerStatsCore(conn, out _);
+    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
+    {
+        if (StatsScope.Value is { } scope && ReferenceEquals(scope.Conn, conn)) return new(scope.Stats);
+        return CharacterPlayerStatsCore(conn, out _);
+    }
 
     static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond)
     {

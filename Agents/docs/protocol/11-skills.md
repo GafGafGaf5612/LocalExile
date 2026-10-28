@@ -579,7 +579,7 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   which drops a server-driven monster's queued attack in the same frame (traced: created, queued, both checks passed,
   then neither current nor queued). The server walks the monster itself, so the skill is non-pathing. Only on the
   skill: on the monster's Stats component it also stops its Move action from pathing (the monsters stood still).
-- **AI** (`RunMonsterAi`, 500 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
+- **AI** (`RunMonsterAi`, 100 ms): a hostile, chasing monster within reach stops and swings: 0x1ab with its skill, flags
   0x0408 | 0x80, target = the player, sequence 0xffff. At half the attack time the hit lands if the monster lives and
   the player is still within reach + 2: 0x1b1 on the player.
 - **Defence.** The monster's accuracy is `DefaultMonsterStats.Accuracy` at its level (raised by its mods); the server
@@ -1034,8 +1034,16 @@ player back there (live 2026-10-23).
 
 **Channelled skills** (Cyclone): after the skill's 0x1ab start the client sends **C→S 0x197** (10 bytes: u32 BE x,
 u32 BE y, the player's cell) every few frames while the button is held, and **C→S 0x199** (2 bytes) when it is let go
-(read from live captures 2026-10-23). The Gateway moves the player there and, once per attack time, runs
-`AreaSkillHit` around it at once (`ClientState.ChannelSkill`, `NextChannelHitAt`).
+(read from live captures 2026-10-23). The Gateway only moves the player there: 0x197 does not come at the attack rate.
+The hits run on the server's own timer (`RunChannel`, started with the channel): the first sweep lands as the channel
+starts, then one sweep around the player's current cell every `SupportedAttackSeconds` (the skill's own speed, its
+supports and the player's attack speed, as the tooltip shows), paying the cost each time, until 0x199, any other action,
+running out of mana, death or travel, or when the 0x197 updates stop for a second (the client sends them all the
+time while the button is held, so a lost 0x199 cannot keep the channel going: `LastChannelUpdateAt`;
+`ClientState.ChannelSkill`, `NextChannelHitAt`). One sweep resolves its damage
+and multiplier once and rolls them per monster; every monster gets its hit, life update and death packet before the
+sweep's deaths run their loot, experience and quest work (`AreaSkillHit`). Before, a sweep recalculated the whole skill
+per monster and handled each death inline, spreading one sweep over up to 1.4 s in a crowd.
 
 ## 10. Projectiles (experimental)
 
