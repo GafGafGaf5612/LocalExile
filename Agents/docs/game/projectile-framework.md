@@ -45,7 +45,8 @@ placement distance and skipped terrain-obstructed sectors. Radius, placement rad
 are separate inputs. Area recipes have a first-slot `Delay` and inter-slot `Interval` in simulation quanta;
 zero defaults remain synchronous. Centers and trigger flight state are captured before continuation, while
 actors and defenses resolve at each detonation. Pending areas survive their parent flight, retain admission
-history, pause with simulation time and clear on teardown. Omitted terrain slots retain their timing gaps.
+history, pause with simulation time and clear on teardown. Terrain-blocked centres are not resampled and do not
+consume time slots: surviving areas start at `Delay` and follow consecutively at `Interval` spacing.
 Sector sampling and recipe timing values do not establish official random distributions or measured timing.
 
 `EndAreaOnReturnTurnaround` lets a recipe emit an allowed endpoint area before a successful return starts.

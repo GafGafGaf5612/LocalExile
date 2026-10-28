@@ -81,6 +81,7 @@ public sealed partial class ProjectileRuntime
         var context = recipe.Delay > 0 || recipe.Interval > 0 ? p.AreaSnapshot() : p;
         double sector = Math.Tau / Math.Max(1, recipe.Count);
         double rotation = recipe.SectorPlacement ? p.Random.NextDouble() * Math.Tau : 0;
+        int areaIndex = 0;
         for (int i = 0; i < recipe.Count; i++)
         {
             // Independent area events can overlap; only the terminal collision victim shares direct admission.
@@ -97,7 +98,8 @@ public sealed partial class ProjectileRuntime
                 if (recipe.RespectTerrain && world.TraceTerrain(p.Position - p.Direction * .001, centre) is not null)
                     continue;
             }
-            long at = checked(Now + recipe.Delay + i * recipe.Interval);
+            // Rejected centres consume their spatial sample, but no time in the surviving sequence.
+            long at = checked(Now + recipe.Delay + areaIndex++ * recipe.Interval);
             if (at == Now) ResolveArea(context, recipe, centre, victim, areaId);
             else
             {
