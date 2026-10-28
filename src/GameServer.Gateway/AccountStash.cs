@@ -559,6 +559,39 @@ sealed class AccountStash
         return new(changed, added, full, skipped);
     }
 
+    /// <summary>
+    /// The /item_tab command on a tab without a slot per type (the gem tab): each of <paramref name="items"/> the tab
+    /// holds and doesn't have yet (by <paramref name="key"/>) into the first free cell, in order, in one save.
+    /// <see cref="SlotFill.Full"/> counts the ones already there, <see cref="SlotFill.Skipped"/> the ones that found no
+    /// room or that the tab doesn't hold.
+    /// </summary>
+    public SlotFill? FillCells(int tab, IEnumerable<Item> items, Func<Item, string> key, Func<Item, PlayerInventories.Shape?> shapeOf, out string why)
+    {
+        var added = new List<InventoryItem>();
+        int present = 0, skipped = 0;
+        lock (_lock)
+        {
+            why = "";
+            if (tab < 0 || tab >= _tabs.Count) { why = "no such tab"; return null; }
+            var t = _tabs[tab];
+            var have = t.Items.Select(i => key(i.Item)).ToHashSet();
+            foreach (var item in items)
+            {
+                if (!have.Add(key(item))) { present++; continue; }
+                if (!_rules.Holds(t.Saved.Type, item.TypeHash) || shapeOf(item) is not { } shape
+                    || FreeCellIn(t, shape.Width, shape.Height, shapeOf) is not { } cell) { skipped++; continue; }
+                var placed = PlayerInventories.Completed(new InventoryItem(_nextItemId++, cell.X, cell.Y, item), shape);
+                t.Items.Add(placed);
+                added.Add(placed);
+            }
+        }
+        if (added.Count > 0) Persist(tab);
+        return new([], added, present, skipped);
+    }
+
+    /// <summary>The tab's StashType row, or null for no such tab.</summary>
+    public byte? TabType(int tab) { lock (_lock) return tab >= 0 && tab < _tabs.Count ? _tabs[tab].Saved.Type : null; }
+
     /// <summary>Replaces an item in a tab with a changed copy (same id and cell), saved; null when it is not there (currency
     /// used on an item in the stash, e.g. the currency tab's crafting slot).</summary>
     public InventoryItem? Change(int tab, uint itemId, Func<Item, Item> change)

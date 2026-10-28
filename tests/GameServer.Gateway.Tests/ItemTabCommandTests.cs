@@ -90,6 +90,26 @@ public class ItemTabCommandTests : IDisposable
     }
 
     [Fact]
+    public void Cell_fill_adds_each_item_once_into_free_cells_and_reports_no_room()
+    {
+        var stash = Open();
+        static string Key(Item i) => $"{i.TypeHash:x8}:{i.GemVariant}";
+        Item Gem(int variant) => MapItem() with { GemVariant = variant };
+
+        var first = stash.FillCells(Normal, [Gem(0), Gem(1), Gem(0)], Key, Shapes, out _)!;
+        Assert.Equal(2, first.Added.Count);
+        Assert.Equal(1, first.Full);   // the second Gem(0) is already there
+        Assert.Equal([(0, 0), (0, 1)], first.Added.Select(i => ((int)i.X, (int)i.Y)));
+
+        var again = stash.FillCells(Normal, Enumerable.Range(0, 200).Select(Gem), Key, Shapes, out _)!;
+        Assert.Equal(2, again.Full);
+        Assert.Equal(12 * 12 - 2, again.Added.Count);   // a 12 × 12 tab
+        Assert.Equal(200 - 2 - (12 * 12 - 2), again.Skipped);
+        AccountStash.Forget(_account);
+        Assert.Equal(12 * 12, Open().Inventory(Normal).Items.Count);
+    }
+
+    [Fact]
     public void Tabs_without_a_slot_per_type_are_refused_unchanged()
     {
         var stash = Open();

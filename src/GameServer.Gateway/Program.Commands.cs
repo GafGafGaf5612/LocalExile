@@ -230,6 +230,21 @@ partial class Program
                 await conn.Commands!.Reply($"No stash tab \"{name}\"; tabs: {string.Join(", ", Enumerable.Range(0, stash.Count).Select(stash.NameOf))}");
                 return;
             }
+            if (stash.TabType(tab) == StashRules.Gem)
+            {
+                // The gem tab: one of every creatable gem variant (transfigured and Vaal too), red, green, blue then white,
+                // actives before supports; one already there is not added again.
+                var gems = new[] { 1, 2, 3, 4 }.SelectMany(colour => new[] { false, true }.SelectMany(support => Items.FullShopGems(colour, support)))
+                    .Select(g => ItemCatalog.Create(g.Type) with { GemVariant = g.Variant.Index });
+                var cells = stash.FillCells(tab, gems, i => $"{i.TypeHash:x8}:{i.GemVariant}", ShapeOf, out string gemWhy);
+                if (cells is null) { await conn.Commands!.Reply($"Tab \"{stash.NameOf(tab)}\": {gemWhy}"); return; }
+                if (cells.Added.Count > 0 && TabsSentOf(conn, stash).Contains(tab))
+                    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(stash.InventoryOf(tab), stash.NextRevision(tab), [], cells.Added),
+                        $"0x00bf stash tab {tab}: /item_tab {stash.NameOf(tab)}, {cells.Added.Count} gem(s)");
+                await conn.Commands!.Reply($"Tab \"{stash.NameOf(tab)}\" (GemStash): {cells.Added.Count} gem(s) added, one of each variant" +
+                    (cells.Full > 0 ? $"; {cells.Full} already there" : "") + (cells.Skipped > 0 ? $"; {cells.Skipped} found no room" : ""));
+                return;
+            }
             Item? Create(uint hash) => Items.ByHash(hash) is { Supported: true } type ? ItemCatalog.Create(type) : null;
             if (stash.FillSlots(tab, amount, Create, ShapeOf, out string why) is not { } fill)
             {
