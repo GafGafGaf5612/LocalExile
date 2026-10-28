@@ -63,8 +63,9 @@ must use `Pierce`, never that cap.
 
 ## Skill definitions and presentation
 
-`ProjectileSkillDefinition` supplies metadata, profile resolution, optional terrain admission, windup
-cancellation, release specialization, presentation and native panel-stat projection.
+`ProjectileSkillParameters` owns profile resolution and optional native panel-stat projection.
+`ProjectileSkillDefinition` combines those parameters with metadata, optional terrain admission, windup
+cancellation, release specialization and presentation.
 Paid attacks normally survive Move; spells and definitions with release-time resources retain action cancellation.
 Cooldown tickets, death, recovery and
 epoch restrictions still apply. Specialization runs once in the simulation commit and may provide frozen
@@ -72,13 +73,18 @@ per-initial-projectile payloads; continuation children inherit their parent's pa
 Accepted hit recovery permanently cancels unreleased paid attacks, even after recovery expires;
 already released flights continue independently.
 
-Gem skill records resolve the same profile for native projectile-count, pierce, chain and fork description inputs.
+Gem skill records resolve the same profile for native projectile-count, pierce, chain, fork, split and return inputs.
 Prohibitions override displayed continuation grants; unlimited pierce uses the native all-targets flag.
 Arrow pierce display aliases are cleared after their applicable contributions enter the combined profile budget,
 so they cannot shadow the generic total or the cannot-pierce row.
 Final display values modify only the outgoing skill record, never raw supported stats or later release calculations.
-A definition may project specialized stage counts through `PanelStats`; an unavailable recipe omits this projection
-without blocking the remaining skill list. Native description templates choose the wording and visibility.
+Parameters may project specialized stage counts through `PanelStats` after the common projection.
+Return descriptions distinguish guaranteed return from a percentage chance; prohibited return suppresses both
+and the return-pierce description. Cannot-pierce also suppresses the return-pierce description.
+Catalog projectile skills without native projectile metadata still resolve known generic parameters and skill overrides.
+This stat-only path never supplies executable metadata or bypasses release admission; special mechanics remain
+dependent on skill coverage. An invalid parameter recipe omits projection without blocking the remaining skill list.
+Native description templates choose the wording and visibility.
 
 `ProjectilePresentation` supplies flight mesh/clip, second-form clip and event effects. Non-gem sources may
 supply presentation directly through `ProjectileOffense`. The common host owns object lifecycle, terrain
