@@ -346,6 +346,7 @@ and can require explicit recipes.
   Return retains remaining continuation counts and the original lifetime; return pierce-all requires its own stat.
   Direct and area snapshots keep area increases/supports scoped to their damage stages.
   Area effects scale to the committed radius when the selected art exports a native radius; unknown art stays unscaled.
+  Terrain-blocked area centers are omitted without resampling or reserving time; surviving areas keep consecutive intervals.
   Skill explosions, pulses, children, forms, native art and specialized resources belong to skill definitions.
   Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
   [Named skills](../docs/game/projectile-skills.md) implement terminal Fireball blasts and Kinetic Blast clusters.

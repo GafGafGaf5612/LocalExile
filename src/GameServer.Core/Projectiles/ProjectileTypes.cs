@@ -36,7 +36,7 @@ public sealed record ProjectileAreaRecipe(string Stage, double Radius, int Count
     public bool RespectTerrain { get; init; }
     /// <summary>Delay from the triggering contact to the first area, in simulation quanta.</summary>
     public long Delay { get; init; }
-    /// <summary>Simulation quanta between area slots, including terrain-skipped slots.</summary>
+    /// <summary>Simulation quanta between generated areas; terrain-skipped centres consume no time.</summary>
     public long Interval { get; init; }
 }
 public sealed record ProjectilePulseRecipe(string Stage, double Radius, long Interval);
