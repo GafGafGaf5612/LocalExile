@@ -51,6 +51,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native ordinary command checks do not establish an expanded chooser or special class gameplay.
   Herald, Architect of Chaos, Paladin and Puppeteer family gem levels reach actual skill records and calculations.
   Automated checks cover real connected allocation, paid refunds, reload, supported levels and intrinsic requirements.
+  Twenty-eight native checks cover effective family levels, unrelated sources, removal, unchanged storage and relog.
   Family-specific execution and Phrecia native admission remain separate.
   Docs: [scope and compatibility gate](../docs/game/ascendancies.md).
 
