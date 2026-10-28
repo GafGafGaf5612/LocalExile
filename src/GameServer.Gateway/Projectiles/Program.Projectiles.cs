@@ -186,7 +186,8 @@ partial class Program
 
         public TerrainContact? TraceTerrain(ProjectileVector from, ProjectileVector to) =>
             ProjectileGeometry.TraceGrid(from, to, (x, y) =>
-                x < 0 || y < 0 || x >= Conn.Layout.GridW || y >= Conn.Layout.GridH
+                x < 0 || y < 0 || Conn.Layout.GridW > 0 && x >= Conn.Layout.GridW
+                || Conn.Layout.GridH > 0 && y >= Conn.Layout.GridH
                 || ProjectileGrid.Blocks(Conn.Layout.Id, Conn.Seed, x, y) == true);
 
         public ProjectileHitResult Hit(ProjectileDamage contact)
@@ -195,7 +196,7 @@ partial class Program
             if (!Conn.Monsters.TryGetValue(contact.Target.Id, out var target) || target.Dead || target.Life == 0
                 || Key(contact.Target.Id, target) != contact.Target) return ProjectileHitResult.Miss;
             var random = contact.Projectile.RandomSource;
-            if (!shot.Spell)
+            if (!shot.Spell && !shot.AlwaysHits)
             {
                 double at = contact.At / (double)ProjectileRuntime.QuantaPerSecond;
                 int accuracy = TargetAccuracy.AgainstTarget(shot.Accuracy, shot.AccuracyMoreUnique, shot.AccuracyMoreClose,
@@ -207,6 +208,7 @@ partial class Program
             }
             if (MonsterBlocks(target, random, shot.Spell)) return ProjectileHitResult.Blocked;
             double more = contact.Multiplier * (contact.Phase > 0 ? shot.ReturnMultiplier : 1);
+            if (!shot.Spell && shot.FarShot) more *= AntiquarianEffects.FarShot(contact.Projectile.Distance);
             var baseHit = contact.IsArea ? shot.AreaHit ?? shot.Hit : shot.Hit;
             var packet = new SkillDamageContext(shot.Spell ? SkillHitKind.Spell : SkillHitKind.Attack,
                 CharacterPlayerStats(Conn)).Hit(baseHit).Scale(more);

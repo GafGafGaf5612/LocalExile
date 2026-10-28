@@ -64,7 +64,8 @@ public static class InstanceEntities
     /// (default 2), bit6 → +0x81, bit7 f32 +0x6c (default 1.0)), then a u16 when the row's bool at +0xff is set, one u32
     /// per GrantedStats value when its IsRecovery (+0x7c) is set (<paramref name="values"/>: the caller must give exactly
     /// that many, or the client misreads the message), and a u32-counted list of u32. The buff's visual (BuffVisuals)
-    /// plays while it lasts.
+    /// plays while it lasts. u68 is the raw IEEE-754 f32 duration in seconds (not integer milliseconds);
+    /// f6c is the countdown rate (default 1.0).
     /// </summary>
     public static byte[] AddBuff(uint objectId, ushort buffInstance, ushort buffRow, uint sourceId = 0, ushort sourceSkill = 0,
         IReadOnlyList<uint>? values = null, uint? u68 = null, float? f6c = null, ushort? visual = null,

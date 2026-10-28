@@ -10,6 +10,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Elapsed Life regeneration, stopping at expiry, area carry, death and relog were also verified.
   The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
   See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
+- Antiquarian's real selected nodes now drive Ward absorption/restoration and Runic Tablet's pausable Adrenaline.
+  Goliath's zero Intelligence reaches requirements and pools; Whaletooth extends actual Enduring Cry recovery.
+  Turtle Shell integrates 8% Life over one second after accepted melee stun, with native Life correction at expiry.
+  Lioneye's Hair bypasses supported attack accuracy, Bow scales actual travelled projectiles, and Shield replaces
+  usable-shield base block and reduces physical ranged hits after armour.
+  Three native builds cover all nodes, combat controls, paid refunds and effect/save lifecycles.
+  See [Antiquarian](../docs/game/antiquarian.md) for evidence, exact graph admission and remaining engine boundaries.
 - Conditional critical policy (#242): ordinary, low-life, Focus and Sharp and Brittle sources share a signed clamp.
   Opposing luck cancels, and multiple lucky sources still add at most one critical draw.
   The unarmed multiplier applies only to the active empty-hand melee attack, with matching panel values.
@@ -325,6 +332,10 @@ the sole 30 Hz runtime. Catalog fallback provides basic flight; registered skill
 and can require explicit recipes.
 
 
+- Grace Period grants 60 seconds of entry protection outside towns and hideouts.
+  First movement, a skill, a flask or expiry ends it; incoming damage, hostile targeting and RF damage are suppressed.
+  The native buff uses floating-point seconds for its countdown; the icon was checked live, timer retest is pending.
+  See [11](../docs/protocol/11-skills.md), "Area-entry Grace Period".
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;

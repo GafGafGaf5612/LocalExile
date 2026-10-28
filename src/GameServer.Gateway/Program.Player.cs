@@ -75,12 +75,37 @@ partial class Program
         return restored;
     }
 
+    static bool InGracePeriod(ClientState conn)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        return conn.EntryProtection.Protects(now, conn.Walk.Position(now));
+    }
+
+    static async Task StartGracePeriod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        ushort buff;
+        lock (conn.Monsters) buff = conn.NextBuff++;
+        bool hideout = HideoutCatalog.ByArea(conn.Layout.Hash) is not null;
+        if (conn.EntryProtection.Start(now, conn.Walk.Position(now), buff, InTown(conn), hideout))
+            await Send(remote, stream, ciphers, GracePeriod.BeginPacket(PlayerId, buff), "Grace Period: 60 seconds of entry protection");
+    }
+
+    static async Task EndGracePeriod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool action = false)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        if (conn.EntryProtection.End(now, conn.Walk.Position(now), action) is ushort buff)
+            await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, buff),
+                "Grace Period ends: movement, action or deadline");
+    }
+
     static bool InTown(ClientState conn) => WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true };
 
     static async Task EndAurasOnDeath(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         if (conn.PlayerLife != 0 || conn.AuraDeathHandled) return;
         conn.AuraDeathHandled = true;
+        await EndGracePeriod(remote, stream, ciphers, conn, action: true);
         CharacterSaves.ClearActiveAuras(CharacterName(conn));
         List<AuraCatalog.Aura> ended;
         lock (conn.Monsters)
@@ -107,6 +132,7 @@ partial class Program
             conn.InvalidateIncomingHits();
             FortificationOf(conn).Clear();
             ClearRageOnDeath(conn);
+            ClearAntiquarianOnDeath(conn);
         }
         await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
@@ -338,6 +364,7 @@ partial class Program
                 criticalContext = currentCritical;
                 await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
             }
+            await SendAntiquarian(remote, stream, ciphers, conn);
             await SendRecentEnemyHits(remote, stream, ciphers, conn);
             await PushOutOfCollision(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
@@ -347,7 +374,7 @@ partial class Program
                 if (rf is not null) await EndRighteousFire(remote, stream, ciphers, conn, "death");
                 continue;
             }
-            if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
+            if (rf is not null && !InGracePeriod(conn)) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
             // The character panel's Spell Suppression chance again (0x1b3 with only its stats) when a condition changed
             // it: full life lost or regained, a walk started or ended, an enemy hit 4 s ago.
             if (Suppression(conn).Chance is var chance && chance != suppression)
@@ -402,6 +429,7 @@ partial class Program
             double now = conn.Clock.Elapsed.TotalSeconds;
             double seconds = now - last;
             if (seconds <= 0) continue;
+            await EndGracePeriod(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             // Stat aggregation stays at the old 250 ms cadence, rather than rebuilding the panel 60 times/s.
             if (now - ratesAt >= PlayerTickMs / 1000.0 || rf != cachedRf)
@@ -429,18 +457,20 @@ partial class Program
                     lifeCarry = manaCarry = burnCarry = 0;
                     FortificationOf(conn).Clear();
                     conn.EnergyShield.Empty();
+                    ClearAntiquarianOnDeath(conn);
                     lifeAfter = lifeBefore;
                     manaAfter = manaBefore;
                 }
                 else
                 {
-                    burnCarry += burnPerSecond * seconds;
+                    burnCarry += (InGracePeriod(conn) ? 0 : burnPerSecond) * seconds;
                     int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
                     int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
                     double fortificationLife = FortificationOf(conn).TakeRecovery(conn.Clock.Elapsed.TotalSeconds);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
-                        life + lifeRate * seconds + fortificationLife - lifeBurn, ref lifeCarry, minimum: 1);
+                        life + lifeRate * seconds + fortificationLife + conn.Antiquarian.TakeRecovery(now)
+                            + conn.EnduringCryRecovery.Take(now) - lifeBurn, ref lifeCarry, minimum: 1);
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
                         mana + manaRate * seconds, ref manaCarry);
                 }
@@ -575,6 +605,7 @@ partial class Program
     // Damage immunities as the damage model sees them, from the same sources the panel's "Immune to X" rows use.
     static HashSet<DamageType> PlayerImmunities(ClientState conn)
     {
+        if (InGracePeriod(conn)) return [.. Enum.GetValues<DamageType>()];
         var baseStats = new Dictionary<uint, int>();
         foreach (var (key, value) in BaseStats(conn)) baseStats[key] = value;
         lock (conn.Monsters)
@@ -622,6 +653,7 @@ partial class Program
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.HitRecovery.Clear();
+            conn.Ward.SetMaximum(conn.Pools.Ward); conn.Ward.Restore();
             conn.AuraDeathHandled = false;
             conn.PlayerMana = (uint)UnreservedMana(conn);
             foreach (var m in conn.Monsters.Values) m.Aggro = false;
@@ -661,6 +693,9 @@ partial class Program
         var cls = Skills.ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
         RestoreRage(conn);
+        RestoreAntiquarian(conn);
+        conn.Ward.SetMaximum(conn.Pools.Ward);
+        pools = conn.Pools;
         var stats = CharacterPlayerStats(conn);
         var characterInputs = new Dictionary<uint, int>(stats);
         // The equipped weapon's attack with its own local mods (WeaponFor), as SendSkills sends it after an equipment change:

@@ -7,6 +7,13 @@ locked (§4). Requirements are in §2; supports are still planned (Roadmap "Gems
 
 ## 1. The gem in the item data (SkillGem component)
 
+Family gem-level stats now raise effective active-skill levels in the common supported-skill calculation.
+The Herald/Vaal/Link families come from GemTags stat columns; Raise Zombie uses SkillGems' minion-level stat.
+Both skills of a Vaal gem share the gem's family bonus; support gems remain outside these active-only bonuses.
+Supported level bonuses and family sources sum before clamping to at least one.
+Actor skill records and skill stats use that same effective level without changing SkillGem experience or quality.
+Intrinsic requirements remain unchanged; see [scope and checks](../game/ascendancies.md#family-gem-levels).
+
 The SkillGem component's reader `0x14246eb00` (writer `0x14246ea40`) takes, in order:
 
 | Data | Stored at | Use |
