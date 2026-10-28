@@ -82,6 +82,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Automated regressions cover direct chases for negative footprints and player-body clearance for new and reused slots.
   Further automated checks cover short attack reach, stationary-blocked slots, bounded crowd escape and queued
   channel/Rage refreshes.
+  Combined regressions cover silent channel updates, removed gems and projectile contacts before crowd movement.
   AI and correction passes share indexed body snapshots; surround reservations use spatial queries and cached rings.
   Queue age, send/wire/socket timings and hot combat-lock timings are measured independently of tick latency.
   The extended crowd changes still need a real-client check.

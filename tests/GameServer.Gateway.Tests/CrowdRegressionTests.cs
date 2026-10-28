@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using GameServer.Core.Projectiles;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
@@ -81,6 +82,7 @@ public class CrowdRegressionTests
     [InlineData("replace")]
     [InlineData("move")]
     [InlineData("pause")]
+    [InlineData("silence")]
     public async Task A_queued_channel_sweep_obeys_stop_generation_pause_and_current_position(string change)
     {
         using var f = new Connection(cyclone: true);
@@ -90,6 +92,8 @@ public class CrowdRegressionTests
         f.State.Monsters[43] = newTarget;
         await f.Gate.WaitAsync();
         bool held = true;
+        // This fixture starts the timer directly; production stamps this at paid channel admission.
+        f.State.LastChannelUpdateAt = f.State.Clock.Elapsed.TotalSeconds;
         var channel = Call<Task>("RunChannel", "crowd-regression", f.Stream, f.Ciphers, f.State, f.Gem.Id, f.Gem, 7);
         try
         {
@@ -97,6 +101,8 @@ public class CrowdRegressionTests
             if (change == "end") await f.Message(InstanceProtocol.ChannelEndId, [1, 0x99]);
             else if (change == "replace") lock (f.State.Monsters) f.State.ChannelGeneration++;
             else if (change == "pause") f.State.Clock.Stop();
+            else if (change == "silence") lock (f.State.Monsters)
+                f.State.LastChannelUpdateAt = f.State.Clock.Elapsed.TotalSeconds - 1.1;
             else await f.Message(InstanceProtocol.ChannelUpdateId,
                 new LoginWriter().U16(InstanceProtocol.ChannelUpdateId).U32(150).U32(100).ToArray());
             f.Gate.Release(); held = false;
@@ -127,6 +133,53 @@ public class CrowdRegressionTests
             f.Gem.Id, (100, 100), (100, 100), 0u, (ushort)0, (int?)7, null, false));
         Assert.Equal(0, f.State.NextChannelHitAt);
         Assert.Equal((ushort)0, f.State.ChannelSkill);
+    }
+
+    [Fact]
+    public async Task Removing_the_channel_gem_stops_the_timer_before_another_payment()
+    {
+        using var f = new Connection(cyclone: true);
+        f.State.ActionCount = 7; f.State.ChannelSkill = f.Gem.Id;
+        f.State.LastChannelUpdateAt = f.State.Clock.Elapsed.TotalSeconds;
+        f.State.NextChannelHitAt = f.State.Clock.Elapsed.TotalSeconds - 1;
+        var host = Assert.Single(f.Items.Items(PlayerInventories.BodyArmour));
+        f.Items.Change(PlayerInventories.BodyArmour, host.Id,
+            i => i with { Sockets = [new(SocketColour.White)], Links = [1] });
+
+        await Call<Task>("RunChannel", "crowd-regression", f.Stream, f.Ciphers, f.State,
+            f.Gem.Id, f.Gem, 7).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1000u, f.State.PlayerMana);
+        Assert.Equal((ushort)0, f.State.ChannelSkill);
+        Assert.Equal(f.Target.MaxLife, f.Target.Life);
+    }
+
+    [Theory]
+    [InlineData("ai")]
+    [InlineData("collision")]
+    public async Task Crowd_movement_commits_prior_projectile_contacts_before_building_its_body_snapshot(string pass)
+    {
+        var conn = new ClientState(new(1, "crowd-projectile-order", 300, 300, 10, 10, (_, _) => true, []), 1, 1)
+            { PlayerSent = true, PlayerLife = 100, Instance = new() };
+        await using var f = new ProjectileRuntimeFixture(conn);
+        var target = ProjectileRuntimeFixture.Monster(30, 10);
+        conn.Monsters[42] = target;
+        f.Release(f.Shot() with { Profile = f.Shot().Profile with { Speed = 30000000 } });
+        await Until(() => conn.Clock.Elapsed.TotalSeconds > .001);
+
+        if (pass == "collision")
+            await Call<Task>("CorrectMonsterCollisions", "crowd-projectile-order", f.Stream, f.Ciphers, conn);
+        else
+        {
+            var ai = Call<Task>("RunMonsterAi", "crowd-projectile-order", f.Stream, f.Ciphers, conn);
+            try { await Until(() => conn.Performance.Read(LatencyPhase.BlockerBuild).Count > 0); }
+            finally { conn.Closed = true; await ai.WaitAsync(TimeSpan.FromSeconds(5)); }
+        }
+
+        Assert.Equal(90u, target.Life);
+        Assert.True(f.Session.Runtime.Now >= ProjectileRuntime.Time(.001));
+        Assert.True(conn.Performance.Read(LatencyPhase.BlockerBuild).Count > 0);
+        Assert.True(conn.Performance.Read(LatencyPhase.CombatHold).Count > 0);
     }
 
     [Fact]

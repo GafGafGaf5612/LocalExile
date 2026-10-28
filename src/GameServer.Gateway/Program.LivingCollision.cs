@@ -93,9 +93,9 @@ partial class Program
 
     static Task CorrectMonsterCollisions(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        using (conn.Performance.Lock(conn.Monsters, "collision"))
+        using (ProjectileMutation(conn, phase: "collision"))
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
+            double now = ProjectileWorldTime(conn);
             var player = conn.Walk.Position(now);
             var peers = conn.Instance.PlayersExcept(conn.PeerId).Where(p => p.Life > 0).ToArray();
             // Every living body's cell and size once per frame (kept current as bodies are moved below), instead of

@@ -231,6 +231,8 @@ The native path budget can end a valid route short; an arrived chaser retries at
 Each AI/collision pass owns one combat-locked body snapshot and indexed self-exclusion views for all mover paths.
 Collision corrections update both current and previous-position indexes before later movers use them.
 The indexes are discarded after the pass; normal/unique expansion budgets, stationary hulls and phasing remain intact.
+AI and correction passes advance prior projectile contacts before taking the body snapshot, using the shared
+projectile mutation scope and its experience-before-combat lock order.
 The 50 ms correction loop checks each traversed cell, stops movement through newly occupied cells and moves only the
 server's estimate (then paths it again to the same target, as the client does when a walk ends short). It used to send
 ActionEnded followed by Teleport: 1,608 corrections in one crowded session, each a visible stop and jump, although the

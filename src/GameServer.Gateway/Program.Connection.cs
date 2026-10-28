@@ -102,6 +102,8 @@ partial class Program
                 var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
                 ConnectionMetrics.Add(ciphers, conn.Performance);
                 left = conn;
+                // Another connection's requests (a trade, a party invite) reach this client through its own send gate.
+                conn.Outbox = (bytes, log) => Send(remote, stream, ciphers, bytes, log);
                 conn.Commands = Commands(remote, stream, ciphers, conn);
                 conn.ArriveAtWaypoint = WaypointArrivals.TryRemove(ticket, out _) || HideoutCatalog.ByArea(layout.Hash) is not null;
                 conn.ArriveAt = SpotArrivals.TryRemove(ticket, out var spot) ? spot : null;
@@ -152,6 +154,9 @@ partial class Program
                     }
                     inbox.Complete();
                     await handlers;
+                    // An open trade ends with its owner: the other side gets its items back in view and the window closes.
+                    try { await CancelPlayerTrade(conn, "disconnected"); }
+                    catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
                 }
             }
         }
@@ -282,7 +287,8 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x01d4 pause: in a town or hideout, not paused");
             return;
         }
-        lock (conn.Monsters) { if (pause) conn.Clock.Stop(); else conn.Clock.Start(); }
+        // Pause is a barrier: commit the preceding combat interval before freezing the world clock.
+        using (ProjectileMutation(conn)) { if (pause) conn.Clock.Stop(); else conn.Clock.Start(); }
         await Send(remote, stream, ciphers, InstancePause.State(pause), $"0x01d3 {(pause ? "paused" : "resumed")} (C→S 0x01d4 {(pause ? 1 : 0)})");
     }
 
@@ -308,6 +314,7 @@ partial class Program
         long heldAt = Stopwatch.GetTimestamp();
         try
         {
+            if (ProjectileOutputGuard.Value is { } projectileGuard && !projectileGuard()) return;
             if (still is not null && !still()) return;
             if (atGate is not null)
             {

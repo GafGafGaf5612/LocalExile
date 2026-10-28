@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using GameServer.Core.Projectiles;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
@@ -238,15 +239,28 @@ public class ConditionalCriticalGatewayTests
         using var f = new Contact(random, weaponName: "Crude Bow", distance: 60);
         f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
         f.Conn.PlayerLife = 51;
-        uint firstObject = f.Conn.NextObjectId;
-        var use = f.Use();
-        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-            while (f.Conn.NextObjectId == firstObject) await Task.Delay(5, timeout.Token);
-        Assert.Equal(0, random.Calls);
-        f.Conn.PlayerLife = 50;
-        f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
+        Task use;
+        using (Program.ProjectileMutation(f.Conn, advance: false))
+        {
+            // Accept the real bow action while unpaused, then freeze the pump before it can release or hit.
+            use = f.Use();
+            f.Conn.Clock.Stop();
+            try
+            {
+                var session = Assert.IsType<Program.ProjectileSession>(f.Conn.ProjectileRuntime);
+                long deadline = session.Runtime.Now + ProjectileRuntime.Time(2);
+                while (session.Runtime.Projectiles.Count == 0 && session.Runtime.Now < deadline)
+                    session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.TickQuanta / 10);
+                Assert.Single(session.Runtime.Projectiles);
+                Assert.Equal(0, random.Calls);
+                Assert.Equal(f.Target.MaxLife, f.Target.Life);
+                f.Conn.PlayerLife = 50;
+                f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
+                session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.Time(1));
+            }
+            finally { f.Conn.Clock.Start(); }
+        }
         await use;
-        await f.HitLands();
         Assert.Equal(cannotCrit ? 0 : 2, random.Calls);
         Assert.Equal(cannotCrit ? 1000u : 1500u, f.Target.MaxLife - f.Target.Life);
     }

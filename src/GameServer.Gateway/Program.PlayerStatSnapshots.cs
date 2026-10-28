@@ -27,7 +27,7 @@ partial class Program
         {
             using (conn.Performance.Lock(conn.Monsters, "stats"))
             {
-                if (conn.Closed || conn.LeavingArea) return null;
+                if (conn.Closed || conn.LeavingArea || conn.RageRetired) return null;
                 return WithOwnAuraChanges(conn, packet);
             }
         });
