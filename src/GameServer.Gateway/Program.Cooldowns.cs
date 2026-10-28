@@ -47,6 +47,10 @@ partial class Program
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused
                 || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
+            // Soul counters do not enable an executor. Refuse the actual Vaal instance before action/movement,
+            // cooldown reservation or native acknowledgement, including when modifiers reduce its cost to zero.
+            if (skillId is ushort requested && GemSkillEffects(conn.Character)
+                .Any(g => g.Id == requested && Skills.VaalSouls(g.Effect, g.Level) > 0)) return false;
             // Covers object/self and instant routes before creating or spending cooldown state or a new action.
             if ((skillId is ushort id ? ActorSkillInstanceDisabled(conn, effect, id)
                 : ActorSkillDisabled(conn, effect)) is not null) return false;

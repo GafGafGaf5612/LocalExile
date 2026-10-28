@@ -436,6 +436,10 @@ partial class Program
             }
             stats[OwnAuraRestriction.BaseAura] = own.GetValueOrDefault(OwnAuraRestriction.BaseAura);
             OwnAuraRestriction.PublishSkill(stats, OwnAuraRestrictionValue(conn));
+            if (Stats.Key(VaalSoulCost.Aura) is uint aura)
+                stats[aura] = VaalSoulInput(conn, playerStats, own, VaalSoulCost.Aura);
+            if (Skills.VaalBudget(effect, supported.Level) is not null)
+                PublishVaalSoulInputs(conn, playerStats, own, stats);
             ApplyProjectilePanelStats(effect, stats);
             if (Skills.FindByRow(id, effect, supported.Level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
             {
@@ -516,21 +520,25 @@ partial class Program
     // PlayerLevelReq at the gem's level) or an attribute requirement is not met. The client checks both (0x14246fff0 for the
     // level, 0x14246fc40 per attribute) and refuses the move itself, but the server does not trust that.
     static string? GemRequirementsUnmet(ClientState conn, Item? gem)
+        => GemRequirementsUnmetAt(conn, gem, null);
+
+    static string? GemRequirementsUnmetAt(ClientState conn, Item? gem, GemRequirementSnapshot? snapshot)
     {
         if (gem is null || Items.ByHash(gem.TypeHash) is not { } baseType || Items.Gem(baseType) is not { } type) return null;
         int level = Items.GemLevel(gem);
         int effect = type.Variant(gem.GemVariant).Effect;
         if (effect < 0) return null;
         string name = Items.GemName(gem);
-        if (Skills.PlayerLevelReq(effect, level) is int needs and > 0 && conn.Pools.Level < needs)
-            return $"{name} at level {level} requires level {needs} (character is {conn.Pools.Level})";
+        int characterLevel = snapshot?.Level ?? conn.Pools.Level;
+        if (Skills.PlayerLevelReq(effect, level) is int needs and > 0 && characterLevel < needs)
+            return $"{name} at level {level} requires level {needs} (character is {characterLevel})";
         // A gem's attributes come from its percentage shares and the level requirement, at the gem's level clamped to its cap
         // (a corrupted level 21 gem keeps level 20's requirement; 0x14246fc40). The client checks them against
         // virtual_*_for_requirements, which are the attributes unless something overrides them (/set_stat).
         var (str, dex, intel) = GemAttributeRequirements(gem, type, effect);
-        foreach (var (need, attr, has) in new[] { (str, "strength", RequirementAttribute(conn, "strength", conn.Pools.Strength)),
-            (dex, "dexterity", RequirementAttribute(conn, "dexterity", conn.Pools.Dexterity)),
-            (intel, "intelligence", RequirementAttribute(conn, "intelligence", conn.Pools.Intelligence)) })
+        foreach (var (need, attr, has) in new[] { (str, "strength", snapshot?.Strength ?? RequirementAttribute(conn, "strength", conn.Pools.Strength)),
+            (dex, "dexterity", snapshot?.Dexterity ?? RequirementAttribute(conn, "dexterity", conn.Pools.Dexterity)),
+            (intel, "intelligence", snapshot?.Intelligence ?? RequirementAttribute(conn, "intelligence", conn.Pools.Intelligence)) })
             if (need > 0 && has < need)
                 return $"{name} at level {level} requires {need} {attr} (character has {has})";
         return null;
@@ -622,8 +630,15 @@ partial class Program
     static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffects(string? character)
     {
         string name = string.IsNullOrEmpty(character) ? "Exile" : character;
-        var inactive = InactiveItems.GetValueOrDefault(name);
-        var gems = PlayerInventories.For(name, Items).SocketedGemPlaces()
+        return GemSkillEffectsAt(character, PlayerInventories.For(name, Items).SocketedGemPlaces(),
+            InactiveItems.GetValueOrDefault(name));
+    }
+
+    static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffectsAt(
+        string? character, IReadOnlyList<(byte Row, uint ItemId, int Socket, Item Gem)> places, IReadOnlySet<uint>? inactive)
+    {
+        string name = string.IsNullOrEmpty(character) ? "Exile" : character;
+        var gems = places
             .SelectMany(g => Items.GemEffects(g.Gem).Select(effect => (g.ItemId, g.Socket, g.Gem, Effect: effect))).ToList();
         var ids = GemSkillIdsOf.GetOrAdd(name, _ => new GemSkillIds())
             .Assign([.. gems.Select(g => new GemSkillIds.Gem(g.ItemId, g.Socket, g.Effect))], GemSkillIdPool.Value);
@@ -755,9 +770,10 @@ partial class Program
         lock (conn.Monsters)
         {
             if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
+            RefreshVaalSouls(conn);
             RefreshSingleUseCooldowns(conn);
             EnsureAntiquarianPools(conn);
-        EnsureOwnAuraPools(conn);
+            EnsureOwnAuraPools(conn);
             foreach (var id in conn.Auras.Keys.ToList())
             {
                 var gem = SupportedSkill(conn, id);
@@ -783,7 +799,7 @@ partial class Program
             gone = conn.ClientSkillIds.Except(skills.Select(s => s.Id)).Order().ToList();
             added = skills.Select(s => s.Id).Where(id => !conn.ClientSkillIds.Contains(id)).ToList();
             conn.ClientSkillIds = [.. skills.Select(s => s.Id)];
-            return InstanceEntities.PlayerSkillsChange(PlayerId, skills, gone);
+            return PlayerSkillsWithVaalSouls(conn, skills, gone);
         }, "0x02ba player Actor: current skill stats");
         await SendNativeCooldownRefresh(remote, stream, ciphers, conn);
         if (gone.Count > 0) await EndSkillEffects(remote, stream, ciphers, conn, gone);
