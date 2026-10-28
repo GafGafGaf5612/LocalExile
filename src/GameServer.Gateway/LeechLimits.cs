@@ -27,7 +27,8 @@ static class LeechLimits
     /// Increased maximum rate is distinct from leech recovery speed. Integer wire endpoints truncate nonnegative
     /// fractions; PoB retains fractional values, so this projection is not a measured official-server rounding rule.
     /// Conditional modifiers requiring other systems (reservation, recent savage hits, Defiance and party links),
-    /// including the derived Wicked Ward virtual and unacquired legacy Life-rate doubling, are outside this calculation.
+    /// including the derived Wicked Ward virtual, are outside this calculation. Explicit raw Life maximum-rate
+    /// doubling is supported independently of the keystone or item that might supply it.
     /// <paramref name="onLowLife"/> supplies the condition that prevents Life and Mana leech; pinned PoB's ModParser
     /// leaves ES leech available.
     /// </summary>
@@ -74,6 +75,7 @@ static class LeechLimits
                 * Math.Max(0, 100 + Input($"maximum_{pool}_leech_rate_+%") + Input("maximum_leech_rate_+%")
                     + Input("map_player_maximum_leech_rate_+%"));
             if (pool == "energy_shield" && Flag("maximum_energy_shield_leech_amount_per_leech_is_doubled")) instance *= 2;
+            if (pool == "life" && Flag("maximum_life_leech_rate_%_per_minute_is_doubled")) rate *= 2;
             if (pool == "energy_shield" && Flag("keystone_ghost_reaver")) rate *= 2;
             instance = Math.Max(0, replacement?.Invoke(instanceVirtual) ?? instance);
             rate = Math.Max(0, replacement?.Invoke(rateVirtual) ?? rate);

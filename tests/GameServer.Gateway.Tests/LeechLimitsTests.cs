@@ -65,10 +65,9 @@ public sealed class LeechLimitsTests
     }
 
     [Fact]
-    public void Deferred_legacy_and_virtual_flags_do_not_imply_their_source_mechanics_are_implemented()
+    public void Deferred_Wicked_Ward_virtual_does_not_imply_its_source_mechanics_are_implemented()
     {
-        var rows = Calculate(inputs: [("wicked_ward_keystone_maximum_energy_shield_leech_rate_+%_final", -50),
-            ("maximum_life_leech_rate_%_per_minute_is_doubled", 1)]);
+        var rows = Calculate(inputs: [("wicked_ward_keystone_maximum_energy_shield_leech_rate_+%_final", -50)]);
         Assert.Equal(12000, rows["maximum_total_recovery_per_minute_from_life_leech"]);
         Assert.Equal(1200, rows["maximum_total_recovery_per_minute_from_energy_shield_leech"]);
     }

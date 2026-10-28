@@ -43,7 +43,9 @@ sealed class LeechSession
             double speed = replacement($"virtual_{resource.Pool}_leech_speed_+%")
                 ?? (double)get($"{resource.Pool}_leech_speed_+%") + get("life_mana_es_leech_speed_+%");
             double total = Math.Max(0, 1 + speed / 100);
-            if (resource.Pool == "life" && get("life_leech_speed_is_doubled") != 0) total *= 2;
+            // Both raw flags describe the same boolean doubling; two copies do not quadruple recovery.
+            if (resource.Pool == "life" && (get("life_leech_speed_is_doubled") != 0
+                || get("total_recovery_per_minute_from_life_leech_is_doubled") != 0)) total *= 2;
             double recovery = Math.Max(0, 1 + get($"{resource.Pool}_recovery_rate_+%") / 100.0);
             if (resource.Pool == "life" && !recoverLife || resource.Pool == "energy_shield" && !recoverEnergyShield) recovery = 0;
             state.Configure(now, new(total, resource.MaximumPerSecond, recovery));

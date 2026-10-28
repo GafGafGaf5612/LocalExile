@@ -629,6 +629,38 @@ these source corrections do not certify the remaining families or native recover
 was started or stopped. Follow-up doubling regressions use a separate artifact directory and are not part of
 this commit's 4,501-case Gateway binary.
 
+## Life leech recovery and maximum-rate doubling
+
+Sixteen new cases reproduce eight failures (`leech-doubling-reproduced.trx`). The actual Highwayman modifier
+`TotalRecoveryLifeLeechDoubledUnique__1` reaches the actor's raw stats but its Stats 12776 flag has no recovery
+consumer. The explicit Life maximum-rate doubling flag (Stats 6967) is also ignored. The old test deliberately
+expected the latter omission; it now retains only its still-deferred Wicked Ward virtual assertion.
+
+The runtime now applies Highwayman's total-recovery doubling after increases and before the total cap and generic
+recovery multiplier. It does not shorten instance duration, increase instant recovery, alter Mana/ES, or double
+the maximum rate. The separate maximum-rate flag doubles the Life cap in the shared panel/combat resolver after
+increases; final virtual replacements and prohibitions retain precedence. Both changes have explicit-time controls.
+Actual mod contacts cover one/two equipped Gold Rings and removal. These fixtures verify the real modifier's
+collection/consumer path without claiming a complete Highwayman generation or native-client test.
+
+Decision: treat equivalent total-recovery doubling flags as one boolean operator, including multiple copies and
+the earlier `life_leech_speed_is_doubled` spelling. The alternative would quadruple recovery when the same doubling
+is supplied twice. Actual Stats descriptions and pinned PoB's bounded doubling operator support the selected
+behavior (`16de4b82`, ModCache line 22120 and ModParser line 6855). The module records the same evidence and
+alternative. Implement the explicit maximum-rate flag without assigning it to current Vaal Pact; inferring current
+keystone acquisition from a legacy raw stat would silently add unevidenced behavior. Native parity remains open.
+
+The focused run passes 49 cases (`leech-doubling-focused.trx`). It uses `artifacts/issue75-review/doubling-build`
+to avoid changing assemblies used by the preceding instant-leech verification. The final solution build has zero
+warnings/errors (`build-leech-doubling.log`). Core 561, Data 18 and Gateway 4,517 all pass, with no skips
+(`core-leech-doubling.trx`, `data-leech-doubling.trx`, `gateway-leech-doubling.trx`): 5,096 total, including 16 new
+cases. Gateway uses four workers as documented above; no test was excluded. The 357-row inventory remains
+82 partial/275 pending. No live servers/clients were started or stopped, and nothing was pushed or published.
+
+The owner requested pausing the goal after this implementation group is committed. This group is implemented,
+documented and validated; pause after its local commit and clean-tree verification, without starting another
+group. Remaining source systems and native validation are listed below for an explicit future resume.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
@@ -675,4 +707,6 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 
 Do not turn historical client observations, hidden rows, sparse zero packets or source-name matches into completion.
-The persistent goal remains active until every required stat is implemented and supported by adequate evidence.
+Completion still requires every required stat to be implemented and supported by adequate evidence. The owner
+requested a pause after the Life-leech doubling group is validated and committed locally; resume from these
+remaining items when the owner resumes the goal. This pause does not certify completion of the 357-stat target.

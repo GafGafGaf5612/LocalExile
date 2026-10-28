@@ -207,6 +207,9 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Continue other Life-retention virtual sources and native validation; do not broaden the attack-only item scope.
   Claw mastery/Weapon Master instant sources and Life-instant conversion now have real-source controls. Continue
   remaining conditional instant sources and verify native mixed converted/native ES composition before certification.
+  Highwayman's total-recovery doubling and the explicit Life maximum-rate doubling flag now have separate
+  consumers and controls. Verify native stacking/recovery and current source acquisition; do not infer Vaal Pact
+  behavior from legacy raw flag names or multiply one boolean doubling per item copy.
   Native conversion/prohibition interaction remains unverified; the conservative source-plus-destination policy
   and the alternative are recorded in damage §5b and the review report.
   Ward and unsupported conditional mechanics still need their own systems and evidence.

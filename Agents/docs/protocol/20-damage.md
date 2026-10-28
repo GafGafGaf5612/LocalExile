@@ -883,6 +883,8 @@ full maximum pool per instance, 20% per second total for Life/Mana and 10% per s
 Reserved Life/Mana remains part of that maximum. Instance-amount increases and maximum-rate increases have separate
 buckets; leech recovery speed does not increase either cap. Generic, resource-specific and map maximum-rate
 increases/reductions add before their multiplier. The supported ES doubled-instance flag applies afterward.
+The explicit `maximum_life_leech_rate_%_per_minute_is_doubled` flag doubles only the Life total cap after rate
+increases; final virtual replacements still win, including zero. This is separate from the recovery multiplier.
 The calculation publishes six absolute limits, their six native permyriad companions and the cannot-leech flags.
 Base/global/resource prohibitions gate matching limits; the supported Low Life prohibition gates Life/Mana only.
 Explicit developer replacements, including zero, retain the existing override policy.
@@ -891,8 +893,24 @@ The reference library's pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02` su
 scope, cross-checked with this client's Character.ot, Stats and modifier tables.
 Absolute integer endpoints truncate nonnegative fractions as a local wire projection. Official-server endpoint
 rounding is unmeasured; native display agreement does not establish that rounding rule.
-Reservation/recent-hit/Defiance/party-link conditions, the derived Wicked Ward virtual and an unacquired legacy
-Life-rate doubling source remain unimplemented. Direct resolved flags do not establish an item/passive acquisition path.
+The actual Highwayman modifier `TotalRecoveryLifeLeechDoubledUnique__1` supplies Stats 12776,
+`total_recovery_per_minute_from_life_leech_is_doubled`. It now doubles the combined Life recovery rate after
+increases, before the total cap and generic recovery multiplier, without changing nominal instance duration,
+instant amount, Mana or ES recovery. Two copies, or this source together with `life_leech_speed_is_doubled`, still
+give one doubling. Source removal settles elapsed recovery under the old multiplier and preserves original expiry.
+
+Evidence: actual Mods/Stats rows, pinned PoB `Data/StatDescriptions/stat_descriptions.lua` entries 7516, 9313 and
+10575, Highwayman data in `Data/Uniques/ring.lua`, and `Data/ModCache.lua:22120` / `Modules/ModParser.lua:6855`
+which cap the shared doubling multiplier at one application. Decision: combine equivalent boolean sources rather
+than multiplying once per equipped copy or once per raw spelling; those alternatives would quadruple recovery.
+Keep total-recovery and maximum-rate flags distinct. Real modifier contacts cover one/two rings and source removal;
+explicit-time tests cover caps, expiry, instant portions, conversion and overrides. These are controlled mod-bearing
+Gold Ring fixtures, not a complete unique-item generation test. Supporting the raw maximum-rate flag does not
+assign it to current Vaal Pact or certify a current acquisition path; that alternative would assume legacy keystone
+behavior. Native recovery/prediction and stacking checks remain required.
+
+Reservation/recent-hit/Defiance/party-link conditions and the derived Wicked Ward virtual remain unimplemented.
+Direct resolved flags do not establish an item/passive acquisition path.
 
 Native checks verified baseline values and display conversion, independent instance/rate changes, reductions,
 prohibitions, Low Life/healing, equipment-derived pool conversion, source removal, reservation and relog.

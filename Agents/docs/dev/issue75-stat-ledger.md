@@ -79,13 +79,16 @@ the other conversion/conditional/native requirements remain open.
 Claw mastery/Weapon Master instant sources now respect usable active claws, and Life-instant sources follow
 Ghost Reaver conversion. Real-source and override controls establish this bounded correction; mixed converted/native
 ES composition still requires native evidence ([review](issue75-review.md#instant-leech-sources-and-ghost-reaver-correction)).
+Highwayman's actual total-recovery doubling source now reaches the Life consumer once, with real modifier/removal
+and explicit-time controls. It remains distinct from maximum-rate doubling and does not certify native stacking.
 
 ## Leech limits and prohibitions
 
 Partial: the 15 limit/prohibition aliases share the resolver consumed by ordinary active recovery. Fractional
 combat caps remain nonzero when whole display endpoints truncate to zero. Raw/virtual replacements, Low Life
-Life/Mana scope, separate amount/rate changes and lifecycle have automated controls. Unsupported cap conditions,
-conversions and current native recovery checks remain open; [review](issue75-review.md#ordinary-active-leech-recovery),
+Life/Mana scope, separate amount/rate changes, explicit Life maximum-rate doubling and lifecycle have automated
+controls. Other cap conditions, conversions and current native recovery checks remain open;
+[review](issue75-review.md#ordinary-active-leech-recovery),
 [module](../protocol/20-damage.md#5b-character-panel-leech-limits). Historical native display checks remain scoped to their recorded revision.
 
 ## Pending audit
