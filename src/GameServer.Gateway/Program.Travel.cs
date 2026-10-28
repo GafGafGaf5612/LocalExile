@@ -387,6 +387,7 @@ partial class Program
         CarryFortification(conn, r.Ticket);
         CarryAntiquarian(conn, r.Ticket);
         CarryRage(conn, r.Ticket);
+        CarryVaalSouls(conn, r.Ticket);
         conn.InvalidateIncomingHits(); // Recent enemy contacts never cross an area connection.
         if (t.AtWaypoint) WaypointArrivals[r.Ticket] = 0;
         else if (t.ArriveAt is { } spot) SpotArrivals[r.Ticket] = spot;

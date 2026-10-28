@@ -203,6 +203,20 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Measure official capped-attempt refresh behavior and area-loading timer parity before replacing policy v1.
   See [26-rage.md](../docs/protocol/26-rage.md); Vaal costs and whole-class selection remain separate mechanics.
 
+### Vaal execution and remaining soul checks
+
+- Collection, bounded shared budgets and the proved Actor payloads (#308) pass automated and bounded native checks.
+  Source checks on base `939b44fe` cover attribute/mana composition, supports, payment and current publication.
+  The proved missing skill-record bit1 is implemented from raw Vaal metadata, with parsed and socketed regressions.
+  Forty-two pinned 3.29.3b checks cover real-kill charging, the cap, cost changes, zero cost and prevention.
+  They also cover nonlethal/friendly controls and unsupported input without action echo or resource loss.
+  Remaining native acceptance covers duplicates, removal/readd, cooldown refresh and transient lifecycle.
+  Verify held death notifications, Vaal Haste/Grace aura costs, death/resurrection and slow destination loading.
+  Include attribute gear removal before inventory notifications; current automated coverage is not native proof.
+  See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md) and Status for the explicit LocalExile policies.
+  Vaal executors, payment, official distribution/capacity parity and the SGP countdown require separate work.
+  Unsupported Vaal casts remain refused; Behemoth and whole-class enablement remain separate.
+
 ### Death screen variants
 
 - **Known:** S→C 0x55 flags bit0/2/3 are mapped ([11](../docs/protocol/11-skills.md) §7);
