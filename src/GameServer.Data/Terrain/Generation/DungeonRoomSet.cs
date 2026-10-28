@@ -48,9 +48,17 @@ sealed class DungeonRoomSet
                 throw new NotSupportedException($"{r.Path}: room set tag '{r.Tag}' (0x141ff6960) is not ported");
             var types = r.Exits.Select(e => e.Type).Where(t => t is not null && !t.Equals(Rooms, StringComparison.OrdinalIgnoreCase))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            // Room data +0x180, taken to be rooms.et for a room with a rooms.et exit and none for a room without
-            // exits: 1_5_7's exitless fills, abyss_forceblank and vault_blocked_01 are in no size table.
-            if (types.Count == 0 && r.Exits.Any(e => e.Type is not null)) types.Add(Rooms);
+            // Room data +0x180: the first edge of the room's own key, else rooms.et for a room with a door, else none
+            // (the writer was not found; MapWorldsMoonTempleUnique's size totals). Its solaris entrance, door and
+            // fusions (key edges -, temple_corridor, -, rooms) are in no rooms.et table, its lunaris ones (-, rooms, -,
+            // temple_corridor), hideout (-, -, -, rooms) and the keyless 2x2/template_1 with rooms.et doors are; the
+            // boss room, keyless and without doors, is in none, nor are 1_5_7's exitless fills, abyss_forceblank and
+            // vault_blocked_01.
+            if (types.Count == 0)
+            {
+                string? own = r.Def?.Key.Edges.FirstOrDefault(e => e is not null) ?? (r.Exits.Any(e => e.Type is not null) ? Rooms : null);
+                if (own is not null) types.Add(own);
+            }
             foreach (var t in types) File(r, t!, weights, allowed);
         }
         // 0x141ff6350: a door type's sizes are those with a weight that some room of the type allows.

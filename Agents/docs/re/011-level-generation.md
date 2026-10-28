@@ -254,12 +254,14 @@ shrinks the overlay exclusion of rooms whose own overlap (`.arm` header after ve
   weights of the rooms filed under the type, at the sizes some room allows: a room that is not unique, room data +6,
   and, for rooms.et, whose exits all have a door at height 0). `0x141ff6960` files a room under each distinct door
   type of its exits other than the default (the global string at 0x1445c0fa8, rooms.et), else under room data
-  +0x180: taken to be rooms.et for a room with a rooms.et exit and none for a room with no exits (`1_5_7`, Reliquary
-  rooms: its exitless fills, `abyss_forceblank` and `vault_blocked_01` are in no size table, 1 × 1 2100 and
-  2 × 2 2100 as the trace, not 2207 / 2203; open: MapWorldsMoonTempleUnique's main graph totals 1 × 1 81, 1 × 2 / 2 × 1 1540, 2 × 2
-  870 where the port has 82 / 1543 / 870, the weight-1 unique rooms its nodes placed before (entrance, door, both fusions)
-  left out but not the weight-100 ambush rooms; its lunaris subgraph and every other dungeon keep them, and taking them
-  out only in layouts with a subgraph node still loses 44 traces, 2026-10-27); per tag
+  +0x180. That is the first edge of the room's own key line, else rooms.et for a room with a door, else none (its
+  writer was not found; the rule fits every size total traced). MapWorldsMoonTempleUnique's solaris entrance, door
+  and fusion rooms have only rooms.et doors but key edges `-, temple_corridor, -, rooms`, so they are filed under
+  temple_corridor.et and the main graph's rooms.et totals are 1 × 1 81, 1 × 2 / 2 × 1 1540, 2 × 2 870 (`Next(4031)`).
+  Its lunaris rooms (`-, rooms, -, temple_corridor`), the solaris hideout (`-, -, -, rooms`) and the keyless
+  `2x2/template_1` with rooms.et doors are filed under rooms.et (the lunaris blanks draw `Next(892)`). The keyless,
+  doorless boss room is in none, as are `1_5_7`'s exitless fills (Reliquary rooms), `abyss_forceblank` and
+  `vault_blocked_01` (1 × 1 2100 and 2 × 2 2100 as the trace, not 2207 / 2203); per tag
   every room in every orientation of its mask (the "" list: untagged rooms); per size every room that is not unique
   and not of a special tag (shrine, mission, stonecircle, preunique, injectors), in every orientation that gives that
   size. Turning exits (`0x141ff2ca0`, `0x141d75a50`): exit i → (j + a·w + b·h) mod 2(w + h), a = 0 0 1 1 1 1 2 2,
