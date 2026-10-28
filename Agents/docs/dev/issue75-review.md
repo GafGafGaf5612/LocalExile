@@ -38,7 +38,7 @@ This scan supports document navigation; it is not a claim that every statement h
 Exact C# literal matches are navigation candidates only.
 Interpolated names and numeric keys must be traced manually; absence of a literal does not establish missing behavior.
 The [authored stat ledger](issue75-stat-ledger.md) lists each of the 357 targets exactly once. Its current
-67 `partial` and 290 `pending` entries are audit dispositions, not implemented-stat counts. No entry is certified
+82 `partial` and 275 `pending` entries are audit dispositions, not implemented-stat counts. No entry is certified
 complete on the current branch. Partial records link the reviewed corrections and their unresolved scope;
 pending records do not imply absence of implementation or historical evidence.
 The inventory copies these authored states and their links without inferring completion from literal matches.
@@ -661,6 +661,79 @@ The owner requested pausing the goal after this implementation group is committe
 documented and validated; pause after its local commit and clean-tree verification, without starting another
 group. Remaining source systems and native validation are listed below for an explicit future resume.
 
+## Upstream merge resolution
+
+The owner requested completion of the already-started merge on `issue-75-character-stats` while the broader
+357-stat goal remains **paused**. This task resolves that merge and commits locally; it does not resume the goal.
+The incoming target was fetched and verified against `upstream/main` before resolution:
+
+- Local parent: `0aaeb40d1540c40b24f3ec6729fe539535a07d58` (Life leech doubling).
+- Incoming parent: `6a5697ff2731d2e3fafa83b27fa5ff1e71290149` (upstream PR #334 merge).
+- Common ancestor: `939b44fec76ba46df762fcd9cdf616fa3d2f8739`.
+
+The starting index had 23 conflicted paths. The original index, staged/working diffs, conflict files and all three
+versions of each conflict were retained under ignored `artifacts/issue75-upstream-merge/`. Existing incoming
+nonconflicting changes were preserved. No rebase, history rewrite, push or publication was performed.
+
+The main conflict was semantic: upstream replaced the projectile executor while this branch extended the removed
+executor. The integrated runtime keeps upstream geometry, continuation, secondary areas, release/admission,
+output ordering and synchronous reward/boss-stage work, with this branch's combat consumers ported into it.
+The following decisions preserve both sides rather than selecting an entire file wholesale:
+
+- One projectile engine owns all bow/gem paths. Each accepted use shares one critical roll; release captures selected
+  accuracy, raw damage/penetration, impale and leech sources. Targets retain entropy and independent critical
+  confirmation. Direct and area damage retain their separate support scopes. The alternative old `FlyProjectile`
+  task would duplicate execution and bypass upstream stages. Tests move to explicit simulation time with held
+  output, rather than assuming presentation gates stop gameplay.
+- Actual rolled physical damage, including its source critical multiplier, supplies impale. Reflected damage is
+  separate from leech and does not crit again. Source-specific instant leech, Ghost Reaver, retention and doubling
+  survive the port. The alternative upstream legacy impale calculation used maximum damage and merged reflection
+  into the direct packet. Corpses/impales keep ordinary kill lifetime instead of the stale new-path ten-second cleanup.
+- Leech reads committed projectile time; the resource writer catches up pending contacts before consuming recovery.
+  The alternative wall-clock sampling prematurely ages earlier contacts during a delayed pump. Refill on projectile
+  level-up trims ordinary leech just as other full-pool commits do. Non-projectile sweeps keep one damage snapshot
+  while their critical chance/prohibition remains live per contact; freezing that chance would discard existing
+  branch source-change behavior.
+- Equipment keeps saved AR/EV/ES base rolls, local quality/conversion and native zero-ES rules. Body-to-Ward conversion
+  acts on those local results before slot-specific operators. Fractional remaining Armour/Evasion survive into
+  shield/body modifiers and Iron Reflexes. Reverting to upstream's minimum-only equipment model would lose saved
+  rolls. Native Ward bases retain upstream's minimum-base implementation; Ward roll interpolation is not guessed.
+- Power of Purpose includes signed per-level Mana and independent Strength-based Mana, honors inherent Intelligence
+  prohibitions, and combines mana-derived Armour with scoped shield/body and IR contributions. Exact fractions retain
+  decimal MORE groups and signed cancellation. The alternative old fixed denominator truncates new fractions; clamping
+  intermediate contributions loses cancellation. The inactive path retains the branch's final half-up defence
+  rounding and corrected Intelligence/10 ES contribution, rather than restoring older truncation and Intelligence/5.
+- Upstream maximum-Mana physical attack damage enters the raw pre-conversion packet once. Its skill-specific transfer
+  of spell increases uses wide multiplication; the alternative int product overflows for valid large signed inputs.
+- The default per-Brutal-Charge stun coefficient does nothing at zero current charges. Its presence alone must not
+  disable ordinary stun/Turtle recovery. Actual special charges retain the unsupported-threshold guard. Ignoring
+  that active source or rejecting every ordinary character would both change behavior incorrectly.
+- The single recovery writer retains leech, Fortification, Turtle Shell and Enduring Cry as separate earned amounts,
+  and preserves Grace Period's damage suppression. Summing projected regeneration again would double recovery.
+
+The module details and alternatives are in [projectiles](../game/projectile-framework.md#issue-75-integration),
+[Power of Purpose](../game/power-of-purpose.md#rounding-and-numeric-boundaries),
+[Antiquarian](../game/antiquarian.md#ward-and-adrenaline) and [damage/recovery](../protocol/20-damage.md#composition-with-the-upstream-projectile-runtime).
+Status and roadmap entries now describe the new engine without retaining obsolete claims that fork/chain or KB
+secondary explosions are unimplemented. Historical native observations remain historical, not merged-build evidence.
+
+Validation receipts are under `artifacts/issue75-upstream-merge/results/`. The first full pass preserved 46 failures
+in `gateway-first.trx`; these exposed the stun guard, changed execution timing, defence rounding/base-roll expectations
+and test RNG ownership. A focused pass then had one remaining old-spread fixture failure (671 passed); its target
+positions were corrected for the upstream spread. Eight new combined-behavior cases cover pool/slot composition,
+leech timing, direct-versus-reflected damage, corpse retention, stun admission and wide spell-increase transfer.
+The final solution build has **zero warnings/errors**. Final Core **676**, Data **18**, Gateway **4,811** all pass:
+**5,505 tests, zero failures/skips**, with Gateway limited to four workers and no test filter/exclusions.
+The final receipts are `core-final.trx`, `data-final.trx` and `gateway-final.trx`.
+The inventory still validates the exact 357 virtual stats: **82 partial, 275 pending, zero certified complete**.
+
+No native client or development servers were launched. The parent checkout's Patch/Gateway/Auth processes were
+still running, so invoking `live.ps1` would risk stopping another agent's session. Decision: retain automated
+validation and report native revalidation as pending; the alternative restart would interfere with shared work.
+All saves, client installations, profiles and existing logs were preserved. The existing goal stays paused after
+this local merge commit. Ward and the incoming features add implementation, but do not automatically certify their
+ledger entries or complete the wider 357-stat objective.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
@@ -702,7 +775,8 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
    secondary averages, cooldown/downtime and DoT remain open.
 4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.
    Protocol 20 section 3 documents helpers, but also the missing execution paths.
-5. Ward, defence estimates, remaining regeneration/recharge conversions, specialized leech, special charges,
+5. Current-branch validation of the incoming Ward implementation, defence estimates, remaining regeneration/recharge
+   conversions, specialized leech, special charges,
    minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap.
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 

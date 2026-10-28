@@ -80,8 +80,8 @@ public partial class ConditionalCriticalGatewayTests
         using var f = new Contact(critical, "BurningArrow", "Crude Bow", distance: 60);
         f.Set("extra_critical_rolls_while_on_low_life", 0);
         f.Set("number_of_additional_projectiles", 1);
-        f.Target.Walk.Teleport(92, 27, f.Conn.Clock.Elapsed.TotalSeconds);
-        var second = new SpawnedMonster("other projectile target", new(92, 37, 30), 0, 0, 100000);
+        f.Target.Walk.Teleport(92, 21, f.Conn.Clock.Elapsed.TotalSeconds);
+        var second = new SpawnedMonster("other projectile target", new(92, 43, 30), 0, 0, 100000);
         f.Conn.Monsters.Add(43, second);
         int damage = DamageModel.CriticalDamage((int)Math.Round(f.Hit.MinTotal), f.Multiplier);
         await f.Launch((92, 32));

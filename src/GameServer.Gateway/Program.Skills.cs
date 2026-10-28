@@ -15,10 +15,18 @@ partial class Program
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
         var character = CharacterPlayerStatsSnapshot(conn, out _, out var panelSources, capturePanelSources: true);
-        var player = FinalPlayerStatsFrom(conn, new(character)).ToList();
-        return [.. Skills.PlayerDefaults(player),
-            .. GemSkills(conn, player, character, panelSources!)];
+        var outer = StatsScope.Value;
+        StatsScope.Value = (conn, character);
+        try
+        {
+            var player = FinalPlayerStatsFrom(conn, new(character)).ToList();
+            return [.. Skills.PlayerDefaults(player), .. GemSkills(conn, player, character, panelSources!)];
+        }
+        finally { StatsScope.Value = outer; }
     }
+
+    /// <summary>The character's stats for the PlayerSkills build running on this flow, reused instead of recomputed.</summary>
+    static readonly AsyncLocal<(ClientState Conn, Dictionary<uint, int> Stats)?> StatsScope = new();
 
     // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
     // (the client derives nothing itself: 11-skills.md §4).
@@ -101,8 +109,11 @@ partial class Program
     }
 
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
-    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn) =>
-        CharacterPlayerStatsCore(conn, out _);
+    internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
+    {
+        if (StatsScope.Value is { } scope && ReferenceEquals(scope.Conn, conn)) return new(scope.Stats);
+        return CharacterPlayerStatsCore(conn, out _);
+    }
 
     sealed record PanelSourceSnapshot(IReadOnlyDictionary<uint, int> Raw,
         IReadOnlySet<uint> Overrides, int PlayerLevel,
@@ -114,6 +125,7 @@ partial class Program
     static Dictionary<uint, int> CharacterPlayerStatsSnapshot(ClientState conn, out double baselineLifePerSecond,
         out PanelSourceSnapshot? panelSources, bool capturePanelSources = false)
     {
+        EnsureAntiquarianPools(conn);
         EnsureOwnAuraPools(conn);
         Dictionary<uint, int> rawOverrides;
         lock (conn.Monsters) rawOverrides = new(conn.PlayerStats);
@@ -151,6 +163,11 @@ partial class Program
         baselineLifePerSecond = PanelStats.LifePerMinute(Get, conn.Pools.Life) / 60;
         lock (conn.Monsters)
         {
+            // Turtle Shell's exact one-second integral is consumed separately by the resource writer.
+            if (Stats.Key("base_life_regeneration_rate_per_minute") is uint turtle)
+                stats[turtle] = (int)Math.Clamp(stats.GetValueOrDefault(turtle)
+                    + (conn.Antiquarian.RecoveryPerSecond(conn.Clock.Elapsed.TotalSeconds)
+                        + conn.EnduringCryRecovery.Rate(conn.Clock.Elapsed.TotalSeconds)) * 60, 0, int.MaxValue);
             var session = FortificationOf(conn);
             var value = session.Read(conn.Clock.Elapsed.TotalSeconds);
             AddFortificationCounts(stats, value);
@@ -186,6 +203,11 @@ partial class Program
             && Stats.Key("attack_damage_+%") is uint attackDamage)
             stats[attackDamage] = ArmourAttackDamage.Total(Get("attack_damage_+%"),
                 Get("physical_damage_reduction_rating"), perArmour);
+        // Whaletooth Bangle uses complete groups of final Strength. Derive from this fresh snapshot once; never
+        // write back into raw sources. An explicit final-duration /set_stat keeps its usual replacement semantics.
+        if (Stats.Key(SkillDurationModifiers.IncreasedDuration) is uint durationKey && !devSet.Contains(durationKey))
+            stats[durationKey] = SkillDurationModifiers.Total(Get(SkillDurationModifiers.IncreasedDuration),
+                Get("strength"), Get(SkillDurationModifiers.PerTenStrength));
         // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
@@ -212,7 +234,16 @@ partial class Program
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
             stats[rolls] = CriticalExtraRollsFor(conn, stats);
         stats[OwnAuraRestriction.Disabled] = OwnAuraRestrictionValue(conn);
-        lock (conn.Monsters) AddRecentEnemyHitStatsLocked(conn, stats);
+        if (Get("global_always_hit") != 0)
+            foreach (string name in new[] { "main_hand_chance_to_hit_%", "off_hand_chance_to_hit_%",
+                "main_hand_chance_to_hit_evasive_monsters_%", "off_hand_chance_to_hit_evasive_monsters_%" })
+                if (Stats.Key(name) is uint hit) stats[hit] = 100;
+        lock (conn.Monsters)
+        {
+            AddRecentEnemyHitStatsLocked(conn, stats);
+            if (Stats.Key("ward") is uint ward) stats[ward] = (int)conn.Ward.Maximum;
+            if (Stats.Key("ward_broken") is uint broken) stats[broken] = conn.Ward.Broken ? 1 : 0;
+        }
         return stats;
     }
 
@@ -361,9 +392,10 @@ partial class Program
         var gems = GemSkillEffects(character).ToArray();
         var singleSources = gems.GroupBy(g => g.Effect).Where(g => g.Count() == 1).Select(g => g.Key).ToHashSet();
         var skillCosmetics = CharacterSaves.SkillCosmetics(string.IsNullOrEmpty(character) ? "Exile" : character);
-        foreach (var (id, effect, name, level, quality, gem) in gems)
+        foreach (var (id, effect, name, _, quality, gem) in gems)
         {
             var supported = SupportedSkill(conn, id);
+            int level = supported.Level;
             var own = supported.Stats;
             var stats = MergeSkillStats(playerStats, own);
             if (Stats.Key("virtual_extra_critical_rolls") is uint criticalRolls)
@@ -459,6 +491,7 @@ partial class Program
                 panelSources.MainHand.GetValueOrDefault, panelSources.OffHand.GetValueOrDefault))
                 if (Stats.Key(stat) is uint key)
                     stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
+            ApplyProjectilePanelStats(effect, stats);
             if (Skills.FindByRow(id, effect, supported.Level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
             {
                 Console.WriteLine($"[gateway] gem skill 0x{skill.Id:x4} {name} level {level} quality {quality} (effect {effect}): GEPL {skill.EffectsPerLevelRow}, " +
@@ -503,15 +536,19 @@ partial class Program
     // button or the next empty slot. True when the bar changed (saved).
     static bool FillSkillBar(ClientState conn)
     {
-        string character = CharacterName(conn);
-        var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
-        string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
-        var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
-        var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
-        foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
-        if (added.Count > 0)
-            Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
-        return added.Count > 0;
+        lock (conn.Monsters)
+        {
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return false;
+            string character = CharacterName(conn);
+            var bar = CharacterSaves.Load(character)?.SkillBar ?? [];
+            string attack = SkillEffectId(conn, SkillCatalog.FirstSkillId)!;
+            var gems = GemSkillEffects(conn.Character).Select(g => Skills.EffectId(g.Effect)).OfType<string>().ToList();
+            var added = SkillBarLayout.Fill(bar, attack, gems, entry => entry == attack || entry.StartsWith("Action/") || gems.Contains(entry));
+            foreach (var (slot, entry) in added) CharacterSaves.SetSkillBar(character, (byte)slot, entry);
+            if (added.Count > 0)
+                Console.WriteLine($"[gateway] {character} skill bar: {string.Join(", ", added.Select(a => $"{a.Entry} on slot {a.Slot}"))}");
+            return added.Count > 0;
+        }
     }
 
     // The GrantedEffects Id behind a skill id of the player (the default attack or a gem skill), or null.
@@ -601,7 +638,7 @@ partial class Program
             && CharacterPlayerStats(conn).GetValueOrDefault(key) != 0 ? "warcry skills are disabled" : null;
     }
 
-    // Why a gem skill may not be used: an actor restriction or an unmet level/attribute requirement.
+    // Why a gem skill may not be used: an actor restriction, unmet gem requirements or provider equipment restrictions.
     // The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
     // Null when the actor restriction and requirements allow the effect; a qualified host remains active.
     static string? GemDisabled(ClientState conn, int effect)
@@ -610,6 +647,8 @@ partial class Program
         foreach (var place in PlayerInventories.For(CharacterName(conn), Items).SocketedGemPlaces())
             if (Items.GemEffects(place.Gem).Contains(effect) && GemRequirementsUnmet(conn, place.Gem) is { } missing)
                 return missing;
+        if (Skills.EffectId(effect) is { } effectId
+            && ProjectileDefinition(effectId)?.Unavailable?.Invoke(conn) is { } unavailable) return unavailable;
         return null;
     }
 
@@ -619,7 +658,9 @@ partial class Program
     {
         var gem = SupportedSkill(conn, skillId);
         if (gem.Effect != effect || gem.SourceGem is null) return "skill is unavailable";
-        return ActorSkillInstanceDisabled(conn, effect, skillId) ?? GemRequirementsUnmet(conn, gem.SourceGem);
+        if ((ActorSkillInstanceDisabled(conn, effect, skillId) ?? GemRequirementsUnmet(conn, gem.SourceGem)) is { } disabled)
+            return disabled;
+        return Skills.EffectId(effect) is { } effectId ? ProjectileDefinition(effectId)?.Unavailable?.Invoke(conn) : null;
     }
 
     // A worn item whose requirements are not met (CharacterStatSources): its mods and gems do nothing.
@@ -766,10 +807,12 @@ partial class Program
     // Actor 0x20 update (PlayerSkillsChange): the 0x40 list neither removes skills nor tells the character panel.
     static async Task SendSkills(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        RefreshSingleUseCooldowns(conn);
         lock (conn.Monsters)
         {
-            EnsureOwnAuraPools(conn);
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
+            RefreshSingleUseCooldowns(conn);
+            EnsureAntiquarianPools(conn);
+        EnsureOwnAuraPools(conn);
             foreach (var id in conn.Auras.Keys.ToList())
             {
                 var gem = SupportedSkill(conn, id);
@@ -818,6 +861,7 @@ partial class Program
         List<AuraCatalog.Aura> ended;
         lock (conn.Monsters)
         {
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
             ended = [.. conn.Auras.Values.Where(a => gone.Contains(a.SkillId))];
             foreach (var aura in ended) conn.Auras.Remove(aura.SkillId);
             if (ended.Count > 0)

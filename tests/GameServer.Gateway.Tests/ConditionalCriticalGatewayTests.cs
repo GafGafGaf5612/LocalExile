@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using GameServer.Core.Projectiles;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
@@ -123,7 +124,7 @@ public partial class ConditionalCriticalGatewayTests
 
         public Task<bool> ContactDamage(Func<int> damage, int? action = null) => (Task<bool>)Method("HitMonster").Invoke(null,
             ["impale-contact-gate-test", writer.GetStream(), ciphers, Conn, 42u, Target, 0, "test", false, false,
-                (ushort)0, action, null, null, damage])!;
+                (ushort)0, action, null, null, damage, null])!;
 
         public Task Sweep()
         {
@@ -136,10 +137,23 @@ public partial class ConditionalCriticalGatewayTests
                     false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u, null])!).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
-        public Task Launch((int X, int Y)? aim = null) => ((Task)Method("LaunchProjectile").Invoke(null,
-            ["accuracy-gem-projectile-test", writer.GetStream(), ciphers, Conn, Skill,
-                (32, 32), aim ?? Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds), 42u, (ushort)0, Conn.ActionCount, null, null])!)
-            .WaitAsync(TimeSpan.FromSeconds(10));
+        public async Task Launch((int X, int Y)? aim = null)
+        {
+            // Release/contacts are simulation work; draining native output no longer drives gameplay time.
+            var session = Conn.ProjectileRuntime ??= new("contact-fixture", writer.GetStream(), ciphers, Conn);
+            using (Program.ProjectileMutation(Conn, advance: false))
+            {
+                await ((Task)Method("LaunchProjectile").Invoke(null,
+                    ["accuracy-gem-projectile-test", writer.GetStream(), ciphers, Conn, Skill,
+                        (32, 32), aim ?? Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds), Conn.HitRecovery.Generation,
+                        42u, (ushort)0, Conn.ActionCount, null, null])!);
+                // Finish this use's flights and delayed blasts before observing its damage.
+                session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.Time(4));
+            }
+            var drained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            session.Enqueue(() => { drained.SetResult(); return Task.CompletedTask; });
+            await drained.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
 
         public async Task Refund(ushort node)
         {
@@ -326,39 +340,28 @@ public partial class ConditionalCriticalGatewayTests
         using var f = new Contact(random, weaponName: "Crude Bow", distance: 60);
         f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
         f.Conn.PlayerLife = 50;
-        uint firstObject = f.Conn.NextObjectId;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await f.SendGate.WaitAsync(timeout.Token);
-        bool held = true;
         Task use;
-        try
+        using (Program.ProjectileMutation(f.Conn, advance: false))
         {
+            // Accept the real bow action while unpaused, then freeze the pump before it can release or hit.
             use = f.Use();
-            while (true)
+            f.Conn.Clock.Stop();
+            try
             {
-                lock (f.Conn.Monsters)
-                    if (f.Conn.ProjectileObjects.Contains(firstObject)) break;
-                // Let one queued packet through, then reclaim the gate before another can commit. Once creation
-                // releases the projectile, the next packet (and therefore flight/impact) waits for this test.
-                await Task.Delay(5, timeout.Token);
-                var reclaim = f.SendGate.WaitAsync(timeout.Token);
-                f.SendGate.Release();
-                held = false;
-                await reclaim;
-                held = true;
-            }
-            Assert.NotEqual(firstObject, f.Conn.NextObjectId);
-            Assert.Equal(f.Target.MaxLife, f.Target.Life);
-            Assert.Equal(0, random.Calls);
-            lock (f.Conn.Monsters)
-            {
+                var session = Assert.IsType<Program.ProjectileSession>(f.Conn.ProjectileRuntime);
+                long deadline = session.Runtime.Now + ProjectileRuntime.Time(2);
+                while (session.Runtime.Projectiles.Count == 0 && session.Runtime.Now < deadline)
+                    session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.TickQuanta / 10);
+                Assert.Single(session.Runtime.Projectiles);
+                Assert.Equal(0, random.Calls);
+                Assert.Equal(f.Target.MaxLife, f.Target.Life);
                 f.Conn.PlayerLife = 51;
                 f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
+                session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.Time(1));
             }
+            finally { f.Conn.Clock.Start(); }
         }
-        finally { if (held) f.SendGate.Release(); }
         await use;
-        await f.HitLands();
         Assert.Equal(cannotCrit ? 0 : 2, random.Calls);
         Assert.Equal(cannotCrit ? 1000u : 1500u, f.Target.MaxLife - f.Target.Life);
     }

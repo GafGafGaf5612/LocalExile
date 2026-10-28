@@ -15,7 +15,8 @@ static class DamageStats
     // This stat is a flag. Transfer increased/reduced spell damage into the attack's increased bucket,
     // retaining half-percent values; spell-only more multipliers and speed never enter this contribution.
     public static double SpellAttackIncrease(Func<string, int> get) =>
-        SpellAttackIncrease(get(SpellDamageIncreasesApplyToAttacks150), get("spell_damage_+%"));
+        (double)get("spell_damage_+%") * Math.Max(get(SpellDamageIncreasesApplyToAttacks150) != 0 ? 150 : 0,
+            get("active_skill_additive_spell_damage_modifiers_apply_to_attack_damage_at_%_value")) / 100.0;
 
     public static double SpellAttackIncrease(IReadOnlyDictionary<uint, int>? stats) =>
         SpellAttackIncrease(stats?.GetValueOrDefault(StatKeys.SpellDamageIncreasesApplyToAttacks150) ?? 0,
@@ -50,6 +51,10 @@ static class DamageStats
     public static double ManaAddedLightning(Func<string, int> get) =>
         get("maximum_mana") is > 0 and var mana ? mana * (get(MaxManaAddedLightning) / 100.0) : 0;
 
+    public static double ManaAddedPhysical(Func<string, int> get) =>
+        get("maximum_mana") is > 0 and var mana
+            ? mana * (get("added_physical_damage_to_attacks_equal_to_%_maximum_mana") / 100.0) : 0;
+
     /// <summary>Raw added damage, with effectiveness but without increased/more modifiers or conversion.</summary>
     public static DamagePacket RawAdded(DamagePacket hit, Func<string, int> get, bool spell, double effectiveness = 1)
     {
@@ -61,6 +66,11 @@ static class DamageStats
             {
                 // PoB ModParser 16de4b82 lines 5636–5639 grants both attack LightningMin and LightningMax.
                 double added = ManaAddedLightning(get);
+                range = range.Add(new DamageRange(added, added));
+            }
+            if (!spell && type == DamageType.Physical)
+            {
+                double added = ManaAddedPhysical(get);
                 range = range.Add(new DamageRange(added, added));
             }
             hit = hit.Add(type, range.Scale(effectiveness));

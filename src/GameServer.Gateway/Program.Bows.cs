@@ -31,36 +31,11 @@ partial class Program
         ClientState conn, byte[] actionBytes, string actionLog, (int X, int Y) from, (int X, int Y) aim,
         double attackSeconds, int action, int epoch, SkillCriticalRoll criticalRoll)
     {
-        if (await SendOrdinaryBowAction(remote, stream, ciphers, conn, actionBytes, actionLog, action, epoch))
-            await LaunchOrdinaryBow(remote, stream, ciphers, conn, from, aim, attackSeconds, action, epoch, criticalRoll);
+        await LaunchOrdinaryBow(remote, stream, ciphers, conn, from, aim, attackSeconds, action, epoch, criticalRoll);
+        await SendOrdinaryBowAction(remote, stream, ciphers, conn, actionBytes, actionLog, action, epoch);
     }
 
-    static async Task LaunchOrdinaryBow(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        (int X, int Y) from, (int X, int Y) aim, double attackSeconds, int action, int epoch, SkillCriticalRoll criticalRoll)
-    {
-        // Both ground and object-targeted arrows release at attack1_bow contact, without the melee walk-in offset.
-        double contact = AttackContactDelay(conn, attackSeconds, approach: false);
-        if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + Math.Max(0.001, contact), epoch)) return;
-        OrdinaryBowShot shot;
-        (string Id, float CellsPerSecond) projectile;
-        lock (conn.Monsters)
-        {
-            if (!OrdinaryBowReleaseCurrent(conn, action, epoch) || !WeaponProfileFor(conn, activeSet: true).Bow
-                || Skills.Projectile("Metadata/Projectiles/DefaultArrow") is not { } arrow) return;
-            var character = CharacterPlayerStats(conn);
-            from = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
-            int effect = SkillEffectId(conn, SkillCatalog.FirstSkillId) is { } id ? Skills.EffectRow(id) : -1;
-            // Preserve the existing release snapshot for damage/chance/multiplier. Critical luck belongs to the
-            // admitted use; prohibition, target evasion and existing impales still resolve at actual contact.
-            shot = OrdinaryBowShot.Capture(WeaponFor(conn), character, Skills.EffectStats(effect, 1), Stats,
-                conn.Pools.Accuracy, conn.Pools.AttackCriticalStrikeChance, conn.Pools.CriticalStrikeMultiplier)
-                with { CriticalRoll = criticalRoll };
-            int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
-            projectile = (arrow.Id, ProjectileSpeed.CellsPerSecond(arrow.Speed, Get, _ => 0,
-                Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED")));
-        }
-        await FlyProjectile(remote, stream, ciphers, conn, projectile, from, aim,
-            damageTo: null, epoch: epoch, impact: "none",
-            actionToken: action, ordinaryShot: shot);
-    }
+    static Task LaunchOrdinaryBow(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+        (int X, int Y) from, (int X, int Y) aim, double attackSeconds, int action, int epoch, SkillCriticalRoll criticalRoll) =>
+        ScheduleOrdinaryBow(remote, stream, ciphers, conn, aim, attackSeconds, action, epoch, criticalRoll);
 }

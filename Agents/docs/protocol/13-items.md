@@ -1067,14 +1067,18 @@ bases listed below.
 | Gold | flask_utility_rarity (131) | base_item_found_rarity_+% 30: rarer drops | 5 s, 60 of 80 |
 | Aquamarine | flask_utility_aquamarine (126) | base_frozen_effect_on_self_+% −60: character panel only | 8 s, 20 of 50 |
 | Corundum | flask_utility_stun_protection (1888) | stun_threshold_+% 30: character panel only | 7.5 s, 20 of 50 |
-| Iron | flask_utility_ward (132) | base_ward 200: waits for Ward (PR #206) | 4 s, 40 of 60 |
+| Iron | flask_utility_ward (132) | base_ward 200; paid use restores Ward immediately | 4 s, 40 of 60 |
 
 The Silver Flask's buff has no stats, only the flag `silver_flask_display_onslaught`; the Gateway also puts `onslaught`
 (row 215) on the player with the values of BuffTemplates `MapModPlayerOnslaught` (20, 20, 20). How each buff stat counts
 is `UtilityFlasks.SupportOf`: modelled (the pools, the walk, drops, damage), only the character panel (ailments, stun
-and curses on the player: monsters here only hit physically, so nothing freezes, stuns or curses the player), or Ward,
-which PR #206 brings (`UtilityFlasks.Ward` is where its Bonus.Ward / WardPct take Iron Flask's base_ward and the Ward
-suffix once both are merged). Every utility flask spends its charges and shows its buff and bar.
+and unsupported curse/ailment effects), or Ward.
+Ward flat/increased bonuses feed the authoritative pool through `UtilityFlasks.Apply`.
+After a successful charge payment and effect start, `local_flask_restore_ward` restores broken Ward immediately.
+Stat projection, refused uses and ordinary effect refresh never restore Ward.
+Native selected Antiquarian spent 40 charges and restored 502 Ward, returning to 22 after the four-second effect.
+See [the Ward model and native evidence](../game/antiquarian.md).
+Every utility flask spends its charges and shows its buff and bar.
 
 A use:
 
@@ -1123,7 +1127,7 @@ all unique acquisition/conditional mechanics, native tooltip behavior or officia
 
 The "during effect" suffixes (`UtilityFlasks.DuringEffect`) count while the flask runs, scaled by its effect: increased
 armour (`local_flask_armour_+%_while_healing` → `physical_damage_reduction_rating_+%`), increased evasion, movement
-speed, additional elemental resistances and increased critical strike chance; increased Ward waits for #206; the
+speed, additional elemental resistances, increased critical strike chance and increased Ward; the
 ailment, stun and curse ones (avoid, reduced effect or duration on you, immunities, "chance to Freeze, Shock and
 Ignite", stun recovery) reach the character panel only; life and energy shield leech are not applied (leech is not
 modelled).
@@ -1226,7 +1230,7 @@ hit and every 3 seconds (tests only).
   operators and nonpositive-duration policy. Flat/per-level global effect has eight positive runtime controls (§8);
   source-removal/zero next-use behavior and whole-unique native acquisition/tooltip parity remain unproved.
   Hybrid Life/Mana buffs are implemented; see §8.
-  Utility flasks: Ward (Iron Flask, the Ward suffix) until PR #206 is in; ailments, stun and curses on the player
+  Utility flasks: unsupported ailments, stun modifiers and curses on the player
   (Aquamarine's freeze effect, Corundum, the ailment suffixes: panel only); Aquamarine's chilled ground; the smoke
   cloud's art; which objects phasing lets the player through besides monsters; how long the grounds last; whether taking
   a flask off the bar ends its effect (it does here, `UtilityFlasks.EndsWhenFlaskLeavesItsCell`); leech suffixes.

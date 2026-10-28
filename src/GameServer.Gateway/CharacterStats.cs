@@ -45,7 +45,7 @@ static class CharacterStats
         int AuraEffectPct = 0, int AuraAreaPct = 0, uint EnergyShield = 0,
         int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
         int SpellSuppressionWhileFullEnergyShield = 0, int? SpellSuppressionChanceUncapped = null,
-        bool ArmourAppliesToChaosDamage = false)
+        bool ArmourAppliesToChaosDamage = false, uint Ward = 0)
     {
         // Identifies the transient source snapshot used by this immutable pool calculation, including with-clones.
         internal long FortificationRevision { get; init; }
@@ -59,7 +59,7 @@ static class CharacterStats
     /// mana, armour and evasion, increased energy shield and melee physical damage, the base resistances, attack speed's
     /// increased and more multipliers, critical strike chance and multiplier, and the Accuracy Mastery's conversions.</summary>
     public sealed record Bonus(int Strength = 0, int Dexterity = 0, int Intelligence = 0, int Life = 0, int LifePct = 0,
-        int Mana = 0, int ManaPct = 0, int Armour = 0, int ArmourPct = 0, int Evasion = 0, int EvasionPct = 0,
+        int Mana = 0, int ManaPct = 0, decimal Armour = 0, int ArmourPct = 0, decimal Evasion = 0, int EvasionPct = 0,
         int SharedDefencesPct = 0, bool IronReflexes = false, bool ChaosInoculation = false,
         int EnergyShieldPct = 0, int MeleePhysicalDamagePct = 0,
         int FireResistance = 0, int ColdResistance = 0, int LightningResistance = 0, int ChaosResistance = 0,
@@ -86,11 +86,11 @@ static class CharacterStats
         int ManaPerFourStrength = 0,
         // These local shield values are already included in Armour/Evasion/EnergyShield. Keep their identity so
         // shield-only increases can add to the global increase bucket without scaling other flat sources.
-        int ShieldArmour = 0, int ShieldEvasion = 0, int ShieldEnergyShield = 0,
+        decimal ShieldArmour = 0, decimal ShieldEvasion = 0, int ShieldEnergyShield = 0,
         int ShieldArmourPct = 0, int ShieldEvasionPct = 0, int ShieldEnergyShieldPct = 0,
         int SharedShieldDefencesPct = 0, bool NoShieldDefences = false,
         // Body values are likewise local subsets of the flat totals, before slot-specific global operators.
-        int BodyArmour = 0, int BodyEvasion = 0, int BodyEnergyShield = 0, int BodyEnergyShieldPct = 0,
+        decimal BodyArmour = 0, decimal BodyEvasion = 0, int BodyEnergyShield = 0, int BodyEnergyShieldPct = 0,
         bool DoubleBodyArmour = false, bool NoBodyArmour = false,
         int SpellSuppressionWhileFullEnergyShield = 0,
         bool ArmourAppliesToChaosDamage = false, AttributeModifiers Attributes = default,
@@ -100,7 +100,8 @@ static class CharacterStats
         int LifePerFourDexterity = 0, int LifePerTwoIntelligence = 0,
         int EnergyShieldPctPerTenStrength = 0, int EvasionPctPerTenIntelligence = 0,
         bool NoLifeFromStrength = false, bool NoManaFromIntelligence = false,
-        bool NoStrengthBonuses = false, bool NoDexterityBonuses = false, bool NoIntelligenceBonuses = false)
+        bool NoStrengthBonuses = false, bool NoDexterityBonuses = false, bool NoIntelligenceBonuses = false,
+        bool MentalConditioning = false, decimal Ward = 0, int WardPct = 0)
     {
         public static readonly Bonus None = new();
     }
@@ -185,7 +186,7 @@ static class CharacterStats
         int armourPct = b.ArmourPct;
         // Native slot calculations add slot-specific increases to the applicable global bucket. Sum fractional
         // contributions before rounding the final rating (AR 0x142732ee7, EV 0x14272a59b, ES 0x14252c6e7).
-        decimal Increased(decimal total, int shield, int body, long increase, long shieldIncrease,
+        decimal Increased(decimal total, decimal shield, decimal body, long increase, long shieldIncrease,
             long bodyIncrease = 0, bool bodyAsArmour = false)
         {
             // Keep each known local source even if the aggregate was saturated while merging equipment.
@@ -209,7 +210,7 @@ static class CharacterStats
             + (long)b.EvasionPctPerTenIntelligence * (intel / 10);
         long totalEvasionPct = (b.NoDexterityBonuses ? 0L : dex / 5L) + ordinaryEvasionPct;
         int evasionPct = (int)Math.Clamp(totalEvasionPct, int.MinValue, int.MaxValue);
-        long evasionBase = BaseEvasion + (long)b.Evasion;
+        decimal evasionBase = BaseEvasion + b.Evasion;
         decimal evasionValue = More(Increased(evasionBase, b.ShieldEvasion, b.BodyEvasion, totalEvasionPct,
             (long)b.ShieldEvasionPct + b.SharedShieldDefencesPct), b.EvasionMorePct);
         if (b.IronReflexes)
@@ -226,6 +227,13 @@ static class CharacterStats
             evasionValue = 0;
         }
         int armour = Rating(armourValue), evasion = Rating(evasionValue);
+        if (b.MentalConditioning)
+        {
+            long rawFlatManaTwice = 2 * (c.BaseMaxMana + 6L * level + b.Mana
+                + LifeManaPoolSources.AdditionalMana(level, b) + StrengthMana.Flat(str, b.ManaPerFourStrength))
+                + (b.NoManaFromIntelligence || b.NoIntelligenceBonuses ? 0 : intel);
+            (mana, armour) = PowerOfPurpose.Pools(rawFlatManaTwice, b, intel);
+        }
         // Native ClientStrings IntelligenceDescription: 10 Intelligence grants 1% increased ES.
         // Pinned PoB CalcPerform applies complete groups after resolving final attributes.
         long totalEnergyShieldPct = (b.NoIntelligenceBonuses ? 0L : intel / 10L) + b.EnergyShieldPct
@@ -287,7 +295,7 @@ static class CharacterStats
             LifeReservationEfficiencyPct: b.LifeReservationEfficiencyPct,
             AuraEffectPct: b.AuraEffectPct, AuraAreaPct: b.AuraAreaPct,
             ColdOvercapEvasionPct: b.ColdOvercapEvasionPct, LightningOvercapCritPct: b.LightningOvercapCritPct,
-            ArmourAppliesToChaosDamage: b.ArmourAppliesToChaosDamage)
+            ArmourAppliesToChaosDamage: b.ArmourAppliesToChaosDamage, Ward: WardState.Max(b.Ward, b.WardPct))
             { AttributesResolved = true, AccuracyBase = accuracyBase };
     }
 

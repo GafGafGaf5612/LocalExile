@@ -87,6 +87,16 @@ partial class Program
             nodes = (nodes ?? conn.Passives).Concat(conn.MainAscendancy.Allocated).ToArray();
             masteries = conn.MasteryEffects;
         }
+        var c = Skills.ClassFor(conn.ClassRow);
+        Dictionary<uint, int> dev;
+        lock (conn.Monsters) dev = new(conn.PlayerStats);
+        var worn = ItemModStats.EquipmentRows.SelectMany(items.Items).ToArray();
+        var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
+        // The sum below is a pure function of these inputs (items are immutable records), and the combat paths ask for
+        // it many times a second (every monster hit): reuse the last result while none of them changed.
+        var sourcesKey = new StatSourcesKey([.. nodes], masteries, worn, dev, conn.ClassRow, conn.God, level ?? conn.Pools.Level, before);
+        if (conn.StatSourcesCache is { } cached && cached.Key.Matches(sourcesKey))
+            return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, new(cached.Sources)))), cached.Attributes);
         var passives = Passives.Stats(nodes, masteries);
         // Only attributes need a wide source view. Keep each raw key until overrides have replaced its entire total.
         var passiveAttributes = new Dictionary<string, long>();
@@ -100,9 +110,6 @@ partial class Program
                     passiveAttributes[name] = passiveAttributes.GetValueOrDefault(name) + value;
             }
         }
-        var c = Skills.ClassFor(conn.ClassRow);
-        Dictionary<uint, int> dev;
-        lock (conn.Monsters) dev = new(conn.PlayerStats);
         Dictionary<string, long> RawAttributes(IEnumerable<Item> active)
         {
             var raw = ItemModStats.RawAttributes(active, Items.Mods);
@@ -110,14 +117,13 @@ partial class Program
             return raw;
         }
         int god = conn.God ? 1000 : 0;
-        var worn = ItemModStats.EquipmentRows.SelectMany(items.Items)
+        var wornItems = worn
             .Select(i => (i, t: Items.ByHash(i.Item.TypeHash)))
             .Select(x => x.t is { } t
                 ? new ItemModStats.Worn(x.i.Id, x.i.Item, Items.Requirements(t).Str, Items.Requirements(t).Dex, Items.Requirements(t).Int,
                     ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, Items.Mods))
                 : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
-        var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
-        var (inactive, active) = ItemModStats.ResolveEquipment(worn, level ?? conn.Pools.Level,
+        var (inactive, active) = ItemModStats.ResolveEquipment(wornItems, level ?? conn.Pools.Level,
             active => AttributeInputs(RawAttributes(active.Select(w => w.Item)), dev)
                 .Apply(c.Strength + god, c.Dexterity + god, c.Intelligence + god), before, Items.Mods);
         // Item activation depends on the item, not on socketed gems. Checking gems here used the previous
@@ -126,15 +132,32 @@ partial class Program
         InactiveItems[CharacterName(conn)] = inactive;
         if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
             Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
-                string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
+                string.Join(", ", wornItems.Where(w => inactive.Contains(w.Id)).Select(w =>
                     $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
         var rawAttributes = RawAttributes(active);
         var sources = ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
         // Clamp only this outgoing integer view; the authoritative attribute inputs remain wide beside it.
         foreach (var (name, value) in rawAttributes)
             if (Stats.Key(name) is uint key) sources[key] = AttributeModifiers.Signed(value);
-        return (WithFortification(conn, WithCharges(conn, sources)), AttributeInputs(rawAttributes, dev));
+        var attributes = AttributeInputs(rawAttributes, dev);
+        // Keyed by the inactive set this result produced: a later call sees it as `before` and must still match.
+        conn.StatSourcesCache = new(sourcesKey with { Before = inactive }, new(sources), attributes);
+        return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, sources))), attributes);
     }
+
+    /// <summary>The inputs of CharacterStatSources' passive and equipment sum, compared by value (items by reference).</summary>
+    internal sealed record StatSourcesKey(ushort[] Nodes, IReadOnlyDictionary<ushort, ushort> Masteries,
+        GameServer.Core.Protocol.Instance.InventoryItem[] Worn, Dictionary<uint, int> Dev, int ClassRow, bool God, int Level, IReadOnlySet<uint>? Before)
+    {
+        public bool Matches(StatSourcesKey o) =>
+            ClassRow == o.ClassRow && God == o.God && Level == o.Level && ReferenceEquals(Masteries, o.Masteries)
+            && Nodes.AsSpan().SequenceEqual(o.Nodes)
+            && Worn.Length == o.Worn.Length && Worn.Zip(o.Worn).All(p => p.First.Id == p.Second.Id && ReferenceEquals(p.First.Item, p.Second.Item))
+            && Dev.Count == o.Dev.Count && Dev.All(kv => o.Dev.TryGetValue(kv.Key, out int v) && v == kv.Value)
+            && (Before ?? new HashSet<uint>()).SetEquals(o.Before ?? new HashSet<uint>());
+    }
+
+    internal sealed record StatSourcesResult(StatSourcesKey Key, Dictionary<uint, int> Sources, AttributeModifiers Attributes);
 
     // Only raw attribute keys are inputs. A final pool/panel attribute must never feed the flat bucket on a rebuild.
     static AttributeModifiers AttributeInputs(IReadOnlyDictionary<string, long> raw, IReadOnlyDictionary<uint, int> dev) =>
@@ -160,21 +183,24 @@ partial class Program
         var weapons = WeaponProfileFor(conn);
         var activeWeapon = WeaponProfileFor(conn, activeSet: true);
         var bonus = PassiveBonus(sources, weapons, snapshot.Attributes);
-        var gear = EquippedBaseDefences(conn);
-        var slots = EquippedArmourDefences(conn).ToArray();
-        var shield = slots.FirstOrDefault(d => d.Row == PlayerInventories.Offhand1).Defence;
+        int EquipmentInput(string name) => Stats.Key(name) is uint key
+            ? conn.PlayerStats.TryGetValue(key, out int value) ? value : sources.GetValueOrDefault(key) : 0;
+        var gear = EquippedBaseDefences(conn, EquipmentInput);
+        var slots = EquippedArmourDefences(conn, EquipmentInput).ToArray();
+        var shieldDefence = slots.FirstOrDefault(d => d.Row == PlayerInventories.Offhand1).Defence;
         var body = slots.FirstOrDefault(d => d.Row == PlayerInventories.BodyArmour).Defence;
         int EquipmentStat(string name) => Stats.Key(name) is uint key ? sources.GetValueOrDefault(key) : 0;
         var converted = ConvertEquipmentEnergyShield(conn, EquipmentStat, gear.EnergyShield);
         bonus = bonus with
         {
-            Armour = (int)Math.Min(int.MaxValue, (long)bonus.Armour + gear.Armour),
-            Evasion = (int)Math.Min(int.MaxValue, (long)bonus.Evasion + gear.Evasion),
+            Armour = bonus.Armour + gear.Armour,
+            Evasion = bonus.Evasion + gear.Evasion,
+            Ward = bonus.Ward + gear.Ward,
             Life = (int)Math.Min(int.MaxValue, (long)bonus.Life + converted.Life),
             EnergyShield = (int)Math.Min(int.MaxValue, (long)bonus.EnergyShield + converted.EnergyShield),
-            ShieldArmour = shield.Armour, ShieldEvasion = shield.Evasion,
+            ShieldArmour = shieldDefence.Armour, ShieldEvasion = shieldDefence.Evasion,
             // ES-to-Life consumes the local item source before any shield/global increases can act on it.
-            ShieldEnergyShield = converted.EnergyShield == 0 ? 0 : shield.EnergyShield,
+            ShieldEnergyShield = converted.EnergyShield == 0 ? 0 : shieldDefence.EnergyShield,
             BodyArmour = body.Armour, BodyEvasion = body.Evasion,
             BodyEnergyShield = converted.EnergyShield == 0 ? 0 : body.EnergyShield,
         };
@@ -219,6 +245,9 @@ partial class Program
         if (Stats.Key(PlayerHitMitigation.ArmourAppliesToChaos) is uint chaosArmour
             && devStats.TryGetValue(chaosArmour, out int chaosArmourOverride))
             bonus = bonus with { ArmourAppliesToChaosDamage = chaosArmourOverride != 0 };
+        if (Stats.Key(PowerOfPurpose.RawFlag) is uint mentalConditioning
+            && devStats.TryGetValue(mentalConditioning, out int flag))
+            bonus = bonus with { MentalConditioning = flag != 0 };
         long RawCriticalSum(string name)
         {
             if (Stats.Key(name) is not uint key) return 0;
@@ -303,7 +332,10 @@ partial class Program
             SpellCriticalStrikeChance = SpellCriticalStrike.Chance(DamageModel.BaseSpellCriticalStrikeChancePerMyriad,
                 RawCritical, playerIncrease: pools.SpellCriticalStrikeChancePct)
         };
-        int shieldBlock = weapons.Shield ? ShieldBaseBlock(conn) : 0;
+        // Only the active usable shield contributes. The alternate set and unmet requirements cannot grant block.
+        int shieldBlock = ActiveOffHand(conn) is { Type.Class: "Shield" } shield
+            ? EquipmentInput("block_chance_from_equipped_shield_is_%") is > 0 and var replacement
+                ? replacement : Items.ShieldBlock(shield.Type) : 0;
         int rawAttack = pools.BlockChanceUncapped + shieldBlock;
         double blockFactor = (1 + bonus.BlockChanceInc / 100.0) * (1 + bonus.BlockChanceMore / 100.0);
         int totalAttack = (int)Math.Round(Math.Max(0, rawAttack) * blockFactor);
@@ -333,6 +365,8 @@ partial class Program
                     SpellBlockChance = Math.Min(pools.SpellBlockChance + 2 * overcap, pools.SpellBlockChanceMax)
                 };
         }
+        conn.Ward.SetMaximum(conn.PlayerLife > 0 ? pools.Ward : 0);
+        conn.AppliedAdrenaline = conn.Antiquarian.Adrenaline(conn.Clock.Elapsed.TotalSeconds);
         ConfigureFortificationRecovery(conn, pools.Life, sources);
         return pools with { FortificationRevision = FortificationOf(conn).Revision };
     }
@@ -436,7 +470,7 @@ partial class Program
         int armourPct = Get("physical_damage_reduction_rating_+%") + defencesPct;
         int evasionPct = Get("evasion_rating_+%") + defencesPct;
         return new CharacterStats.Bonus(
-            Attributes: attributes,
+            Attributes: attributes, Ward: Get("base_ward"), WardPct: Get("ward_+%") + Get("global_defences_+%") + Get("combined_global_defences_+%"),
             Life: Get("base_maximum_life"), LifePct: Get("maximum_life_+%"), Mana: Get("base_maximum_mana"), ManaPct: Get("maximum_mana_+%"),
             ManaPerFourStrength: Get(StrengthMana.PerFourStrength),
             LifePerLevel: Get(LifeManaPoolSources.LifePerLevel), ManaPerLevel: Get(LifeManaPoolSources.ManaPerLevel),
@@ -453,6 +487,7 @@ partial class Program
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             EvasionPctPerTenIntelligence: Get(AttributeDefenceSources.EvasionPerTenIntelligence),
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
+            MentalConditioning: Get(PowerOfPurpose.RawFlag) != 0,
             ChaosInoculation: Get("keystone_chaos_inoculation") != 0,
             ArmourAppliesToChaosDamage: Get(PlayerHitMitigation.ArmourAppliesToChaos) != 0,
             EnergyShield: Get("base_maximum_energy_shield"),
@@ -750,8 +785,15 @@ partial class Program
     // the stale gem), so the client's gem XP bar and tooltip follow; the next save keeps it.
     static async Task GainGemExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain)
     {
+        var (packets, leveled) = CommitGemExperience(conn, gain);
+        foreach (var packet in packets) await Send(remote, stream, ciphers, packet, "gem experience");
+        if (leveled) await SendSkills(remote, stream, ciphers, conn);
+    }
+
+    static (List<byte[]> Packets, bool Leveled) CommitGemExperience(ClientState conn, uint gain)
+    {
         int share = (int)Math.Min(gain / 10, int.MaxValue);
-        if (share == 0) return;
+        if (share == 0) return ([], false);
         var items = ItemsOf(conn);
         var changed = items.ChangeSocketedGems((itemId, gem) =>
         {
@@ -768,18 +810,15 @@ partial class Program
             if (Items.GemLevel(after) > Items.GemLevel(before))
             {
                 leveled = true;
-                Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(after)} levels to {Items.GemLevel(after)}");
+                Console.WriteLine($"[gateway] {CharacterName(conn)}'s {Items.GemName(after)} levels to {Items.GemLevel(after)}");
             }
             else
-                Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(after)} gains experience " +
+                Console.WriteLine($"[gateway] {CharacterName(conn)}'s {Items.GemName(after)} gains experience " +
                     $"+{after.GemExperience - before.GemExperience} ({after.GemExperience}, level {Items.GemLevel(after)})");
         }
-        // One change per row, each item in it once with all its gems' experience.
-        foreach (var row in changed.GroupBy(c => c.Row))
-            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
-                [.. row.Select(c => c.Item.Id)], [.. row.Select(c => c.Item)]),
-                $"0x00bf inventory {row.Key}: gem experience +{share} ({string.Join(", ", row.Select(c => $"{c.Item.Id:x} {c.Gems.Count} gem(s)"))})");
-        // A gem's level's costs, damage and reservation live with the skills (the 0x20 Actor update), not the item.
-        if (leveled) await SendSkills(remote, stream, ciphers, conn);
+        var packets = changed.GroupBy(c => c.Row).Select(row =>
+            InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
+                [.. row.Select(c => c.Item.Id)], [.. row.Select(c => c.Item)])).ToList();
+        return (packets, leveled);
     }
 }

@@ -348,6 +348,15 @@ sealed class SkillCatalog(string folder = "data")
     public bool IsMelee(int effectRow) => _meleeEffects.Value.Contains(effectRow);
 
     public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
+    public bool IsProjectile(int effectRow) => _projectileEffects.Value.Contains(effectRow);
+    // Generic monster Melee also carries Projectile. Actual melee classification takes precedence.
+    public bool IsRangedAttack(int effectRow) => IsAttack(effectRow) && IsProjectile(effectRow) && !IsMelee(effectRow);
+
+    /// <summary>Classify the gem's base-item row from GemTags/SkillGems metadata, not its display name.</summary>
+    public bool FamilyStatRaises(string stat, int gemRow) =>
+        _stats.Key(stat) is uint key && _families.Value.Raises((int)key - 1, gemRow);
+
+    readonly Lazy<SkillGemFamilies> _families = new(() => new(folder));
 
     /// <summary>Whether a GrantedEffects row's ActiveSkill has the Warcry type.</summary>
     public bool IsWarcry(int effectRow) => _warcryEffects.Value.Contains(effectRow);
@@ -364,6 +373,7 @@ sealed class SkillCatalog(string folder = "data")
     private readonly Lazy<HashSet<int>> _attackEffects = new(() => EffectsOfType(folder, "Attack"));
     private readonly Lazy<HashSet<int>> _meleeEffects = new(() => EffectsOfType(folder, "Melee"));
     private readonly Lazy<HashSet<int>> _spellEffects = new(() => EffectsOfType(folder, "Spell"));
+    private readonly Lazy<HashSet<int>> _projectileEffects = new(() => EffectsOfType(folder, "Projectile"));
     private readonly Lazy<HashSet<int>> _warcryEffects = new(() => EffectsOfType(folder, "Warcry"));
     private readonly Lazy<HashSet<int>> _auraEffects = new(() => EffectsOfType(folder, "Aura"));
     private readonly Lazy<HashSet<int>> _curseEffects = new(() => EffectsOfType(folder, "AppliesCurse"));
@@ -453,12 +463,22 @@ sealed class SkillCatalog(string folder = "data")
     });
 
     // The highest level at or below `level` among rows with this key, else the lowest; -1 when none.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<List<(int Key, int Level)>, Dictionary<int, int[]>> RowsByKey = new();
+
     private static int PickLevel(List<(int Key, int Level)> rows, int key, int level)
     {
         int best = -1, bestLevel = int.MinValue, low = -1, lowLevel = int.MaxValue;
-        for (int i = 0; i < rows.Count; i++)
+        // The per-level tables are loaded once and never change: index their rows by key instead of scanning them all
+        // (the combat paths pick levels many times per stat calculation). Same rows, same order, same answer.
+        var index = RowsByKey.GetValue(rows, r =>
         {
-            if (rows[i].Key != key) continue;
+            var byKey = new Dictionary<int, int[]>();
+            foreach (var g in r.Select((row, i) => (row.Key, i)).GroupBy(x => x.Key)) byKey[g.Key] = [.. g.Select(x => x.i)];
+            return byKey;
+        });
+        if (!index.TryGetValue(key, out var indices)) return -1;
+        foreach (int i in indices)
+        {
             int l = rows[i].Level;
             if (l <= level && l > bestLevel) (best, bestLevel) = (i, l);
             if (l < lowLevel) (low, lowLevel) = (i, l);

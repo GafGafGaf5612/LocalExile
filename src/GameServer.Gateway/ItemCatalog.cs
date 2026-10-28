@@ -238,12 +238,13 @@ sealed class ItemCatalog
     /// <summary>A base's defence range from ArmourTypes.dat (the values the client interpolates with the item's base
     /// percentile). Body armour, helmets, gloves, boots and shields have them; most other bases are zero.</summary>
     public readonly record struct BaseDefences(int ArmourMin, int ArmourMax, int EvasionMin, int EvasionMax,
-        int EnergyShieldMin = 0, int EnergyShieldMax = 0, bool HasAdditionalVariableRange = false)
+        int EnergyShieldMin = 0, int EnergyShieldMax = 0, bool HasAdditionalVariableRange = false,
+        int WardMin = 0, int WardMax = 0)
     {
         /// <summary>Sacred Orb eligibility includes Ward and the native table's fifth, currently unnamed range.
-        /// These additional ranges do not add Ward or other defence mechanics to the character calculation.</summary>
+        /// Ward has its own pool calculation; the unnamed range only affects reroll eligibility.</summary>
         public bool HasVariableRange => ArmourMin != ArmourMax || EvasionMin != EvasionMax
-            || EnergyShieldMin != EnergyShieldMax || HasAdditionalVariableRange;
+            || EnergyShieldMin != EnergyShieldMax || WardMin != WardMax || HasAdditionalVariableRange;
 
         /// <summary>Native 3.29.3b base getters (0x1424af890/910/990): one shared roll over 31,
         /// rounded halfway up before local modifiers. Wire 32 is the special minimum-base state.</summary>
@@ -279,7 +280,9 @@ sealed class ItemCatalog
                 r.GetProperty("EvasionMin").GetInt32(), r.GetProperty("EvasionMax").GetInt32(),
                 r.TryGetProperty("EnergyShieldMin", out var esMin) ? esMin.GetInt32() : 0,
                 r.TryGetProperty("EnergyShieldMax", out var esMax) ? esMax.GetInt32() : 0,
-                Variable("WardMin", "WardMax") || Variable("__col10", "__col11"));
+                Variable("WardMin", "WardMax") || Variable("__col10", "__col11"),
+                r.TryGetProperty("WardMin", out var wardMin) ? wardMin.GetInt32() : 0,
+                r.TryGetProperty("WardMax", out var wardMax) ? wardMax.GetInt32() : 0);
         }
         return result;
     }

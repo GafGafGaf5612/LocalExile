@@ -12,7 +12,7 @@ partial class Program
         {
             TrimLeechLocked(conn);
             if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0) return default;
-            var active = LeechOf(conn).Active(conn.Clock.Elapsed.TotalSeconds);
+            var active = LeechOf(conn).Active(ProjectileWorldTime(conn));
             return (active.Life, active.Mana, active.EnergyShield, conn.EnergyShield.Full);
         }
     }
@@ -34,7 +34,7 @@ partial class Program
         {
             int claws = (ActiveMainHand(conn)?.Type?.Class == "Claw" ? 1 : 0)
                 + (ActiveOffHand(conn)?.Type?.Class == "Claw" ? 1 : 0);
-            LeechOf(conn).Configure(conn.Clock.Elapsed.TotalSeconds,
+            LeechOf(conn).Configure(ProjectileWorldTime(conn),
                 LeechLimits.Resolve(get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield, Replacement, onLowLife),
                 get, Replacement, claws);
             TrimLeechLocked(conn);
@@ -44,7 +44,7 @@ partial class Program
     // Pool commits (including instant flasks/block gains) cannot leave ordinary leech alive until the next tick.
     internal static void TrimLeechLocked(ClientState conn)
     {
-        double now = conn.Clock.Elapsed.TotalSeconds;
+        double now = ProjectileWorldTime(conn);
         if (conn.PlayerLife == 0) LeechOf(conn).Clear(now);
         else LeechOf(conn).ClearFull(now, conn.PlayerLife >= conn.PlayerMaxLife,
             conn.PlayerMana >= UnreservedMana(conn), conn.EnergyShield.Current >= conn.EnergyShield.Maximum);
@@ -71,7 +71,7 @@ partial class Program
             amounts.EnergyShield = 0;
             if (session.ConvertsLifeToEnergyShield) amounts.Life = 0;
         }
-        double now = conn.Clock.Elapsed.TotalSeconds;
+        double now = ProjectileWorldTime(conn);
         var instant = session.Hit(now, amounts, conn.PlayerLife >= conn.PlayerMaxLife,
             conn.PlayerMana >= UnreservedMana(conn), conn.EnergyShield.Current >= conn.EnergyShield.Maximum, sources.Attack);
         uint life = conn.PlayerLife, mana = conn.PlayerMana;

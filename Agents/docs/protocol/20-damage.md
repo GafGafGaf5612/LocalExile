@@ -924,6 +924,18 @@ Character-stat aggregation copies developer values and their key set from one lo
 concurrent command from adding a key between copies and faulting the periodic refresh task. Four observed-task
 regressions cover tick-only and tick-plus-recovery loops with both native and synthetic stat layouts.
 
+### Composition with the upstream projectile runtime
+
+The issue #75 merge uses the single chronological projectile engine for ordinary bows and gem projectiles. Admission
+captures one shared critical roll; release retains selected accuracy, conversion-history damage, weapon-local
+penetration, impale settings and raw leech sources. Accepted contacts perform evasion/critical confirmation, direct
+mitigation, leech, then separate impale reflection. Kills keep corpse/impale lifetime and level-up refills trim leech.
+The recovery writer advances the projectile horizon before consuming earned recovery. Leech conditions and limits
+use that committed horizon, preventing late pump work from being aged prematurely to the wall clock.
+Decision: port these consumers into the new engine; keeping the removed flight task would duplicate execution paths
+and lose upstream continuation/secondary-area rules. The [framework guide](../game/projectile-framework.md#issue-75-integration)
+and [merge report](../dev/issue75-review.md#upstream-merge-resolution) record the contracts and validation.
+
 ## 6. Not modelled yet
 
 - Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances are

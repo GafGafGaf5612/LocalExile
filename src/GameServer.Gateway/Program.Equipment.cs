@@ -12,27 +12,39 @@ partial class Program
     static PlayerInventories ItemsOf(ClientState conn) => PlayerInventories.For(string.IsNullOrEmpty(conn.Character) ? "Exile" : conn.Character, Items);
 
     // Active local item defences retain their base roll, local conversions and final native rounding.
-    static IEnumerable<(byte Row, (int Armour, int Evasion, int EnergyShield) Defence)> EquippedArmourDefences(ClientState conn)
+    static IEnumerable<(byte Row, (decimal Armour, decimal Evasion, int EnergyShield, decimal Ward) Defence)> EquippedArmourDefences(
+        ClientState conn, Func<string, int>? get = null)
     {
         var items = ItemsOf(conn);
         var catalog = Items;
         foreach (byte row in new[] { PlayerInventories.BodyArmour, PlayerInventories.Helmet, PlayerInventories.Gloves, PlayerInventories.Boots, PlayerInventories.Offhand1 })
             if (items.Items(row) is [var equipped, ..] && !IsInactive(conn, equipped.Id)
                 && catalog.ByHash(equipped.Item.TypeHash) is { } type && catalog.Defences(type) is { } defences)
-                yield return (row, ItemDefences.Calculate(equipped.Item, defences, catalog.Mods));
+            {
+                var (a, e, s) = ItemDefences.Calculate(equipped.Item, defences, catalog.Mods);
+                int percent = row == PlayerInventories.BodyArmour
+                    ? Math.Clamp(get?.Invoke("ward_instead_of_%_body_armour_and_evasion") ?? 0, 0, 100) : 0;
+                decimal armourWard = a * percent / 100m, evasionWard = e * percent / 100m;
+                var local = ItemModStats.Local(equipped.Item, catalog.Mods);
+                decimal ward = armourWard + evasionWard
+                    + (long)WardState.Max((decimal)defences.WardMin + local.GetValueOrDefault("local_ward"), local.GetValueOrDefault("local_ward_+%"))
+                        * (100 + Math.Clamp((int)equipped.Item.Quality, 0, 100)) / 100;
+                yield return (row, (a - armourWard, e - evasionWard, s, ward));
+            }
     }
 
     // Active item-tooltip values become flat inputs to the character-wide pool calculation.
-    static (int Armour, int Evasion, int EnergyShield) EquippedBaseDefences(ClientState conn)
+    static (decimal Armour, decimal Evasion, int EnergyShield, decimal Ward) EquippedBaseDefences(ClientState conn, Func<string, int>? get = null)
     {
-        long armour = 0, evasion = 0, energyShield = 0;
-        foreach (var (_, defence) in EquippedArmourDefences(conn))
+        decimal armour = 0, evasion = 0, ward = 0; long energyShield = 0;
+        foreach (var (_, defence) in EquippedArmourDefences(conn, get))
         {
             armour += defence.Armour;
             evasion += defence.Evasion;
             energyShield += defence.EnergyShield;
+            ward += defence.Ward;
         }
-        return ((int)Math.Min(int.MaxValue, armour), (int)Math.Min(int.MaxValue, evasion), (int)Math.Min(int.MaxValue, energyShield));
+        return (armour, evasion, (int)Math.Min(int.MaxValue, energyShield), ward);
     }
 
     // Native 0x142523ab0: flag selects 100%, otherwise use the percentage; truncate each item's local ES separately.

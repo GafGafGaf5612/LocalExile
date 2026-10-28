@@ -44,7 +44,7 @@ partial class Program
             string sourceName = Stats.Name(stat) ?? args[0];
             bool rebuildLife = LifeManaPoolSources.IsLifeInput(sourceName) || InherentAttributeBonuses.IsLifeInput(sourceName);
             bool rebuildMana = LifeManaPoolSources.IsManaInput(sourceName) || stat == Stats.Key(StrengthMana.PerFourStrength)
-                || InherentAttributeBonuses.IsManaInput(sourceName);
+                || InherentAttributeBonuses.IsManaInput(sourceName) || stat == Stats.Key(PowerOfPurpose.RawFlag);
             bool rebuildDefences = AttributeDefenceSources.IsInput(sourceName) || InherentAttributeBonuses.IsInput(sourceName);
             bool rebuildEnergyShield = sourceName == AttributeDefenceSources.EnergyShieldPerTenStrength
                 || InherentAttributeBonuses.IsEnergyShieldInput(sourceName);
@@ -580,7 +580,8 @@ partial class Program
             if (args.Length < 2) throw new ArgumentException("a damage type and an amount");
             if (ParseDamageType(args[0]) is not { } type) throw new ArgumentException("fire, cold, lightning, chaos or physical");
             if (!int.TryParse(args[1], out int amount) || amount <= 0) throw new ArgumentException("a positive amount");
-            if (!TryDevEnemyHit(conn, type, amount, false, false, false, out var hit))
+            if (!TryDevEnemyHit(conn, type, amount, false, false, false, out var hit,
+                ranged: args.Length > 2 && args[2] == "ranged"))
             {
                 await conn.Commands!.Reply(conn.PlayerLife == 0 ? "You are already dead." : "Enemy test hit rejected while paused or leaving.");
                 return;
