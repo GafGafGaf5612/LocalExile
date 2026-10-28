@@ -77,11 +77,11 @@ Shared area scaling preserves the blast/placement ratio, not the hit count on a 
 For example, normal KB's inner uncovered distance grows from 6 to 12 cells when both radii double.
 More area therefore increases overall coverage without guaranteeing single-target or nearby-target overlap.
 
-`ClusterDelaySeconds = 1d / 30` and `ClusterIntervalSeconds = 1d / 30` are separate recipe parameters.
+`ClusterDelaySeconds = 0` and `ClusterIntervalSeconds = 1d / 30` are separate recipe parameters.
 Slot i generates its native effect and commits its damage at trigger + delay + i * interval (zero-based i), so four
-slots run at 1/30, 2/30, 3/30 and 4/30 seconds. Each parameter converts to exactly 4000 simulation quanta,
-without rounding to integer milliseconds. These are user-selected development values, not frame measurements,
-experiential estimates or established official timings. Omitted terrain slots retain their gaps.
+slots run at 0, 1/30, 2/30 and 3/30 seconds. The first blast is immediate and each later interval is exactly 4000
+simulation quanta, without rounding to integer milliseconds. These are user-tuned feel values for development,
+not frame measurements or established official timings. Omitted terrain slots retain their gaps.
 Pending blasts survive parent continuation/removal, retain the trigger phase and share the simulation pause/teardown.
 The native secondary burst uses `kinetic_blast_small` (`Metadata/Effects/Spells/cluster_burst/mini.ao` by default)
 at each actual center for 0.35 seconds, resolved through the equipped skill-art variation.

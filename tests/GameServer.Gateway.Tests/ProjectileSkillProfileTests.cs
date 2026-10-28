@@ -23,12 +23,13 @@ public class ProjectileSkillProfileTests
     {
         var w = new ProjectileRuntimeProbe();
         w.Release(Profile(effect, ("skill_area_of_effect_+%", 300)) with { Range = 20 });
-        w.Advance(.2); Assert.Empty(Areas(w));
-        w.Advance(.2 + 1d / 30 - 1d / ProjectileRuntime.QuantaPerSecond); Assert.Empty(Areas(w));
-        w.Advance(.2 + 1d / 30); Assert.Single(Areas(w));
+        w.Advance(.2 - 1d / ProjectileRuntime.QuantaPerSecond); Assert.Empty(Areas(w));
+        w.Advance(.2); Assert.Single(Areas(w));
+        w.Advance(.2 + 1d / 30 - 1d / ProjectileRuntime.QuantaPerSecond); Assert.Single(Areas(w));
+        w.Advance(.2 + 1d / 30); Assert.Equal(2, Areas(w).Length);
         w.Advance(1);
         var areas = Areas(w); Assert.Equal(count, areas.Length);
-        Assert.Equal(Enumerable.Range(1, count).Select(i => ProjectileRuntime.Time(.2) + i * 4000), areas.Select(e => e.At));
+        Assert.Equal(Enumerable.Range(0, count).Select(i => ProjectileRuntime.Time(.2) + i * 4000), areas.Select(e => e.At));
         Assert.All(areas, e => Assert.Equal(placement * 2, (e.Position - new ProjectileVector(30, 10)).Length, 7));
         double previous = Math.Atan2(areas[0].Position.Y - 10, areas[0].Position.X - 30), turn = 0;
         foreach (var area in areas.Skip(1))
@@ -60,7 +61,7 @@ public class ProjectileSkillProfileTests
         w.Runtime.Release(new(Profile("KineticBlast", ("projectiles_return", 1)) with { Range = 20 },
             owner, owner, 1, new(10, 10), new(110, 10)) { ReturnAnchor = owner });
         w.Advance(.2);
-        Assert.Empty(Areas(w)); Assert.Equal(1, Assert.Single(w.Runtime.Projectiles).Phase);
+        Assert.Single(Areas(w)); Assert.Equal(1, Assert.Single(w.Runtime.Projectiles).Phase);
         w.Advance(.4); Assert.Equal(4, Areas(w).Length);
         w.Advance(2.2);
         Assert.Equal(8, Areas(w).Length); Assert.Empty(w.Runtime.Projectiles);

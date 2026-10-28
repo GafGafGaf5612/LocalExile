@@ -3,8 +3,8 @@ using GameServer.Core.Projectiles;
 /// <summary>Named behavior and catalog policies on the common projectile runtime.</summary>
 static class GatewayProjectileSkillProfiles
 {
-    // User-selected development timings, not measurements of the official game. Keep fractional milliseconds.
-    public const double ClusterDelaySeconds = 1d / 30;
+    // User-tuned feel values, not official timings or frame measurements. Keep fractional milliseconds.
+    public const double ClusterDelaySeconds = 0;
     public const double ClusterIntervalSeconds = 1d / 30;
     public static IReadOnlyList<string> Effects { get; } = Array.AsReadOnly(new[]
         { "Fireball", "KineticBlast", "KineticBlastAltX", "KineticBlastAltY" });

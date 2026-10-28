@@ -355,8 +355,8 @@ and can require explicit recipes.
   keeps one primary and cannot Split.
   The internal AltY row retains normal-KB compatibility, without establishing a third playable gem.
   Separate blast/placement radii use supported area stats once; independent explosions can overlap covered victims.
-  KB centers use a fixed scaled circle and random sector angles, with separate 1/30 s first-delay/inter-slot parameters.
-  Both are user-selected development values, without official measurement or experiential basis.
+  KB centers use a fixed scaled circle and random sector angles, with separate first-delay/inter-slot parameters:
+  immediate first blast, then 1/30 s between slots. These are user-tuned feel values, not official measurements.
   Secondary explosions use their own small-burst art and equipped MTX; native art scales to the actual blast radius.
   Skill-bar explosion totals use the resolved cluster recipe, including quality and Clustering's projectile conversion.
   Fireball wall-contact damage and default/Stygian packets have regression coverage; visual visibility remains unverified.
