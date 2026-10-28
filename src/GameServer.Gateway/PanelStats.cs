@@ -94,12 +94,16 @@ static class PanelStats
         .. Hands(h => new($"virtual_total_{h}_impale_on_hit_%_chance", ["attacks_impale_on_hit_%_chance", "impale_on_hit_%_chance"],
             Local: ["local_attacks_impale_on_hit_%_chance"])),
         .. Hands(h => new($"{h}_attack_damage_penetrates_fire_resist_%", ["base_reduce_enemy_fire_resistance_%", ElementalPenetration,
-            PenetrateElemental], Local: ["local_fire_penetration_%", "local_elemental_penetration_%"])),
+            PenetrateElemental, "base_attack_damage_penetrates_fire_resist_%", "base_attack_damage_penetrates_elemental_resist_%"],
+            Local: ["local_fire_penetration_%", "local_elemental_penetration_%"])),
         .. Hands(h => new($"{h}_attack_damage_penetrates_cold_resist_%", ["base_reduce_enemy_cold_resistance_%", ElementalPenetration,
-            PenetrateElemental], Local: ["local_cold_penetration_%", "local_elemental_penetration_%"])),
+            PenetrateElemental, "base_attack_damage_penetrates_cold_resist_%", "base_attack_damage_penetrates_elemental_resist_%"],
+            Local: ["local_cold_penetration_%", "local_elemental_penetration_%"])),
         .. Hands(h => new($"{h}_attack_damage_penetrates_lightning_resist_%", ["base_reduce_enemy_lightning_resistance_%",
-            ElementalPenetration, PenetrateElemental], Local: ["local_lightning_penetration_%", "local_elemental_penetration_%"])),
-        .. Hands(h => new($"{h}_attack_damage_penetrates_chaos_resist_%", ["reduce_enemy_chaos_resistance_%"],
+            ElementalPenetration, PenetrateElemental, "base_attack_damage_penetrates_lightning_resist_%",
+            "base_attack_damage_penetrates_elemental_resist_%"], Local: ["local_lightning_penetration_%", "local_elemental_penetration_%"])),
+        .. Hands(h => new($"{h}_attack_damage_penetrates_chaos_resist_%", ["reduce_enemy_chaos_resistance_%",
+            "base_attack_damage_penetrates_chaos_resist_%"],
             Local: ["local_chaos_penetration_%"])),
         .. Hands(h => new($"{h}_stun_threshold_reduction_+%", ["base_stun_threshold_reduction_+%"],
             Local: ["local_stun_threshold_reduction_+%"])),
@@ -225,17 +229,20 @@ static class PanelStats
     static readonly Sum[] SelectedSums = [.. Sums.Where(s => s.Display is "skill_area_of_effect_+%"
         or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%"
         or "reduce_enemy_fire_resistance_%" or "reduce_enemy_cold_resistance_%"
-        or "reduce_enemy_lightning_resistance_%")];
+        or "reduce_enemy_lightning_resistance_%"
+        || s.Display.Contains("_attack_damage_penetrates_", StringComparison.Ordinal))];
 
     /// <summary>Selected-skill aliases from original raw character and qualifying skill/support inputs.
     /// Derive each alias once, clamp the completed sum, and retain zero to clear a removed contribution.
     /// Published character aliases must not be passed back as raw seeds.</summary>
     public static List<(string Stat, int Value)> Selected(Func<string, int> character, Func<string, int> own,
-        int playerLevel = 1)
+        int playerLevel = 1, Func<string, int>? mainHand = null, Func<string, int>? offHand = null)
     {
         int level = Math.Clamp(playerLevel, 1, Progression.MaxLevel);
         return [.. SelectedSums.Select(sum => (sum.Display,
-            Project(sum, RawSum(sum, character, null, level) + RawSum(sum, own, null, level))))];
+            Project(sum, RawSum(sum, character,
+                sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null }, level)
+                + RawSum(sum, own, null, level))))];
     }
 
     /// <summary>The global duration coefficient shared by the panel and actual flask uses. The display's virtual

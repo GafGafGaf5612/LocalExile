@@ -20,6 +20,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
         "fire-penetration" => PenetrationSpec("Fire"),
         "cold-penetration" => PenetrationSpec("Cold"),
         "lightning-penetration" => PenetrationSpec("Lightning"),
+        "attack-fire-penetration" => AttackPenetrationSpec("Fire"),
+        "attack-cold-penetration" => AttackPenetrationSpec("Cold"),
+        "attack-lightning-penetration" => AttackPenetrationSpec("Lightning"),
         _ => throw new ArgumentOutOfRangeException(nameof(field)),
     };
 
@@ -28,6 +31,12 @@ public sealed partial class AscendancyGatewayIntegrationTests
         $"base_reduce_enemy_{element.ToLowerInvariant()}_resistance_%",
         $"base_reduce_enemy_{element.ToLowerInvariant()}_resistance_%",
         $"reduce_enemy_{element.ToLowerInvariant()}_resistance_%", 10, 20, 0);
+
+    static SelectedMiscCase AttackPenetrationSpec(string element) => PenetrationSpec(element) with
+    {
+        Active = "SkillGemHeavyStrike",
+        Alias = $"main_hand_attack_damage_penetrates_{element.ToLowerInvariant()}_resist_%",
+    };
 
     static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
 
@@ -38,6 +47,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("fire-penetration")]
     [InlineData("cold-penetration")]
     [InlineData("lightning-penetration")]
+    [InlineData("attack-fire-penetration")]
+    [InlineData("attack-cold-penetration")]
+    [InlineData("attack-lightning-penetration")]
     public void Selected_misc_real_supports_compose_once_and_follow_link_and_source_removal(string field)
     {
         var spec = SelectedMiscSpec(field);
@@ -89,6 +101,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("fire-penetration")]
     [InlineData("cold-penetration")]
     [InlineData("lightning-penetration")]
+    [InlineData("attack-fire-penetration")]
+    [InlineData("attack-cold-penetration")]
+    [InlineData("attack-lightning-penetration")]
     public void Selected_misc_signed_cancellation_and_final_developer_zero_replace_the_full_selected_sum(string field)
     {
         var spec = SelectedMiscSpec(field);
@@ -156,6 +171,54 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Check(35, supported: true);
         game.Socket(linked: false);
         Check(15, supported: false);
+    }
+
+    [Fact]
+    public void Selected_attack_penetration_preserves_each_active_weapons_local_modifier()
+    {
+        var spec = AttackPenetrationSpec("Fire");
+        using var game = new SelectedMiscCharacter(spec);
+        var catalog = Program.Items;
+        var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        var main = Assert.Single(inventory.Items(PlayerInventories.Weapon1));
+        ItemMod Local(string id, int value)
+        {
+            var mod = catalog.Mods.ById(id)!;
+            var source = Assert.Single(mod.Stats);
+            Assert.Equal("local_elemental_penetration_%", source.Id);
+            Assert.True(source.Local);
+            Assert.InRange(value, source.Min, source.Max);
+            return new(ModSection.Explicit, mod.Hash, [value]);
+        }
+        var mainMod = Local("JunMaster2ElementalPenetrationWithAttacks1", 6);
+        var offMod = Local("JunMaster2ElementalPenetrationWithAttacks2", 9);
+        var inactiveMod = Local("LocalElementalPenetrationUnique__1", 30);
+        Assert.NotNull(inventory.Change(PlayerInventories.Weapon1, main.Id, item => item with { Mods = [mainMod] }));
+        var off = inventory.Add(3, 0, 0, LevelPanelCarrier(catalog, "Rusted Sword", offMod));
+        inventory.Add(14, 0, 0, LevelPanelCarrier(catalog, "Rusted Sword", inactiveMod));
+        game.Socket();
+
+        void Check(int selectedMain, int selectedOff, int actorMain, int actorOff)
+        {
+            var view = game.Read();
+            Assert.Equal(selectedMain, view.Get(spec.Alias));
+            Assert.Equal(selectedOff, view.Get("off_hand_attack_damage_penetrates_fire_resist_%"));
+            var actor = Program.CharacterPlayerStats(game.State);
+            Assert.Equal(actorMain, actor[SelectedMiscKey(spec.Alias)]);
+            Assert.Equal(actorOff, actor[SelectedMiscKey("off_hand_attack_damage_penetrates_fire_resist_%")]);
+            Assert.Equal(actorMain, game.Read(other: true).Get(spec.Alias));
+            Assert.Equal(view.Stats.OrderBy(s => s.Key), game.Read().Stats.OrderBy(s => s.Key));
+        }
+
+        Check(36, 39, 16, 19);
+        Assert.NotNull(inventory.Change(PlayerInventories.Weapon1, main.Id, item => item with { Mods = [] }));
+        game.Refresh();
+        Check(30, 39, 10, 19);
+        Assert.NotNull(inventory.Remove(3, off.Id));
+        game.Refresh();
+        Check(30, 30, 10, 10);
+        game.Socket(linked: false);
+        Check(10, 10, 10, 10);
     }
 
     [Fact]

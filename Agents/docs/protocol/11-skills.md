@@ -1935,8 +1935,8 @@ sum is a display coefficient; actual flask use and local/global factor compositi
 [13-items.md](13-items.md#8-life-and-mana-flasks).
 
 Selected aliases derive from one immutable raw character snapshot plus the qualifying skill/support's own raw
-inputs: `skill_area_of_effect_+%`, `display_skill_increased_item_rarity_+%`, `virtual_minion_damage_+%` and
-`reduce_enemy_fire/cold/lightning_resistance_%`.
+inputs: `skill_area_of_effect_+%`, `display_skill_increased_item_rarity_+%`, `virtual_minion_damage_+%`,
+`reduce_enemy_fire/cold/lightning_resistance_%` and the eight main/off-hand penetration aliases.
 The rarity sum includes direct/base item rarity and `base_killed_monster_dropped_item_rarity_+%`; the minion sum
 includes increased `minion_damage_+%`, keeping support MORE separate. Previously derived actor aliases are not fed
 back as source inputs. The completed signed sum clamps once and retains explicit zero after cancellation/removal;
@@ -1960,7 +1960,16 @@ selected record and the existing hit consumer.
 Nine Gateway regressions cover all three elements, link/source removal, signed cancellation, explicit final
 zero/replacement, support requirement failure/recovery and unrelated/default-skill isolation.
 These pass within 29 focused tests on this branch; fresh native panel verification remains pending.
-Attack-hand aliases, penetration prohibitions in the display and unsupported penetration sources remain separate work.
+The eight attack-hand penetration aliases now also include their attack-only typed and elemental base sources.
+Selected attacks recompute those sums from raw actor/skill values and each active hand's own local modifiers.
+The immutable publication snapshot retains both local dictionaries so recomputation cannot lose them or read an
+already-derived alias as an additional source.
+General 10 plus elemental 5 plus typed attack 7 plus elemental attack 3 gives 25 for each hand and 15 for spells.
+Six real-support lifecycle regressions cover selected Heavy Strike for all three elements, five pure regressions
+cover attack-only and local scope, and one real-modifier Gateway case preserves main 6/off 9 while excluding an
+inactive weapon's 30; removing either active modifier or unlinking the support restores the corresponding values.
+These are automated publication checks, not proof of native formatting or weapon-local hit execution.
+Penetration prohibitions in the display and unsupported combat penetration sources remain separate work.
 
 `PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
 

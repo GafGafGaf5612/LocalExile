@@ -315,6 +315,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   Nine new Gateway regressions cover link/source removal, cancellation, overrides, requirements and skill isolation;
   general elemental penetration composes to 35 in both the panel and hit consumer.
   These pass within 29 focused checks on this branch; fresh native verification remains pending.
+  Both attack-hand penetration rows include typed/elemental attack-only sources and qualified linked supports.
+  Raw local hand snapshots preserve each active weapon's contribution during selected-skill recomputation.
+  Twelve additional automated cases cover all three elemental supports, chaos/attack-only sums, independent
+  local modifiers, inactive weapons, source removal and link changes; native display checks remain pending.
+  Weapon-local and non-base combat penetration, display prohibitions and target conditions remain incomplete.
   Historical LocalExile Ruthless support exclusions are outside this branch. Link/source removal, incompatible or unqualified supports,
   unrelated/default skills and repeated builds are covered; minion combat and item-drop execution remain separate.
   Added-base critical/default-mirror/selected-alias cases pass 52/19/22 new tests plus 95 existing controls:

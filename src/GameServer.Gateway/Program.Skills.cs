@@ -93,7 +93,8 @@ partial class Program
         CharacterPlayerStatsCore(conn, out _);
 
     sealed record PanelSourceSnapshot(IReadOnlyDictionary<uint, int> Raw,
-        IReadOnlySet<uint> Overrides, int PlayerLevel);
+        IReadOnlySet<uint> Overrides, int PlayerLevel,
+        IReadOnlyDictionary<string, int> MainHand, IReadOnlyDictionary<string, int> OffHand);
 
     static Dictionary<uint, int> CharacterPlayerStatsCore(ClientState conn, out double baselineLifePerSecond) =>
         CharacterPlayerStatsSnapshot(conn, out baselineLifePerSecond, out _);
@@ -146,7 +147,8 @@ partial class Program
         var (mainLocal, offLocal) = HandLocalStats(conn);
         // Capture only for a skill publication. Recovery-only callers avoid these extra immutable copies.
         panelSources = capturePanelSources
-            ? new(stats.ToFrozenDictionary(), devSet.ToFrozenSet(), conn.Pools.Level) : null;
+            ? new(stats.ToFrozenDictionary(), devSet.ToFrozenSet(), conn.Pools.Level,
+                mainLocal.ToFrozenDictionary(), offLocal.ToFrozenDictionary()) : null;
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n),
             playerLevel: conn.Pools.Level)
             .Concat(PanelStats.FromPools(Get, conn.Pools))
@@ -428,7 +430,8 @@ partial class Program
             // runtime radius calculations so an already-derived selected AoE alias cannot count its base twice.
             int RawPanel(string stat) => Stats.Key(stat) is uint key ? panelSources.Raw.GetValueOrDefault(key) : 0;
             int OwnPanel(string stat) => Stats.Key(stat) is uint key ? own.GetValueOrDefault(key) : 0;
-            foreach (var (stat, value) in PanelStats.Selected(RawPanel, OwnPanel, panelSources.PlayerLevel))
+            foreach (var (stat, value) in PanelStats.Selected(RawPanel, OwnPanel, panelSources.PlayerLevel,
+                panelSources.MainHand.GetValueOrDefault, panelSources.OffHand.GetValueOrDefault))
                 if (Stats.Key(stat) is uint key)
                     stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
             if (Skills.FindByRow(id, effect, supported.Level, [.. stats.Select(kv => (kv.Key, kv.Value))]) is { } skill)
