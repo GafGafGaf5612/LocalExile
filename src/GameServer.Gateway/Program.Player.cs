@@ -124,21 +124,36 @@ partial class Program
         }
     }
 
-    static async Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label)
+    static Task PlayerDied(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string label) =>
+        PlayerDiedAtEpoch(remote, stream, ciphers, conn, label);
+
+    static async Task PlayerDiedAtEpoch(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+        string label, int? expectedEpoch = null)
     {
+        int deathEpoch;
         lock (conn.Monsters)
         {
-            if (conn.PlayerLife != 0) return; // An older notification cannot clear a resurrected owner's new contacts.
+            if (conn.Closed || conn.LeavingArea || conn.PlayerLife != 0
+                || expectedEpoch is int expected && expected != conn.IncomingHitEpoch
+                || conn.DeathNotificationEpoch == conn.IncomingHitEpoch) return;
             conn.InvalidateIncomingHits();
+            conn.DeathNotificationEpoch = deathEpoch = conn.IncomingHitEpoch;
             FortificationOf(conn).Clear();
             ClearRageOnDeath(conn);
+            ChargesOnDeath(conn);
             ClearAntiquarianOnDeath(conn);
         }
         await SendVaalSouls(remote, stream, ciphers, conn);
         await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
-        ChargesOnDeath(conn);
-        await Send(remote, stream, ciphers, InstanceProtocol.DeathScreen(DeathScreenFlags(conn)), label);
+        await Send(remote, stream, ciphers, [], label, atGate: () =>
+        {
+            lock (conn.Monsters)
+                return !conn.Closed && !conn.LeavingArea && conn.PlayerLife == 0 && conn.IncomingHitEpoch == deathEpoch
+                    ? [.. InstanceProtocol.LifeUpdate(PlayerId, 0),
+                        .. InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),
+                        .. InstanceProtocol.DeathScreen(DeathScreenFlags(conn))] : null;
+        });
     }
 
     static int ReservedMana(ClientState conn)
@@ -152,7 +167,9 @@ partial class Program
 
     static int UnreservedMana(ClientState conn) => Math.Max(0, (int)conn.Pools.Mana - ReservedMana(conn));
 
-    // 0x1b1 for the mana pool: every update carries the reserved amount, or the client would clear it.
+    // 0x1b1 for the mana pool: every update carries the reserved amount, or the client would clear it. The pool and the
+    // reservation are read under one lock, so a packet never pairs a pool from before an aura toggle with the
+    // reservation from after it.
     static async Task SendPlayerMana(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         string? log = null)
     {
@@ -193,6 +210,12 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(key, rate)]), null);
     }
 
+    // The base mana a gem skill costs at its level (its mana_cost stat), before supports: the client spends it at the
+    // start of every use, including a use that becomes a walk (attack-move), so the cost the server gives back must be
+    // known outside the supported gem (ManaCostTests pins Holy Strike's 6).
+    internal static uint ManaCost(StatCatalog stats, SkillCatalog skills, int effect, int level, int quality) =>
+        stats.Key("mana_cost") is uint k ? (uint)skills.EffectStats(effect, level, quality).Where(kv => kv.Item1 == k).Select(kv => kv.Item2).FirstOrDefault() : 0;
+
     // A gem skill's mana cost at the gem's level (its mana_cost stat), paid when the cast starts. False when the player lacks
     // the mana.
     static bool PayMana(ClientState conn, ushort skillId, out uint cost)
@@ -214,7 +237,8 @@ partial class Program
         var own = skillId == 0 ? new Dictionary<uint, int>() : SupportedSkill(conn, skillId).Stats;
         int speed = CastSpeedPct(CharacterPlayerStats(conn));
         if (Stats.Key("base_cast_speed_+%") is uint k) speed += own.GetValueOrDefault(k);
-        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds;
+        return SpellCastTiming.ForSkill(Skills, effect, speed)?.DurationMilliseconds is int duration
+            ? (int)Math.Min(int.MaxValue, Math.Ceiling(duration / PlayerActionFactor(conn))) : null;
     }
 
     // cast_speed_+% is the total (PanelStats: base_cast_speed_+% and attack_and_cast_speed_+% are already in it).
@@ -350,6 +374,7 @@ partial class Program
         double last = conn.Clock.Elapsed.TotalSeconds;
         int suppression = Suppression(conn).Chance;
         var criticalContext = CriticalContext(conn);
+        var ailments = conn.ElementalAilments.Snapshot(last);
         while (!conn.Closed)
         {
             await Task.Delay(PlayerTickMs);
@@ -364,6 +389,11 @@ partial class Program
             {
                 criticalContext = currentCritical;
                 await SendCharacterStats(remote, stream, ciphers, conn, "critical strike conditions changed");
+            }
+            if (conn.ElementalAilments.Snapshot(tickNow) is var nextAilments && nextAilments != ailments)
+            {
+                ailments = nextAilments;
+                await SendCharacterStats(remote, stream, ciphers, conn, "elemental ailments changed");
             }
             await SendAntiquarian(remote, stream, ciphers, conn);
             await SendRecentEnemyHits(remote, stream, ciphers, conn);
@@ -447,6 +477,7 @@ partial class Program
             last = now;
             uint lifeBefore, lifeAfter, manaBefore, manaAfter, manaCap;
             bool dead;
+            int? ailmentDeathEpoch = null;
             lock (conn.Monsters)
             {
                 lifeBefore = conn.PlayerLife;
@@ -464,7 +495,7 @@ partial class Program
                 }
                 else
                 {
-                    burnCarry += (InGracePeriod(conn) ? 0 : burnPerSecond) * seconds;
+                    burnCarry += (InGracePeriod(conn) ? 0 : burnPerSecond * conn.ElementalAilments.DamageTakenFactor(now)) * seconds;
                     int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
                     int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
@@ -472,10 +503,15 @@ partial class Program
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
                         life + lifeRate * seconds + fortificationLife + conn.Antiquarian.TakeRecovery(now)
                             + conn.EnduringCryRecovery.Take(now) - lifeBurn, ref lifeCarry, minimum: 1);
+                    AdvancePlayerAilmentsLocked(conn, recoveryFrom, now, recoveryStats);
+                    lifeAfter = conn.PlayerLife;
+                    if (lifeAfter == 0) ailmentDeathEpoch = conn.IncomingHitEpoch;
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
                         mana + manaRate * seconds, ref manaCarry);
                 }
             }
+            if (ailmentDeathEpoch is int lethalEpoch)
+                await PlayerDiedAtEpoch(remote, stream, ciphers, conn, "0x0055 lethal elemental ailment", lethalEpoch);
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
             if (dead)
             {
@@ -484,7 +520,8 @@ partial class Program
             }
             if (rf is not null && lifeAfter == 1 && conn.EnergyShield.Current == 0)
                 await EndRighteousFire(remote, stream, ciphers, conn, "one life and no energy shield");
-            if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
+            if (lifeAfter != lifeBefore && ailmentDeathEpoch is null)
+                await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
             if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
             bool lifeFull = lifeAfter == conn.PlayerMaxLife, manaFull = manaAfter == manaCap;
             ended.AddRange(conn.FlaskEffects.End(e => (e.LifePerSecond == 0 || lifeFull) && (e.ManaPerSecond == 0 || manaFull)));

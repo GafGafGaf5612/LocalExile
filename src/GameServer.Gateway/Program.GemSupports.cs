@@ -109,7 +109,7 @@ partial class Program
         }
         double more = Supports.AttackSpeedMultiplier(gem.Effect, gem.Level) * Math.Max(.01, 1 + Get("support_melee_physical_damage_attack_speed_+%_final") / 100.0)
             * Math.Max(.01, 1 + Get("support_multistrike_attack_speed_+%_final") / 100.0);
-        return Math.Max(TickSeconds, WeaponFor(conn).AttackSeconds(stats) / more);
+        return Math.Max(TickSeconds, WeaponFor(conn).AttackSeconds(stats) / more / PlayerActionFactor(conn));
     }
 
     static GameServer.Core.World.DamagePacket SupportedHit(ClientState conn, ushort skillId)

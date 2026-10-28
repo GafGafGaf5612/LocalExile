@@ -15,6 +15,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   instant, low life, other-pool costs, mana at the end, not removed at full, extra life), as Path of Building does.
   Several recovery flasks queue, the highest rate first (poewiki).
   Checked live: the base recovery and the extra-life suffix; the other mods and queueing by tests.
+  A successful use also sends S→C `0x263`; the native UI then looks the base type up and plays its use sound,
+  `Audio/Sound Effects/ItemSounds/flaskdrink.ogg` (traced on the official 3.29.3b client and captured from it).
+  Full pools refuse the flask before any charge or buff, with silent `0x263` result `0x4e2` and the authoritative pool;
+  mana fullness uses the unreserved cap (full-pool refusals verified live locally).
+  The client also pays the attack skill's mana for attack-moves the server only walks; the Gateway answers with the
+  authoritative mana so the orb and the flasks agree (probe 2026-10-26).
   Code: `Flasks.cs`, `FlaskRecovery.cs`, Gateway (`UseFlask`, `RunResourceRecovery`).
   Docs: [13](../docs/protocol/13-items.md) §8.
 - Flask charges: kills give 1 / 3.5 / 6 / 11 charges by rarity (Mods.dat monster rarity mods, poewiki), increased
