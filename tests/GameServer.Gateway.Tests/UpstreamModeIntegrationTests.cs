@@ -31,7 +31,7 @@ public class UpstreamModeIntegrationTests
         conn.Pools = Program.PoolsFor(conn, 1);
         conn.PlayerLife = 1;
         conn.RecentEnemyHits.Record(conn.Clock.Elapsed.TotalSeconds);
-        object?[] args = [conn, DamageType.Physical, 100_000, false, false, false, null];
+        object?[] args = [conn, DamageType.Physical, 100_000, false, false, false, null, false];
         try
         {
             bool accepted = (bool)typeof(Program).GetMethod("TryDevEnemyHit",

@@ -70,9 +70,11 @@ Guild stash storage is league-scoped for the other modes.
 Standard retains the old unscoped guild-stash key for compatibility with existing saves.
 Other leagues use separate keys, so their new guild storage cannot read that legacy bank.
 
-Player trading and party formation are not implemented in the current server for any mode.
-The SSF implementation enforces the available world, ground-item and guild-stash boundaries.
-Future party, player-trade and shared-loot features must consult the authoritative SSF flag before admitting a player.
+Player trading is available to living players in the same instance and full league outside SSF.
+Both request and acceptance enforce the authoritative modes; SSF town visibility grants no trade access.
+Offers and completion recheck eligibility, and completion holds both owners' combat locks through the exchange.
+Both inventories save in one transaction, so a failed second save cannot leave only half the exchange committed.
+Party formation remains unimplemented; future party and shared-loot features must enforce the same SSF boundary.
 The character-selection opt-out and Migrate All workflow, league-end merges and their progress transfers remain open.
 
 Code: `InstanceRegistry`, `InstanceManager`, `InstanceStore`, `AccountStash`, `Program.Stash` and `GameSession`.
@@ -210,6 +212,14 @@ The newer development hit path commits Hardcore deaths before notification, alon
 Overlapping-connection regressions cover resource ownership through transfer and logout.
 SSF tests combine shared peer publication with private dropped items, expiry and reused instance IDs.
 Queued-notification regressions cover terminal Hardcore background mutations.
+Integration of feature head `74b2c0a2` with main `59154b74` retains the single projectile runtime, Vaal budgets
+and current gem-requirement snapshots.
+Projectile kills use Ruthless item/gold rewards and gem XP, including the active utility-flask charge restriction.
+The shared synchronous quest/gem commits retain the Hardcore terminal-progress guard.
+Eighteen additional integration cases cover held-output rewards without replay, SSF trade request/acceptance refusal,
+mode and owner eligibility, active flasks, terminal progress and both-inventory trade rollback.
+The solution builds without warnings; Core, Data and Gateway suites pass with 688, 18 and 3850 tests respectively.
+This merge received automated validation only: this checkout has no `Client/Game.exe` or `Client/Game.patched.exe`.
 Automated validation uses isolated extracted data and temporary test saves.
 The existing league selection and default families are unchanged.
 Native checks against the integrated build used one copied 3.29.3b client and disposable saves:
