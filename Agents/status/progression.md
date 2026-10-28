@@ -51,6 +51,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native ordinary command checks do not establish an expanded chooser or special class gameplay.
   Antiquarian's Whaletooth Bangle now derives increased skill duration from complete groups of final Strength.
   Automated checks cover its real node, allocation, paid refund, reload, additive sources and explicit overrides.
+  Fifteen native owner-stat checks cover final attributes, complete groups, source removal, overrides and relog.
   This supplies owner stats; executable lifetime consumers and Phrecia native admission remain separate.
   Docs: [scope and compatibility gate](../docs/game/ascendancies.md).
 

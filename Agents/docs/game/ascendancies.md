@@ -89,6 +89,14 @@ Removing that replacement with `off` restores derivation; removing the per-ten s
 The automated lifecycle fixture allocates the real connected Antiquarian path, reloads its saved state,
 refunds the notable for five points, reloads again and reallocates it.
 This fixture does not admit a Phrecia game connection.
+On source `d842288a` over main `0805c0ca`, an unascended synthetic Marauder passed 15 native stat checks.
+The 3.29.3b client received 45% at 455/459 Strength and 46% at 460, plus signed-source and final-override checks.
+Flat/increased attributes produced 455/449 final Strength and 45%/44% duration; repeated rebuilds did not accumulate.
+Source removal and relog cleared the transient derived stats; cleanup returned the single client to character selection.
+Evidence: `logs/whaletooth-native/20261028-120417/` (metadata and results), with Gateway command logs in the checkout.
+Gateway/Core/Host embedded versions, listening Gateway path/CWD and the clean source revision were checked.
+The tested Gateway SHA-256 was `a2f7fb652ec8b6f39aa0d47a9c60b8362468bba26847412b8302d8bf8c35073c`.
+The solution built without warnings; Core 638, Data 18 and Gateway 3500 tests passed with public extracted data.
 The implementation supplies a shared owner stat without adding skill/summon lifetime execution.
 It does not extend minions' own skills or buffs, charge duration or flask duration.
 Elapsed lifetime checks belong with each future duration consumer; full Antiquarian gameplay remains incomplete.
