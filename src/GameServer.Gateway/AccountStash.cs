@@ -109,10 +109,11 @@ sealed class AccountStash
     /// data doesn't know stops the load (<see cref="UnknownSavedItemException"/>) and the save stays as it is.</summary>
     public static AccountStash For(string account, ItemCatalog catalog) => Create(account, catalog, FirstInventoryId, FirstItemId, StarterTabs);
 
-    /// <summary>The guild stash of the account (no guilds yet: each account is its own guild), saved as "guild:&lt;account&gt;"
-    /// and made with <see cref="GuildStarterTabs"/>.</summary>
-    public static AccountStash ForGuild(string account, ItemCatalog catalog) =>
-        Create("guild:" + account, catalog, GuildFirstInventoryId, GuildFirstItemId, GuildStarterTabs);
+    /// <summary>The guild stash of the account (no guilds yet: each account is its own guild), scoped to the full league.
+    /// Standard retains the legacy "guild:&lt;account&gt;" key. SSF never opens or creates a guild stash.</summary>
+    public static AccountStash ForGuild(string account, ItemCatalog catalog, string? league = null, bool solo = false) =>
+        solo ? throw new InvalidOperationException("Guild storage is unavailable in Solo Self-Found.")
+            : Create("guild:" + Key(account, league), catalog, GuildFirstInventoryId, GuildFirstItemId, GuildStarterTabs);
 
     /// <summary>The tabs a guild stash starts with.</summary>
     static readonly SavedTab[] GuildStarterTabs =

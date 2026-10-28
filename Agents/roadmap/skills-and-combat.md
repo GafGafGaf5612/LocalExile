@@ -228,7 +228,9 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 - **Known:** S→C 0x55 flags bit0/2/3 are mapped ([11](../docs/protocol/11-skills.md) §7);
   bit4 and the trailing u32 / u8 / u16 are not.
-- **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
+- **Done when:** Sanctum and other modes show their own options.
+  Hardcore Exit (C→S 0x153) is implemented; death migration and permanent Ruthless death are tracked in
+  [league modes](../docs/game/league-modes.md).
 
 ### Skill projectiles
 

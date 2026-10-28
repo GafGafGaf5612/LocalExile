@@ -36,7 +36,12 @@ partial class Program
             MaxResistance(conn, DamageType.Fire), PlayerImmunities(conn).Contains(DamageType.Fire));
         int lifeDamage = conn.EnergyShield.Damage(damage, false, until);
         conn.PlayerLife = (uint)Math.Max(0, (long)conn.PlayerLife - lifeDamage);
-        if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
+        if (conn.PlayerLife == 0)
+        {
+            conn.InvalidateIncomingHits();
+            // Commit the mode outcome inside lethal damage, before disconnects or network writes can intervene.
+            RecordHardcoreDeath(conn);
+        }
         if (previousAction != conn.ElementalAilments.ActionFactor(until)) conn.ApplyMovementSpeed();
         return damage;
     }

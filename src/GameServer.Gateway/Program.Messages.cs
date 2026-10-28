@@ -15,6 +15,8 @@ partial class Program
         foreach (var (id, bytes) in messages)
         {
             if (conn.Closed) return;
+            // A terminal Hardcore owner may only leave for character selection.
+            if (HardcoreProgressBlocked(conn) && id != 0x0153) continue;
             // Immediate transfer ingress cuts the old epoch off instead of replaying overdue old-world damage.
             // Movement/combat handlers also advance atomically inside their mutation boundaries.
             bool transferIngress = id is InstanceTransfer.ChooseInstanceId or InstanceTransfer.LeaveAreaAckId
@@ -34,11 +36,11 @@ partial class Program
                 var use = InstanceProtocol.ReadUseSkillAtLocation(bytes);
                 double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
                 // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
-                if (InTown(conn) && Skills.ActionName(use.SkillId) != "Move") continue;
-                if (Skills.ActionName(use.SkillId) != "Move")
+                if (InTown(conn) && SkillsFor(conn).ActionName(use.SkillId) != "Move") continue;
+                if (SkillsFor(conn).ActionName(use.SkillId) != "Move")
                     await EndGracePeriod(remote, stream, ciphers, conn, action: true);
-                bool cast = Skills.IsGemSkill(use.SkillId);
-                var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
+                bool cast = SkillsFor(conn).IsGemSkill(use.SkillId);
+                var gem = cast ? GemSkillEffects(conn).FirstOrDefault(g => g.Id == use.SkillId) : default;
                 if (cast && gem.Name is not null && !ProjectilePathAvailable(remote, conn, use.SkillId, gem.Effect)) continue;
                 // A disabled gem's skill is not confirmed: the client animates the cast and sends the use anyway (it only reds
                 // the gem), so without the 0x1ab the action does not run. No projectile, mana or cooldown either.
@@ -75,9 +77,9 @@ partial class Program
                 // position, and the client snapped the player back onto it (live trace: up to 98 cells).
                 // A ranged weapon (a bow) fires at the point instead: arrows flew nowhere while this branch walked the
                 // player, since the projectile is launched by the cast below (live 2026-10-25).
-                bool attack = cast && gem.Name is not null && Skills.IsAttack(gem.Effect);
-                if (attack && (use.Flags & 0x1) == 0 && !Skills.IsMovement(gem.Effect)
-                    && !Skills.IsProjectile(gem.Effect) && WeaponProfileFor(conn).Melee)
+                bool attack = cast && gem.Name is not null && SkillsFor(conn).IsAttack(gem.Effect);
+                if (attack && (use.Flags & 0x1) == 0 && !SkillsFor(conn).IsMovement(gem.Effect)
+                    && !SkillsFor(conn).IsProjectile(gem.Effect) && WeaponProfileFor(conn).Melee)
                 {
                     var here = conn.Walk.Position(at);
                     if (GroundAttackWalks(here, (use.X, use.Y), WeaponFor(conn).Range))
@@ -122,7 +124,7 @@ partial class Program
                     (px, py) = cast ? conn.Walk.Position(at) : conn.Walk.Order(use.X, use.Y, at);
                     if (cast) conn.Walk.Order(px, py, at);
                     // Readiness and reservation precede movement: a raw early Dash cannot teleport anyway.
-                    if (gem.Name is not null && Skills.IsMovement(gem.Effect)
+                    if (gem.Name is not null && SkillsFor(conn).IsMovement(gem.Effect)
                         && (conn.Layout.Walkable is not { } canWalk || canWalk(use.X, use.Y)))
                         conn.Walk.Teleport(use.X, use.Y, at);
                     conn.ChannelSkill = cast ? use.SkillId : (ushort)0;
@@ -196,7 +198,7 @@ partial class Program
             {
                 var (x, y, skill) = InstanceProtocol.ReadUseInstantSkillAtLocation(bytes);
                 Console.WriteLine($"[gateway] {remote} <= 0x0190 instant skill 0x{skill:x4} at ({x}, {y})");
-                if (Skills.IsGemSkill(skill)) _ = UseInstantSkillAtLocation(remote, stream, ciphers, conn, skill, (x, y));
+                if (SkillsFor(conn).IsGemSkill(skill)) _ = UseInstantSkillAtLocation(remote, stream, ciphers, conn, skill, (x, y));
             }
             else if (id == InstanceProtocol.UseInstantSkillId)
             {
@@ -205,7 +207,7 @@ partial class Program
                 var (target, skill) = InstanceProtocol.ReadUseInstantSkill(bytes);
                 var spot = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
                 Console.WriteLine($"[gateway] {remote} <= 0x0191 instant skill 0x{skill:x4} on 0x{target:x} at ({spot.X}, {spot.Y})");
-                if (Skills.IsGemSkill(skill)) _ = UseInstantSkill(remote, stream, ciphers, conn, skill, target, spot);
+                if (SkillsFor(conn).IsGemSkill(skill)) _ = UseInstantSkill(remote, stream, ciphers, conn, skill, target, spot);
             }
             else if (id == InstanceTransfer.UseSkillOnObjectId)
             {
@@ -223,7 +225,7 @@ partial class Program
             else if (id == InstanceEntities.AllocatePassiveId)
             {
                 var (u2, node, u6) = InstanceEntities.ReadAllocatePassive(bytes);
-                Console.WriteLine($"[gateway] {remote} <= 0x0034 allocate passive {node} ({Passives.Find(node)?.Name ?? "unknown"}), " +
+                Console.WriteLine($"[gateway] {remote} <= 0x0034 allocate passive {node} ({PassivesFor(conn).Find(node)?.Name ?? "unknown"}), " +
                     $"node high16 {u2}, expansion {u6}");
                 if (u2 == 0 && u6 == 0)
                     await ChangePassives(remote, stream, ciphers, conn, [node], allocate: true, "Passive Skill Tree");
@@ -241,7 +243,7 @@ partial class Program
             else if (id == InstanceEntities.RefundPassiveId)
             {
                 var (node, expansion, gold) = InstanceEntities.ReadRefundPassive(bytes);
-                Console.WriteLine($"[gateway] {remote} <= 0x0036 refund passive {node} ({(node <= ushort.MaxValue ? Passives.Find((ushort)node)?.Name : null) ?? "unknown"})" +
+                Console.WriteLine($"[gateway] {remote} <= 0x0036 refund passive {node} ({(node <= ushort.MaxValue ? PassivesFor(conn).Find((ushort)node)?.Name : null) ?? "unknown"})" +
                     $"{(expansion ? ", expansion node" : "")}, {(gold ? "gold respec" : "refund points")}: {Convert.ToHexString(bytes)}");
                 if (!expansion && node <= ushort.MaxValue)
                 {
@@ -260,7 +262,7 @@ partial class Program
             else if (id == InstanceEntities.RefundAllPassivesId)
             {
                 // "Refund All" (after the client's Yes): every passive but the ascendancy ones, for their full gold cost.
-                var nodes = PassiveState(conn).Nodes.Where(n => Passives.Find(n) is not { IsAscendancy: true }).ToList();
+                var nodes = PassiveState(conn).Nodes.Where(n => PassivesFor(conn).Find(n) is not { IsAscendancy: true }).ToList();
                 Console.WriteLine($"[gateway] {remote} <= 0x0037 refund all passives ({nodes.Count})");
                 await ChangePassives(remote, stream, ciphers, conn, nodes, allocate: false, "Respecialisation, Refund All", goldRespec: true);
             }
@@ -401,6 +403,7 @@ partial class Program
             {
                 // The tab buttons' order, kept with the stash (personal or guild by kind) and sent back in the tab lists.
                 var (kind, order) = InstanceStash.ReadReorderTabs(bytes);
+                if (kind == InstanceStash.Guild && conn.Ssf) continue;
                 var target = kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn);
                 int moved = target.SetPositions(order);
                 Console.WriteLine($"[gateway] {remote} <= 0x00cc stash {kind} tab order: {string.Join(", ", order.Select(o => $"{o.Index}->{o.Position}"))} ({moved} moved, saved)");
@@ -450,6 +453,7 @@ partial class Program
             {
                 // A premium tab renamed in the tab settings; kept with the stash (personal or guild), account-wide.
                 var (kind, tab, name) = InstanceStash.ReadRenameTab(bytes);
+                if (kind == InstanceStash.Guild && conn.Ssf) continue;
                 bool done = (kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn)).Rename(tab, name);
                 Console.WriteLine($"[gateway] {remote} <= 0x00cd stash {kind} tab {tab} renamed \"{name}\": {(done ? "saved" : "refused")}");
                 await SendTabListAgain(remote, stream, ciphers, conn, kind);
@@ -457,6 +461,7 @@ partial class Program
             else if (id == InstanceStash.ColourTabId)
             {
                 var (kind, tab, colour) = InstanceStash.ReadColourTab(bytes);
+                if (kind == InstanceStash.Guild && conn.Ssf) continue;
                 bool done = (kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn)).SetColour(tab, colour);
                 Console.WriteLine($"[gateway] {remote} <= 0x00ce stash {kind} tab {tab} colour 0x{colour:x8}: {(done ? "saved" : "refused")} ({Convert.ToHexString(bytes)})");
                 await SendTabListAgain(remote, stream, ciphers, conn, kind);
