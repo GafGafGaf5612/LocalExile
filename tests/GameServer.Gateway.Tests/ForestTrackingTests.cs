@@ -70,6 +70,23 @@ public class ForestTrackingTests
         Assert.Equal(10, Attack());
     }
 
+    [Fact]
+    public void Forest_damage_and_Whaletooth_duration_are_derived_once_in_the_same_snapshot()
+    {
+        var state = Character(900);
+        state.PlayerStats[Key("strength")] = 455;
+        state.PlayerStats[Key(SkillDurationModifiers.PerTenStrength)] = 1;
+        for (int i = 0; i < 2; i++)
+        {
+            var stats = Program.CharacterPlayerStats(state);
+            Assert.Equal(6, Value(stats, "attack_damage_+%"));
+            Assert.Equal(45, Value(stats, SkillDurationModifiers.IncreasedDuration));
+        }
+        state.PlayerStats[Key(SkillDurationModifiers.IncreasedDuration)] = 0;
+        Assert.Equal(0, Value(Program.CharacterPlayerStats(state), SkillDurationModifiers.IncreasedDuration));
+        Assert.Equal(6, Value(Program.CharacterPlayerStats(state), "attack_damage_+%"));
+    }
+
     [Theory]
     [InlineData(0, 450, int.MaxValue, 450, int.MinValue, -1)]
     [InlineData(10, 900, int.MaxValue, 900, int.MinValue, 8)]
