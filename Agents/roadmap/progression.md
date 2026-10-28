@@ -24,9 +24,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** command selection, saved identities, separate point awards, paid refunds and ordinary/ascendancy
   graph connectivity now have automated coverage; see [scope and limitations](../docs/game/ascendancies.md).
   Ordinary command selection, refunds, relog and a Gateway restart are verified with a native Duelist/Slayer smoke.
-- **Known:** Antiquarian's Whaletooth Bangle derives the owner's increased skill-duration stat from final Strength.
+- **Known:** Antiquarian's Whaletooth Bangle derives increased owner skill duration from final Strength (#245).
   Allocation/refund/reload have automated coverage; Phrecia client admission remains gated.
-  Executable skill/summon lifetime consumers and their native elapsed-time checks remain separate work (#245).
+  Executable skill/summon lifetime consumers and their native elapsed-time checks remain separate work.
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
   Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
