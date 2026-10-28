@@ -32,6 +32,8 @@ No client error-popup wording is assumed from that result code.
 
 The Gateway commits a `HardcoreDeathRecord` and the carried progress in one SQLite transaction inside lethal damage,
 before the first death-related socket write.
+Lethal incoming ignite follows the same commit path as direct hits, including the permanent Hardcore Ruthless outcome.
+Death notifications validate their connection and damage epoch before cleanup, so stale callbacks cannot commit death.
 Normal progress saves do not own that record and cannot undo it.
 Stale level, portrait and last-town updates preserve the already committed death and destination league.
 Repeated callbacks retain the original death and do not flush an old connection over newer softcore progress.

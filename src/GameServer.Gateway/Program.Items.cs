@@ -154,7 +154,7 @@ partial class Program
     // C→S 0x70: a flask key. The flask in that cell of the flask bar spends its charges (S→C 0xbf with the changed item) and
     // its life or mana comes back, instantly or over its recovery time, under the flask_effect_life / _mana buff
     // (13-items.md §8): its quality, its mods and the character's flask stats count (FlaskCharges, FlaskRecovery). Without
-    // enough charges, or while dead, nothing happens. A utility flask goes to UseUtilityFlask.
+    // enough charges, while dead, or when its recovery pools are full, nothing happens. A utility flask goes to UseUtilityFlask.
     static async Task UseFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot)
     {
         var items = ItemsOf(conn);
@@ -178,7 +178,30 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {(conn.PlayerLife == 0 ? "dead" : $"{flask.Item.Charges}/{charges.MaxCharges} charges, a use needs {charges.ChargesPerUse}")}");
             return;
         }
-        if (await SpendFlask(remote, stream, ciphers, conn, flask, charges, slot) is null) return;
+        bool canRecover;
+        lock (conn.Monsters)
+            canRecover = Flasks.CanRecover(use, conn.PlayerLife, conn.PlayerMaxLife, conn.PlayerMana, (uint)UnreservedMana(conn));
+        if (!canRecover)
+        {
+            await Send(remote, stream, ciphers, InstanceItems.ItemUsed(flask.Item.TypeHash,
+                PlayerInventories.InventoryId(PlayerInventories.Flask), flask.Id, result: 0x4e2),
+                $"0x0263 flask {slot} ({type.Name}) refused: recovery pools full (0x4e2), charges unchanged");
+            // The client can hold a lower pool than the server (a use it started but the server did not pay for): the
+            // refusal carries the authoritative value, so the orb and the next press agree.
+            if (use.LifePerUse > 0)
+            {
+                uint life;
+                lock (conn.Monsters) life = conn.PlayerLife;
+                await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, life),
+                    $"0x01b1 player life {life} (full pool, flask refused)");
+            }
+            if (use.ManaPerUse > 0)
+                await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {conn.PlayerMana} (full pool, flask refused)");
+            return;
+        }
+        if (await SpendFlask(remote, stream, ciphers, conn, flask, charges, slot) is not { } spent) return;
+        await Send(remote, stream, ciphers, InstanceItems.ItemUsed(spent.Item.TypeHash,
+            PlayerInventories.InventoryId(PlayerInventories.Flask), spent.Id), $"0x0263 flask {slot} used (native use sound)");
         var r = FlaskRecovery.For(use, flask.Item, local, Get, conn.PlayerLife, conn.PlayerMaxLife);
         Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {r.Life:0.#} life, {r.Mana:0.#} mana over {r.Seconds:0.##} s, " +
             $"instantly {r.InstantLife:0.#} life, {r.InstantMana:0.#} mana{(r.ManaAtEnd > 0 ? $", {r.ManaAtEnd:0.#} mana at the end" : "")}" +

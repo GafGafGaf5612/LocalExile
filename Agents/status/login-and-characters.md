@@ -49,6 +49,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Selected league modes have server rules with automated coverage and native entry, exit and migration checks.
   Ordinary Hardcore death migrates to the matching softcore base while preserving SSF; Hardcore Ruthless stays dead.
   Carried progress and the death record commit together, source stash/gold stay behind, and stale writes cannot undo it.
+  Automated coverage includes lethal ignite, stale death callbacks and one-time death effects
+  in ordinary and Ruthless modes.
   Auth, Gateway and dev-server entry reject dead characters and stale tickets; transient failed deaths retry before entry.
   The native character list returned a dead Hardcore Ruthless character in Void with its terminal marker;
   an ordinary Hardcore SSF death returned in SSF Standard and could enter again.

@@ -28,7 +28,7 @@ partial class Program
             // movement/cast timeline during that same recovery. Flasks and instant skills retain their own paths.
             if (id is InstanceProtocol.UseSkillAtLocationId or InstanceTransfer.UseSkillOnObjectId or InstanceProtocol.ChannelUpdateId)
                 lock (conn.Monsters)
-                    if (conn.HitRecovery.BlocksInput(conn.ClockAt(readAt), conn.Clock.Elapsed.TotalSeconds)) continue;
+                    if (PlayerActionBlocked(conn, conn.ClockAt(readAt), conn.Clock.Elapsed.TotalSeconds)) continue;
             if (id == InstanceProtocol.UseSkillAtLocationId)
             {
                 // Echo the action so the client runs it (Move on a ground click); an attack gem is paced and may be movement
@@ -68,11 +68,12 @@ partial class Program
                         (bow.X, bow.Y), (use.X, use.Y), duration, bow.Action, projectileEpoch);
                     continue;
                 }
-                // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off is an
-                // attack-move: the client walks to the aimed point itself and sends no C→S 0x25 Move for that walk, so the
-                // server walks its own estimate after it and echoes from there. A point with a living monster on it is a
-                // swing (the client aims at the cell, not at the object); an empty point is movement only, so running costs
-                // no mana. Before 2026-10-25 every use swung, which paid the cost at the click and echoed the server's stale
+                // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off: a
+                // point beyond the weapon's reach is an attack-move (the client walks to it itself and sends no C→S 0x25
+                // Move for that walk, so the server walks its own estimate after it), which costs no mana; a point within
+                // reach is a swing at the ground that costs the skill's mana even when nothing stands there (live
+                // 2026-10-26: standing and swinging with Holy Strike spent no mana, because every empty point was walked).
+                // Before 2026-10-25 every use swung, which paid the cost at the click and echoed the server's stale
                 // position, and the client snapped the player back onto it (live trace: up to 98 cells).
                 // A ranged weapon (a bow) fires at the point instead: arrows flew nowhere while this branch walked the
                 // player, since the projectile is launched by the cast below (live 2026-10-25).
@@ -81,7 +82,7 @@ partial class Program
                     && !SkillsFor(conn).IsProjectile(gem.Effect) && WeaponProfileFor(conn).Melee)
                 {
                     var here = conn.Walk.Position(at);
-                    if (!MonsterAtAim(conn, gem, use.X, use.Y, at) || Dist(here, (use.X, use.Y)) > WeaponFor(conn).Range)
+                    if (GroundAttackWalks(here, (use.X, use.Y), WeaponFor(conn).Range))
                     {
                         int walkAction = 0;
                         if (!TryBeginSkillCooldownUse(conn, use.SkillId, gem.Effect,
@@ -92,6 +93,16 @@ partial class Program
                             InstanceProtocol.ActionStarted(PlayerId, here.X, here.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                             $"0x01ab {gem.Name}: attack-move to ({use.X}, {use.Y}) from ({here.X}, {here.Y}) (t={at:0.000})",
                             still: () => approachTicket?.Current(conn) ?? PlayerActionCurrent(conn, walkAction));
+                        // The client spends the attack skill's mana when it starts a use, even a use that only walks (probe
+                        // 2026-10-26: 6 mana per attack time while attack-moving), and the server pays only for a swing: the
+                        // pool gives the cost back, or the client's orb falls behind and its flasks are refused as "full".
+                        // The client repeats this packet every frame while the button is held, so at most four a second.
+                        if (conn.Clock.Elapsed.TotalSeconds - conn.LastManaResyncAt >= 0.25)
+                        {
+                            conn.LastManaResyncAt = conn.Clock.Elapsed.TotalSeconds;
+                            await SendPlayerMana(remote, stream, ciphers, conn,
+                                $"0x01b1 player mana {conn.PlayerMana} (attack-move, cost back)");
+                        }
                         continue;
                     }
                 }
@@ -129,7 +140,7 @@ partial class Program
                 {
                     using (ProjectileMutation(conn))
                     {
-                        if (conn.HitRecovery.BlocksInput(at, conn.Clock.Elapsed.TotalSeconds)) continue;
+                        if (PlayerActionBlocked(conn, at, conn.Clock.Elapsed.TotalSeconds)) continue;
                         StartAction();
                     }
                 }
@@ -406,7 +417,7 @@ partial class Program
                 using (ProjectileMutation(conn))
                 {
                     t = Math.Max(t, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? 0);
-                    if (conn.HitRecovery.BlocksInput(t, conn.Clock.Elapsed.TotalSeconds)) continue;
+                    if (PlayerActionBlocked(conn, t, conn.Clock.Elapsed.TotalSeconds)) continue;
                     conn.Walk.Teleport(cx, cy, t);
                     conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
                 }

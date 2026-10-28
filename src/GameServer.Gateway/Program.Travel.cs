@@ -15,7 +15,7 @@ partial class Program
         using (ProjectileMutation(conn))
         {
             double now = ProjectileWorldTime(conn);
-            if (conn.Closed || conn.PlayerLife == 0 || conn.HitRecovery.BlocksInput(requestedAt, now)) return false;
+            if (conn.Closed || conn.PlayerLife == 0 || PlayerActionBlocked(conn, requestedAt, now)) return false;
             int action = Interlocked.Increment(ref conn.ActionCount);
             conn.ChannelSkill = 0;
             var (here, stop, arrive) = centreRange ? conn.Walk.Approach(x, y, reach, now) : conn.Walk.WalkUpTo(x, y, (int)reach, now);
@@ -30,7 +30,7 @@ partial class Program
         InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
         lock (conn.Monsters)
-            if (conn.HitRecovery.BlocksInput(requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
+            if (PlayerActionBlocked(conn, requestedAt, conn.Clock.Elapsed.TotalSeconds)) return;
         if (InTown(conn) && (SkillsFor(conn).IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)) return;
         if (SkillsFor(conn).IsGemSkill(use.SkillId) || use.SkillId == SkillCatalog.FirstSkillId)
             await EndGracePeriod(remote, stream, ciphers, conn, action: true);

@@ -184,6 +184,12 @@ partial class Program
         var attack = AttackHit(WeaponFor(conn), stats, MeleeAttack(conn));
         foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
+        var ailments = conn.ElementalAilments.Snapshot(conn.Clock.Elapsed.TotalSeconds);
+        foreach (var (name, value) in new[] { ("is_ignited", ailments.Ignite ? 1 : 0),
+            ("is_chilled", ailments.Chill > 0 ? 1 : 0), ("is_frozen", ailments.Freeze ? 1 : 0),
+            ("is_shocked", ailments.Shock > 0 ? 1 : 0), ("action_speed_-%", (int)Math.Round(100 * (1 - conn.ElementalAilments.ActionFactor(conn.Clock.Elapsed.TotalSeconds)))),
+            ("intermediary_combined_action_speed_+%", (int)Math.Round(-100 * (1 - conn.ElementalAilments.ActionFactor(conn.Clock.Elapsed.TotalSeconds)))) })
+            if (Stats.Key(name) is uint key && value != 0) stats[key] = stats.GetValueOrDefault(key) + value;
         // The conditions as they are now; the player tick sends the chance again when they change.
         int suppression = Suppression(conn).Chance;
         foreach (uint key in SuppressionChanceKeys) stats[key] = suppression;
@@ -227,7 +233,7 @@ partial class Program
         int Get(string name) => RageStat(stats, name);
         var hit = DamageStats.Added(weapon.HitDamage(stats), Get, spell: false, melee).Scale(ChargeDamageMore(stats));
         if (conversion is not null) hit = hit.Convert(conversion);
-        return RageStats.ApplyAttack(hit, Get);
+        return RageStats.ApplyAttack(hit, Get).Scale(GamblerFor(stats).DamageFactor);
     }
 
     static double AddedEffectiveness(ClientState conn, int effect, int level) => SkillsFor(conn).DamageEffectiveness(effect, level) is int value and > 0 ? value / 10000.0 : 1;
@@ -656,6 +662,11 @@ partial class Program
     }
 
     static double Dist((int X, int Y) a, (int X, int Y) b) => Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+
+    // An attack gem used at the ground: a point beyond the weapon's reach is an attack-move (the client walks there);
+    // within reach it is a swing at the ground that pays the skill's mana even with nothing standing there (§5 of
+    // 11-skills.md; live 2026-10-26: every empty point used to be walked, so swinging cost nothing).
+    internal static bool GroundAttackWalks((int X, int Y) here, (int X, int Y) aim, double reach) => Dist(here, aim) > reach;
 
     // An intentional /set_level reset invalidates older XP events before publishing its current level and points.
     static async Task SetLevel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, int level)
