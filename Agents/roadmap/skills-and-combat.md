@@ -196,6 +196,10 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Continue auditing the remaining rows against the current implementation before adding formulas.
   Leech limits now have native display, modifier, prohibition, pool-conversion, reservation and relog controls.
   Active leech recovery and unsupported conditional sources remain open; official fractional endpoint rounding is unmeasured.
+  The current branch now recomputes all 24 scoped leech coefficients and three speed aliases from raw actor,
+  support and qualified hand inputs. Native checks for this composition remain pending. Implement active
+  instances using separate duration, total recovery and maximum-rate rules (damage §5b); do not add overlapping
+  displayed scopes together or substitute regeneration for leech.
   Ward and unsupported conditional mechanics still need their own systems and evidence.
   Weapon-local typed damage and multiplicative physical quality now feed ordinary and supported attacks,
   with correct melee/projectile context and active-hand sources. Pool/charge/timing/block conditions use active gear.

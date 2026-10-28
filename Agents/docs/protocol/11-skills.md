@@ -2115,6 +2115,27 @@ every ailment row as a simple sum would gloss over critical weighting, prohibiti
 and actual duration/rate calculation. Those mechanics and native validation remain separate completion work;
 this publication correction does not implement ailment application or certify the whole ailment system.
 
+Leech projection now includes all 24 scoped coefficient aliases and three recovery-speed aliases in selected
+skills. Each scope adds the general any-damage source, its applicable typed/spell/attack source, elemental sources
+for fire/cold/lightning, and shared physical-attack Life/Mana sources only in the hand totals. Despite lacking
+"attack" in its ID, `life_and_mana_leech_from_physical_damage_permyriad` is explicitly attack-only in its description.
+Both previously missing physical/chaos ES aliases
+are emitted. Physical-attack hand totals add only that qualified hand's physical, combined Life/Mana and general
+local inputs. Mana Leech Support's `attack_skill_mana_leech_from_any_damage_permyriad` enters attack scopes only.
+The overlapping aliases are display totals, not independent coefficients to add together in a hit consumer.
+
+Level-one Life/Mana Leech supports supply 200 permyriad; Energy Leech supplies 150. Real linked supports now
+add those amounts, follow unlink/removal and requirements, and leave unrelated/default skills isolated. The
+Energy Leech item metadata is `SupportGemEnergyShieldLeech`, while its effect is `SupportEnergyLeech`.
+Selected per-hundred-thousand Life sources combine across actor/own inputs before dividing by ten; separate
+truncation previously lost a 6+4 boundary. Final developer replacements retain their established priority.
+Pinned PoB `16de4b82` supplies the three support stat sets and the general/elemental/typed/local descriptions
+(`Data/Skills/sup_str.lua`, `sup_dex.lua`, `sup_int.lua`, `Data/StatDescriptions/stat_descriptions.lua`).
+Scope composition follows those descriptions; current native getter/formatting parity remains unverified.
+Decision: derive each total once from raw sources rather than summing overlapping derived aliases or rounding
+actor/support fractions separately. Keep active leech instances, recovery, conditional sources and conversions
+open instead of treating corrected display coefficients as implemented combat. See damage §5b and the review ledger.
+
 Selected impale chance now recomputes all three virtual totals from the raw actor, own support and each hand's
 local snapshot. Real Impale Support grants attack chance 60: actor 10 gives selected 70 while the actor/default
 remain 10 and spell chance remains zero. Qualified local weapon modifiers 15/17 produce main 85/off 87 without

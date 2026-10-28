@@ -412,6 +412,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `PanelStats.cs`, `PanelStatDefaults.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
 - Character-panel leech limits: full maximum pools supply separate per-instance amounts and total recovery caps.
+  The current issue #75 review also corrects 24 leech coefficient and three recovery-speed aliases: general,
+  typed/elemental, attack/spell and qualified hand sources, missing physical/chaos ES, and real selected supports.
+  Actor/support fractional inputs combine before unit conversion. The new composition has automated controls;
+  native getter/formatting parity and active leech recovery remain open (damage §5b, skills §14).
   Six absolute rows and their percent companions include supported increases/reductions and prohibition flags.
   Native controls verify display conversion, Low Life/healing, real item pool conversion, reservation and relog.
   The periodic stat refresh uses one consistent developer snapshot, with four observed-task regressions.

@@ -24,6 +24,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         "attack-fire-penetration" => AttackPenetrationSpec("Fire"),
         "attack-cold-penetration" => AttackPenetrationSpec("Cold"),
         "attack-lightning-penetration" => AttackPenetrationSpec("Lightning"),
+        "life-leech-spell" => LeechSpec("life", "spell"),
+        "life-leech-attack" => LeechSpec("life", "attack"),
+        "mana-leech" => LeechSpec("mana", "attack"),
+        _ when field.StartsWith("es-leech:", StringComparison.Ordinal) => LeechSpec("energy_shield", field.Split(':')[1]),
         _ when field.StartsWith("ailment-duration:", StringComparison.Ordinal) => UnboundAilmentSpec(field, duration: true),
         _ when field.StartsWith("ailment-effect:", StringComparison.Ordinal) => UnboundAilmentSpec(field, duration: false),
         _ => throw new ArgumentOutOfRangeException(nameof(field)),
@@ -56,8 +60,29 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
 
+    static SelectedMiscCase LeechSpec(string pool, string type)
+    {
+        bool attack = type == "attack";
+        string support = pool == "energy_shield" ? "EnergyLeech" : pool == "life" ? "LifeLeech" : "ManaLeech";
+        string source = pool == "mana" ? "attack_skill_mana_leech_from_any_damage_permyriad" : $"{pool}_leech_from_any_damage_permyriad";
+        string alias = pool == "energy_shield" || attack ? $"virtual_{pool}_leech_from_{type}_damage_permyriad"
+            : $"{pool}_leech_from_{type}_damage_permyriad";
+        return new(attack ? "SkillGemHeavyStrike" : "SkillGemFireball",
+            pool == "energy_shield" ? "SupportGemEnergyShieldLeech" : "SupportGem" + support, "Support" + support,
+            $"base_{pool}_leech_from_{type}_damage_permyriad", source, alias, 10, pool == "energy_shield" ? 150 : 200, 0);
+    }
+
     [Theory]
     [InlineData("area")]
+    [InlineData("life-leech-spell")]
+    [InlineData("life-leech-attack")]
+    [InlineData("mana-leech")]
+    [InlineData("es-leech:spell")]
+    [InlineData("es-leech:physical")]
+    [InlineData("es-leech:fire")]
+    [InlineData("es-leech:cold")]
+    [InlineData("es-leech:lightning")]
+    [InlineData("es-leech:chaos")]
     [InlineData("rarity")]
     [InlineData("minion")]
     [InlineData("fire-penetration")]
@@ -125,6 +150,15 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     [Theory]
     [InlineData("area")]
+    [InlineData("life-leech-spell")]
+    [InlineData("life-leech-attack")]
+    [InlineData("mana-leech")]
+    [InlineData("es-leech:spell")]
+    [InlineData("es-leech:physical")]
+    [InlineData("es-leech:fire")]
+    [InlineData("es-leech:cold")]
+    [InlineData("es-leech:lightning")]
+    [InlineData("es-leech:chaos")]
     [InlineData("rarity")]
     [InlineData("minion")]
     [InlineData("fire-penetration")]

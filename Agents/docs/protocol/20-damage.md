@@ -746,6 +746,20 @@ The isolated characters' inventories stayed unchanged; this does not verify ever
 
 ## 5b. Character-panel leech limits
 
+Leech coefficients now include general/typed/elemental/attack/spell and qualified hand-local raw sources, including
+the missing physical/chaos ES aliases. Selected skills recompute all 24 coefficient and three recovery-speed
+aliases with their qualified supports. These are overlapping display scopes; do not sum them to compute a hit's
+leech. Combine raw actor/support per-hundred-thousand values before unit conversion. [Skills §14](11-skills.md)
+records the pinned source descriptions, real support evidence and the decision to avoid derived-alias feedback.
+Active recovery is still absent; publication does not implement it or certify native formatting.
+
+For the upcoming recovery implementation, [Mark_GGG's worked example](https://www.reddit.com/r/pathofexile/comments/axgevs/comment/ehtoiwd/?context=3)
+distinguishes the fixed per-instance 2%/second rate, amount-based duration, the total recovery modifier and the
+separate total-rate cap. Increasing total recovery does not shorten an instance. Generic recovery rate acts after
+the capped leech contribution. Pinned PoB `CalcOffence.lua:3721` likewise derives duration from amount/full pool
+and its base rate; instant portions and Ghost Reaver remain distinct conversions. Preserve these distinctions
+when adding gameplay rather than using a single regeneration rate or an amount-draining speed multiplier.
+
 `LeechLimits` calculates limits independently of active leech recovery. Character.ot's defaults are 10% of the
 full maximum pool per instance, 20% per second total for Life/Mana and 10% per second total for Energy Shield.
 Reserved Life/Mana remains part of that maximum. Instance-amount increases and maximum-rate increases have separate

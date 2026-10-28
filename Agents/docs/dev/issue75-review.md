@@ -38,7 +38,7 @@ This scan supports document navigation; it is not a claim that every statement h
 Exact C# literal matches are navigation candidates only.
 Interpolated names and numeric keys must be traced manually; absence of a literal does not establish missing behavior.
 The [authored stat ledger](issue75-stat-ledger.md) lists each of the 357 targets exactly once. Its current
-40 `partial` and 317 `pending` entries are audit dispositions, not implemented-stat counts. No entry is certified
+67 `partial` and 290 `pending` entries are audit dispositions, not implemented-stat counts. No entry is certified
 complete on the current branch. Partial records link the reviewed corrections and their unresolved scope;
 pending records do not imply absence of implementation or historical evidence.
 The inventory copies these authored states and their links without inferring completion from literal matches.
@@ -393,6 +393,36 @@ other ordinary-bow damage/chance/multiplier snapshots pending their own evidence
 lifetimes as part of luck. [Skills](../protocol/11-skills.md) and [damage](../protocol/20-damage.md) record the choices,
 alternatives and primary GGG reference. The preceding shared gem-roll correction is local commit `d98597c`.
 Other agents' server processes remain active; this task has launched or stopped none. Native validation remains open.
+
+## Leech coefficient source composition
+
+The panel omitted physical/chaos Energy Shield leech aliases, shared elemental ES sources and general any-damage
+leech from scoped totals. Selected skills also omitted raw support contributions. Eighteen real-support controls
+reproduced missing values or 210/160 expected versus 10 actual (`leech-projection-valid-reproduced.trx`). The earlier
+receipt had six genuine Life/Mana failures and twelve fixture failures from confusing the Energy Leech effect
+ID with its item metadata; those fixture failures are not counted as production evidence.
+
+All 24 scoped coefficients and three speed aliases now compose raw actor/qualified support inputs. Physical
+attack hand totals use general, typed physical, attack, combined Life/Mana and that hand's local sources once.
+Mana Leech Support remains attack-only. Per-hundred-thousand actor/support values combine before unit conversion,
+preserving the 6+4 -> 1 permyriad boundary. Final explicit replacements and zero-clearing remain intact.
+Thirty-two added cases cover real support lifecycle/qualification/overrides, scopes, hand isolation and units;
+the focused run passes 230 (`leech-projection-focused.trx`).
+The subsequent source-description pass caught an important scope detail: the combined physical Life/Mana
+stat's ID omits "attack", but its description explicitly restricts it to attacks. It is now confined to hand
+totals; the pure controls assert that general physical/spell aliases exclude it. The first full run passed 4,955
+tests before this source correction (`*-leech-projection.trx`); that pass alone did not establish correct scope.
+After the correction, the solution builds with zero warnings/errors and the full suites pass again: Core 561,
+Data 18, Gateway 4,376, no skips, 4,955 total. Final receipts are `core-leech-projection-final.trx`,
+`data-leech-projection-final.trx` and `gateway-leech-projection-final.trx`.
+
+Decision: derive overlapping display totals from original raw sources rather than feeding one alias into another
+or treating them as independent coefficients in combat. This follows the pinned PoB source descriptions and
+support stat sets, with native getter/formatting parity still open. Keep active leech recovery, conditional sources,
+conversions and weapon-family conditions explicitly open instead of treating publication as implemented gameplay.
+The [skills module](../protocol/11-skills.md) records these choices and alternatives; [damage §5b](../protocol/20-damage.md#5b-character-panel-leech-limits)
+also records primary GGG evidence distinguishing instance duration, total recovery and maximum-rate caps for the
+next gameplay work. The ledger moves these 27 rows to partial, not complete. No live session was started.
 
 ## Autonomous decisions and shared validation resources
 

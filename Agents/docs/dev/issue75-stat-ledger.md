@@ -61,6 +61,15 @@ Partial: average/DPS now includes critical luck and separate normal-reference la
 Dual-hand, multi-hit/secondary, integer-roll expectation, cooldown/downtime, DoT, other conditions and native
 formatting remain open; [review](issue75-review.md#accuracy-weighted-attack-averages-and-dps).
 
+## Leech coefficients
+
+Partial: 24 scoped coefficient aliases and three speed aliases now compose qualified actor/support/hand sources,
+including general/elemental inputs, physical/chaos ES and combined Life/Mana. Real supports and fractional unit
+composition have automated controls. Active leech recovery, conditional sources, conversions, weapon-family
+conditions and native getter/formatting parity remain open. See [review](issue75-review.md#leech-coefficient-source-composition)
+and [damage module](../protocol/20-damage.md#5b-character-panel-leech-limits). Do not add overlapping display scopes
+as independent leech amounts in combat.
+
 ## Pending audit
 
 Trace each remaining entry through raw collection, formula, publication and authoritative consumer. Start with
@@ -71,7 +80,7 @@ and automated checks. Wait for shared resources and stop only this task's own pr
 
 ## Exact target
 
-Current disposition: 40 partial, 317 pending, 0 complete. These are audit states, not implemented-stat counts.
+Current disposition: 67 partial, 290 pending, 0 complete. These are audit states, not implemented-stat counts.
 
 | Stat | Status | Review record / next audit |
 |---|---|---|
@@ -146,12 +155,12 @@ Current disposition: 40 partial, 317 pending, 0 complete. These are audit states
 | `intermediary_combined_action_speed_+%` | pending | [pending audit](#pending-audit) |
 | `life_gained_on_enemy_death` | pending | [pending audit](#pending-audit) |
 | `life_gained_on_spell_hit` | pending | [pending audit](#pending-audit) |
-| `life_leech_from_chaos_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `life_leech_from_cold_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `life_leech_from_fire_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `life_leech_from_lightning_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `life_leech_from_physical_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `life_leech_from_spell_damage_permyriad` | pending | [pending audit](#pending-audit) |
+| `life_leech_from_chaos_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `life_leech_from_cold_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `life_leech_from_fire_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `life_leech_from_lightning_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `life_leech_from_physical_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `life_leech_from_spell_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `life_recharge_rate_per_minute` | pending | [pending audit](#pending-audit) |
 | `lightning_damage_immunity` | pending | [pending audit](#pending-audit) |
 | `lightning_damage_resistance_%` | pending | [pending audit](#pending-audit) |
@@ -169,10 +178,10 @@ Current disposition: 40 partial, 317 pending, 0 complete. These are audit states
 | `main_hand_critical_strike_multiplier` | partial | [critical](#critical) |
 | `main_hand_hit_causes_monster_flee_%` | pending | [pending audit](#pending-audit) |
 | `main_hand_knockback_on_crit` | pending | [pending audit](#pending-audit) |
-| `main_hand_life_leech_from_physical_attack_damage_permyriad` | pending | [pending audit](#pending-audit) |
+| `main_hand_life_leech_from_physical_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `main_hand_local_life_gain_per_target` | pending | [pending audit](#pending-audit) |
 | `main_hand_local_mana_gain_per_target` | pending | [pending audit](#pending-audit) |
-| `main_hand_mana_leech_from_physical_attack_damage_permyriad` | pending | [pending audit](#pending-audit) |
+| `main_hand_mana_leech_from_physical_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `main_hand_maximum_chaos_damage` | pending | [pending audit](#pending-audit) |
 | `main_hand_maximum_cold_damage` | pending | [pending audit](#pending-audit) |
 | `main_hand_maximum_fire_damage` | pending | [pending audit](#pending-audit) |
@@ -188,12 +197,12 @@ Current disposition: 40 partial, 317 pending, 0 complete. These are audit states
 | `main_hand_reduce_enemy_block_%` | pending | [pending audit](#pending-audit) |
 | `main_hand_stun_threshold_reduction_+%` | pending | [pending audit](#pending-audit) |
 | `mana_gained_on_enemy_death` | pending | [pending audit](#pending-audit) |
-| `mana_leech_from_chaos_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `mana_leech_from_cold_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `mana_leech_from_fire_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `mana_leech_from_lightning_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `mana_leech_from_physical_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `mana_leech_from_spell_damage_permyriad` | pending | [pending audit](#pending-audit) |
+| `mana_leech_from_chaos_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `mana_leech_from_cold_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `mana_leech_from_fire_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `mana_leech_from_lightning_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `mana_leech_from_physical_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `mana_leech_from_spell_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `mana_recharge_rate_per_minute` | pending | [pending audit](#pending-audit) |
 | `maximum_bleeding_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_bleeding_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
@@ -275,10 +284,10 @@ Current disposition: 40 partial, 317 pending, 0 complete. These are audit states
 | `off_hand_critical_strike_multiplier` | partial | [critical](#critical) |
 | `off_hand_hit_causes_monster_flee_%` | pending | [pending audit](#pending-audit) |
 | `off_hand_knockback_on_crit` | pending | [pending audit](#pending-audit) |
-| `off_hand_life_leech_from_physical_attack_damage_permyriad` | pending | [pending audit](#pending-audit) |
+| `off_hand_life_leech_from_physical_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `off_hand_local_life_gain_per_target` | pending | [pending audit](#pending-audit) |
 | `off_hand_local_mana_gain_per_target` | pending | [pending audit](#pending-audit) |
-| `off_hand_mana_leech_from_physical_attack_damage_permyriad` | pending | [pending audit](#pending-audit) |
+| `off_hand_mana_leech_from_physical_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `off_hand_maximum_chaos_damage` | pending | [pending audit](#pending-audit) |
 | `off_hand_maximum_cold_damage` | pending | [pending audit](#pending-audit) |
 | `off_hand_maximum_fire_damage` | pending | [pending audit](#pending-audit) |
@@ -370,13 +379,13 @@ Current disposition: 40 partial, 317 pending, 0 complete. These are audit states
 | `virtual_endurance_charge_duration_+%` | pending | [pending audit](#pending-audit) |
 | `virtual_energy_shield_delay_-%` | pending | [pending audit](#pending-audit) |
 | `virtual_energy_shield_gain_per_target` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_from_chaos_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_from_cold_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_from_fire_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_from_lightning_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_from_physical_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_from_spell_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_energy_shield_leech_speed_+%` | pending | [pending audit](#pending-audit) |
+| `virtual_energy_shield_leech_from_chaos_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_energy_shield_leech_from_cold_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_energy_shield_leech_from_fire_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_energy_shield_leech_from_lightning_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_energy_shield_leech_from_physical_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_energy_shield_leech_from_spell_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_energy_shield_leech_speed_+%` | partial | [leech coefficients](#leech-coefficients) |
 | `virtual_flask_duration_+%` | pending | [pending audit](#pending-audit) |
 | `virtual_freeze_duration_+%` | partial | [ailment coefficients](#ailment-coefficients) |
 | `virtual_frenzy_charge_duration_+%` | pending | [pending audit](#pending-audit) |
@@ -386,10 +395,10 @@ Current disposition: 40 partial, 317 pending, 0 complete. These are audit states
 | `virtual_immune_to_bleeding` | pending | [pending audit](#pending-audit) |
 | `virtual_immune_to_poison` | pending | [pending audit](#pending-audit) |
 | `virtual_knockback_distance_+%` | pending | [pending audit](#pending-audit) |
-| `virtual_life_leech_from_attack_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_life_leech_speed_+%` | pending | [pending audit](#pending-audit) |
-| `virtual_mana_leech_from_attack_damage_permyriad` | pending | [pending audit](#pending-audit) |
-| `virtual_mana_leech_speed_+%` | pending | [pending audit](#pending-audit) |
+| `virtual_life_leech_from_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_life_leech_speed_+%` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_mana_leech_from_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
+| `virtual_mana_leech_speed_+%` | partial | [leech coefficients](#leech-coefficients) |
 | `virtual_maximum_absorption_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_affliction_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_brutal_charges` | pending | [pending audit](#pending-audit) |

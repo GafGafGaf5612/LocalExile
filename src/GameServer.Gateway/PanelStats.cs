@@ -113,10 +113,7 @@ static class PanelStats
         .. Hands(h => new($"{h}_double_damage_to_chilled_enemies", [], Flag: true, Local: ["local_double_damage_to_chilled_enemies"])),
         .. Hands(h => new($"{h}_local_life_gain_per_target", ["base_life_gain_per_target"], Local: ["local_life_gain_per_target"])),
         .. Hands(h => new($"{h}_local_mana_gain_per_target", ["mana_gain_per_target"], Local: ["local_mana_gain_per_target"])),
-        .. Hands(h => new($"{h}_life_leech_from_physical_attack_damage_permyriad", ["life_leech_from_physical_attack_damage_permyriad"],
-            Local: ["local_life_leech_from_physical_damage_permyriad"])),
-        .. Hands(h => new($"{h}_mana_leech_from_physical_attack_damage_permyriad", ["mana_leech_from_physical_attack_damage_permyriad"],
-            Local: ["local_mana_leech_from_physical_damage_permyriad"])),
+        .. HandLeech("life"), .. HandLeech("mana"),
         // Defence
         new("virtual_energy_shield_delay_-%", ["energy_shield_delay_-%"]),
         new("virtual_block_recovery_+%", ["block_recovery_+%", "base_stun_recovery_+%", "stun_recovery_+%"]),
@@ -144,10 +141,7 @@ static class PanelStats
         new("skill_area_of_effect_+%", ["base_skill_area_of_effect_+%"]),
         new("virtual_curse_effect_+%", ["curse_effect_+%"]),
         new("virtual_flask_duration_+%", GlobalFlaskDurationSources),
-        .. Leech("life"), .. Leech("mana"),
-        .. new[] { "spell", "fire", "cold", "lightning" }.Select(type => new Sum(
-            $"virtual_energy_shield_leech_from_{type}_damage_permyriad", [$"base_energy_shield_leech_from_{type}_damage_permyriad"])),
-        new("virtual_energy_shield_leech_speed_+%", ["energy_shield_leech_speed_+%", LeechSpeed]),
+        .. Leech("life"), .. Leech("mana"), .. Leech("energy_shield"),
         new("life_gained_on_spell_hit", ["base_life_gained_on_spell_hit"]),
         new("virtual_energy_shield_gain_per_target", ["energy_shield_gain_per_target"]),
         new("life_gained_on_enemy_death", ["base_life_gained_on_enemy_death",
@@ -188,18 +182,30 @@ static class PanelStats
             ? [$"base_immune_to_{ailment}", "immune_to_ignite_and_shock"] : [$"base_immune_to_{ailment}"], Flag: true),
     ];
 
-    // Life or mana leech per damage type (fire, cold and lightning also take the elemental leech; life also has the
-    // 1/100 000 form some item mods use), from any attack damage, and the leech recovery speed.
+    // Raw sources only: feeding another derived alias into these sums would count general sources twice.
+    static Src[] LeechSources(string pool, string type) =>
+    [
+        $"{pool}_leech_from_any_damage_permyriad", $"base_{pool}_leech_from_{type}_damage_permyriad",
+        .. type is "fire" or "cold" or "lightning" ? new Src[] { $"base_{pool}_leech_from_elemental_damage_permyriad" } : [],
+        .. pool == "life" && type != "spell" ? new Src[] { new($"horrible_ugly_life_leech_from_{type}_damage_perhundredthousand", Div: 10) } : [],
+    ];
+
+    static Sum[] HandLeech(string pool) => Hands(h => new($"{h}_{pool}_leech_from_physical_attack_damage_permyriad",
+        [.. LeechSources(pool, "physical"), $"{pool}_leech_from_physical_attack_damage_permyriad",
+            "life_and_mana_leech_from_physical_damage_permyriad",
+            $"base_{pool}_leech_from_attack_damage_permyriad",
+            .. pool == "mana" ? new Src[] { "attack_skill_mana_leech_from_any_damage_permyriad" } : []],
+        Local: [$"local_{pool}_leech_from_physical_damage_permyriad", "local_life_and_mana_leech_from_physical_damage_permyriad",
+            $"local_{pool}_leech_from_any_damage_permyriad"]));
+
+    // Each displayed scope includes applicable general sources; callers must not add these overlapping totals.
     static Sum[] Leech(string pool) =>
     [
         .. new[] { "spell", "physical", "fire", "cold", "lightning", "chaos" }.Select(type => new Sum(
-            $"{pool}_leech_from_{type}_damage_permyriad",
-            [
-                $"base_{pool}_leech_from_{type}_damage_permyriad",
-                .. type is "fire" or "cold" or "lightning" ? new Src[] { $"base_{pool}_leech_from_elemental_damage_permyriad" } : [],
-                .. pool == "life" && type != "spell" ? new Src[] { new($"horrible_ugly_life_leech_from_{type}_damage_perhundredthousand", Div: 10) } : [],
-            ])),
-        new($"virtual_{pool}_leech_from_attack_damage_permyriad", [$"base_{pool}_leech_from_attack_damage_permyriad"]),
+            $"{(pool == "energy_shield" ? "virtual_" : "")}{pool}_leech_from_{type}_damage_permyriad", LeechSources(pool, type))),
+        .. pool != "energy_shield" ? new Sum[] { new($"virtual_{pool}_leech_from_attack_damage_permyriad",
+            [$"{pool}_leech_from_any_damage_permyriad", $"base_{pool}_leech_from_attack_damage_permyriad",
+                .. pool == "mana" ? new Src[] { "attack_skill_mana_leech_from_any_damage_permyriad" } : []]) } : [],
         new($"virtual_{pool}_leech_speed_+%", [$"{pool}_leech_speed_+%", LeechSpeed]),
     ];
 
@@ -238,7 +244,9 @@ static class PanelStats
         or "virtual_sap_duration_+%" or "virtual_sap_effect_+%"
         or "virtual_total_main_hand_impale_on_hit_%_chance" or "virtual_total_off_hand_impale_on_hit_%_chance"
         or "virtual_total_spell_impale_on_hit_%_chance"
-        || s.Display.Contains("_attack_damage_penetrates_", StringComparison.Ordinal))];
+        || s.Display.Contains("_attack_damage_penetrates_", StringComparison.Ordinal)
+        || s.Display.Contains("_leech_from_", StringComparison.Ordinal)
+        || s.Display.EndsWith("_leech_speed_+%", StringComparison.Ordinal))];
 
     /// <summary>Selected-skill aliases from original raw character and qualifying skill/support inputs.
     /// Derive each alias once, clamp the completed sum, and retain zero to clear a removed contribution.
@@ -248,10 +256,12 @@ static class PanelStats
     {
         int level = Math.Clamp(playerLevel, 1, Progression.MaxLevel);
         bool blockElemental = character(Penetration.ElementalProhibition) != 0 || own(Penetration.ElementalProhibition) != 0;
+        long Combined(string name) => (long)character(name) + own(name);
+        long SelectedSum(Sum sum) => Combined(sum.Display)
+            + sum.Sources.Sum(s => Combined(s.Name) * s.Mul * (s.PerPlayerLevel ? level : 1) / s.Div)
+            + Total(sum.Local, sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null }, level);
         return [.. SelectedSums.Select(sum => (sum.Display,
-            blockElemental && Penetration.IsElementalDisplay(sum.Display) ? 0 : Project(sum, RawSum(sum, character,
-                sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null }, level)
-                + RawSum(sum, own, null, level))))];
+            blockElemental && Penetration.IsElementalDisplay(sum.Display) ? 0 : Project(sum, SelectedSum(sum))))];
     }
 
     /// <summary>The global duration coefficient shared by the panel and actual flask uses. The display's virtual
