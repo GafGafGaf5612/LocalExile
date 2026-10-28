@@ -361,7 +361,7 @@ Fire's 18 = 1.8 m), so a target whose centre is within 20 cells of the player is
 The target's rarity (`SpawnedMonster.Rarity`) and its tracked position at the hit's resolution time decide both; the two
 "more" effects multiply (unique and close: × 2.1) and the product floors to a whole rating.
 The default attack samples both actors' current tracked positions after its contact delay.
-Attack gems currently lack an accuracy roll, so these conditions apply only to the existing default-attack roll.
+Ordinary and area attack contacts use these conditions; gem projectile accuracy remains separate work.
 Ten native checks allocated connected ordinary paths and selected both effects through real C→S 0x35 requests.
 The unconditional native panel stayed at 711; logged rolls used 995 against Unique and 1066 against a close normal.
 A close Unique used 1493, while a Unique outside close range used 995.
@@ -396,7 +396,11 @@ Precision/items. Pinned PoB `16de4b82d57f1c0de6eb40f37143c32d4da36a02`, `CalcOff
 and `Data/Skills/sup_dex.lua` `SupportAdditionalAccuracy`, supplies the formula and support values; native
 catalog support/quality controls match them. This is the accepted 3.29.x reference, not exact 3.29.3b certification.
 Automated source/command/Precision restoration, real support lifecycle, flooring, signed and overflow checks pass.
-Gem combat accuracy/confirmation still needs to consume this profile. Off-hand scope/execution, conditional/more
+Area gem attacks now consume this profile for evasion and independent critical confirmation at admitted contact.
+Misses do not consume impales, roll critical chance or trigger on-hit effects. Spells bypass attack accuracy.
+Fourteen additional cases cover Cyclone/Heavy Strike, a real Additional Accuracy support, independent targets,
+cannot-evade, spells, cancelled actions and rejected-contact side effects. Projectile gem contacts still need
+the same profile with forward/piercing/return continuation. Off-hand scope/execution, conditional/more
 accuracy, complete always-hit publication and accuracy-weighted averages/DPS/native checks remain open.
 
 Armour and evasion are summed from the passive tree and the **base types** of the equipped body armour, helmet, gloves
@@ -1238,7 +1242,13 @@ The player object of every area (`SendPlayer`) carries the same weapon attack, s
 weapon's local mods from the start (until 2026-10-23 it started with the unarmed attack, and only an equipment change,
 `SendSkills`, brought the weapon's numbers).
 `base_deal_no_damage` skills (Portal) deal none. An attack's hit carries the skill's damage effectiveness (§9). Not
-modelled: the skills' shapes (waves, cones, chains, leaps), stun, and the accuracy roll. Being tested live.
+modelled: the skills' shapes (waves, cones, chains, leaps) and stun. Area attacks now resolve evasion, block,
+critical confirmation, damage and impale inside the admitted target lock, before any on-hit callback.
+Decision: move contact rolls inside the existing admission gate rather than rolling before `HitMonster` and
+discarding their result after cancellation. This keeps cancelled/paused/dead-owner actions from consuming RNG
+or target state. Explicit blocked/evaded results reject the contact; treating them as zero-damage hits would
+incorrectly update hit timestamps and callbacks. The roll policy and primary evidence are in [damage §2g](20-damage.md).
+Current-branch native validation remains pending.
 
 **Movement skills** (ActiveSkillType Movement: Leap Slam, Whirling Blades …): the server puts the player at the aimed
 cell when the skill starts (`SkillCatalog.IsMovement`); it kept the starting cell before, and a later resync pulled the

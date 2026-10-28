@@ -36,7 +36,7 @@ public partial class ConditionalCriticalGatewayTests
         public SemaphoreSlim SendGate => Program.SendGates.GetValue(ciphers, _ => new(1, 1));
 
         public Contact(Draws random, string? gemName = null, string? weaponName = null, int distance = 2,
-            uint targetLife = 100000, MonsterModSet? targetMods = null)
+            uint targetLife = 100000, MonsterModSet? targetMods = null, byte targetLevel = 1)
         {
             TestSaves.Ensure();
             Conn = new(new(ushort.MaxValue, "CriticalContact", 200, 200, 32, 32, (_, _) => true, []), 1, 1)
@@ -65,7 +65,7 @@ public partial class ConditionalCriticalGatewayTests
             Set("attack_speed_+%", 200);
             Refresh();
             Target = new("critical target", new(32 + distance, 32, 30), 0, 2, targetLife)
-                { Mods = targetMods ?? MonsterModSet.None };
+                { Mods = targetMods ?? MonsterModSet.None, Level = targetLevel };
             Conn.Monsters.Add(42, Target);
             Conn.Clock.Start();
             listener.Start();
@@ -115,6 +115,17 @@ public partial class ConditionalCriticalGatewayTests
         public Task<bool> ContactDamage(Func<int> damage, int? action = null) => (Task<bool>)Method("HitMonster").Invoke(null,
             ["impale-contact-gate-test", writer.GetStream(), ciphers, Conn, 42u, Target, 0, "test", false, false,
                 (ushort)0, action, null, null, damage])!;
+
+        public Task Sweep()
+        {
+            var gems = (IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)
+                typeof(Program).GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic,
+                    binder: null, types: [typeof(string)], modifiers: null)!.Invoke(null, [Conn.Character])!;
+            var gem = Assert.Single(gems, g => g.Id == Skill);
+            return ((Task)Method("AreaSkillHit").Invoke(null,
+                ["accuracy-area-contact-test", writer.GetStream(), ciphers, Conn, Skill, gem, (32, 32), (34, 32),
+                    false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u])!).WaitAsync(TimeSpan.FromSeconds(5));
+        }
 
         public async Task Refund(ushort node)
         {

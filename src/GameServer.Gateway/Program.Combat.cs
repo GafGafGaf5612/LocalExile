@@ -830,7 +830,7 @@ partial class Program
     // point too far for a melee skill. Attacks deal the weapon's hit as the default attack does, spells their own damage
     // (SkillCatalog.HitDamage) with the player's stats; both convert, crit and roll per monster. An attack's hit carries
     // the skill's damage effectiveness (SkillCatalog.DamageEffectiveness). Not modelled yet: the skills' own shapes (waves,
-    // cones, chains), stun, and the attack's accuracy roll.
+    // cones, chains) and stun.
     static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
         bool immediate = false, ushort sequence = 0, int? actionToken = null, CooldownUseTicket? cooldownUse = null, bool? melee = null,
@@ -872,7 +872,6 @@ partial class Program
                 && Dist(e.Value.Walk.Position(now), centre) <= radius).Select(e => (e.Key, e.Value))];
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
-        int criticalChance = SupportedCriticalChance(conn, skillId);
         var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats, spell ? null : MainHandLocalSources(conn));
         var mods = HitResistMods(stats, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
@@ -880,28 +879,43 @@ partial class Program
         // These contacts belong to one resolved sweep. Notification awaits may outlast the shared hit interval,
         // but cannot create a second positive Rage gain from the same sweep. Rejected gains do not take this latch.
         bool rageGranted = false;
+        int acceptedTargets = 0;
         foreach (var (id, m) in targets)
         {
-            if (MonsterBlocks(m, Random.Shared, spell))
-            {
-                Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x} ({m.Label}) blocked");
-                continue;
-            }
-            DamagePacket hit = SupportedHit(conn, skillId);
-            var rolled = hit.Roll(Random.Shared);
-            bool critical = RollCriticalStrike(conn, criticalChance, skillStats, attack: !spell);
-            int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
-            int criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
-            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
-            if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
-            if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
-            if (critical && m.Life > 0) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
-            if (await HitMonster(remote, stream, ciphers, conn, id, m, damage,
-                    $"{gem.Name}{(critical ? " (critical)" : "")}{(resistance is null ? "" : $", {resistance}")}",
+            DamagePacket rolled = DamagePacket.Empty;
+            bool critical = false;
+            int criticalMultiplier = 0;
+            if (await HitMonster(remote, stream, ciphers, conn, id, m, 0, gem.Name,
                     melee: melee ?? !spell, sequence: sequence, actionToken: action, cooldownUse: cooldownUse,
-                    damageAtContact: () => WithImpaleHitLocked(conn, m, damage, rolled, critical, sourceCriticalMultiplier,
-                        ImpaleStats.From(player, Stats, !spell, skillStats, spell ? null : MainHandLocalSources(conn), critical),
-                        damageMore).Damage,
+                    damageAtContact: () =>
+                    {
+                        // Admission, entropy and damage commit under the same target lock. Rejected actions consume
+                        // no accuracy/critical randomness, and an evaded contact cannot trigger any on-hit callbacks.
+                        int hitChance = 100;
+                        if (!spell)
+                        {
+                            var accuracy = SupportedAccuracy(conn, skillId);
+                            double contactAt = conn.Clock.Elapsed.TotalSeconds;
+                            hitChance = AttackHitChanceAt(conn, id, m, contactAt, accuracy);
+                            if (!accuracy.CannotBeEvaded && !m.AttackEvasion.Hits(hitChance, contactAt, conn.AttackAccuracyRandom))
+                                return Evaded;
+                        }
+                        if (MonsterBlocks(m, Random.Shared, spell)) return Blocked;
+                        rolled = SupportedHit(conn, skillId).Roll(Random.Shared);
+                        critical = RollCriticalStrike(conn, SupportedCriticalChance(conn, skillId), skillStats, attack: !spell)
+                            && (spell || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
+                        int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
+                        criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
+                        var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
+                        if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
+                        if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
+                        if (critical || resistance is not null)
+                            Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x}{(critical ? " (critical)" : "")}" +
+                                (resistance is null ? "" : $", {resistance}"));
+                        return WithImpaleHitLocked(conn, m, damage, rolled, critical, sourceCriticalMultiplier,
+                            ImpaleStats.From(player, Stats, !spell, skillStats, spell ? null : MainHandLocalSources(conn), critical),
+                            damageMore).Damage;
+                    },
                     accepted: () =>
                     {
                         if (!fortificationGranted)
@@ -911,9 +925,13 @@ partial class Program
                         if (!rageGranted) rageGranted = RageOnHitLocked(conn, attack: !spell,
                             melee: !spell && Skills.IsMelee(gem.Effect), critical, skillStats);
                     }))
+            {
+                acceptedTargets++;
+                if (critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
                 ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, primary: id == targets[0].Id);
+            }
         }
-        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+        Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {acceptedTargets}/{targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
     }
 
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
@@ -1421,7 +1439,7 @@ partial class Program
             if (cooldownUse is not null ? !cooldownUse.Current(conn) : actionToken is int token && !PlayerActionCurrent(conn, token)) return false;
             if (m.Dead || m.Life == 0) return false;
             if (damageAtContact is not null) damage = damageAtContact();
-            hit = ApplyMonsterHitLocked(conn, m, damage);
+            hit = HitUnlessBlockedLocked(conn, m, damage);
             if (hit is not null) accepted?.Invoke();
         }
         if (hit is { } applied) await NotifyMonsterHit(remote, stream, ciphers, conn, id, m, applied, damage, by, log, melee, sequence);

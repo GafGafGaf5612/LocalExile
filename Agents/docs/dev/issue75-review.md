@@ -246,6 +246,31 @@ alternatives and pinned PoB/native-catalog evidence. Gem attack evasion/confirma
 selected profile; remaining conditional/more accuracy, off-hand sources, complete always-hit/DPS publication
 and native validation remain open. This work does not certify those entire rows.
 
+## Area attack evasion and accepted-contact ordering
+
+Area gem attacks previously skipped evasion/critical confirmation, and rolled block/damage/critical chance before
+`HitMonster` checked action validity. They now consume `SupportedAccuracy` inside admitted contact, using the
+same defender entropy, target conditions and independent critical confirmation as ordinary attacks. A miss
+does not roll crit, consume impales, update hit timestamps or grant on-hit effects. Cannot-evade skips both
+accuracy checks; spells remain outside attack accuracy. Critical flask gains follow accepted damage.
+
+Fourteen new cases cover Cyclone and Heavy Strike, failed/successful confirmation, actual 20-quality Additional
+Accuracy, independent targets, cannot-evade, spells, cancellation and explicit rejection results. An initial
+11-failure diagnostic run asserted before parsed dispatch's background contacts finished; tests now await the
+actual hit/entropy or executor completion. That receipt is retained as a synchronization correction, not proof
+of a production regression. The synchronized 14-case run and expanded 267-case run pass. The solution builds
+with zero warnings/errors; Core 561, Data 18 and Gateway 4,259 pass, no skips, for 4,838 total. Receipts are
+`area-accuracy-expanded.trx`, `core-area-accuracy.trx`, `data-area-accuracy.trx` and `gateway-area-accuracy.trx`
+under the ignored review artifacts. The preceding source/support correction is local commit `c2ae587`.
+
+Decision: move rolls into the existing action/target admission lock rather than consuming state before discovering
+cancellation. Preserve blocked/evaded rejection values rather than accepting a zero-damage hit with callbacks.
+The module decisions and alternatives are recorded in [skills](../protocol/11-skills.md) and
+[damage §2g](../protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
+Gem projectile continuation, per-use critical-roll correlation, other conditional/more accuracy, off-hand
+execution and full chance/always-hit/DPS publication remain open. No live session was launched; native validation
+waits for shared resources. This correction does not establish completion of all 357 virtual stats.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

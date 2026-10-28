@@ -152,20 +152,24 @@ Part of [Status](../Status.md); what to build next in this area is in
   (`TargetAccuracy`): 40% more accuracy against Unique enemies (`SpawnedMonster.Rarity`) and 50% more against enemies
   in the constant 20-unit close range (2 metres; 10 units per metre), multiplying when both hold and never folded into
   the panel's rating or `/accuracy`'s unconditional rating.
-  Gems' attack hits do not roll accuracy yet, so the conditions apply where a roll exists (the default attack).
+  Ordinary and area gem attacks apply these target conditions; gem projectile accuracy remains open.
   Ordinary melee/bow now share per-defender evasion entropy and a separate critical-confirmation draw.
   Bow contacts include target evasion modifiers/Blind and live target mastery conditions, retaining release-time
   owner inputs; an evaded arrow continues to later targets. Raw global/qualified local cannot-evade flags bypass
   both checks. Failed critical confirmation keeps a normal hit and normal impale storage. Rejected melee contacts
   do not consume entropy; ordinary bow block is checked after evasion. Deterministic parsed-contact, pass-through,
-  source-freeze/removal and target-condition tests pass. Current native validation, gem accuracy/confirmation,
+  source-freeze/removal and target-condition tests pass. Current native validation, gem projectile accuracy/confirmation,
   off-hand sources/execution and complete accuracy/always-hit/DPS publication remain open.
   Unconditional selected flat/increased accuracy now joins the original unrounded pool base before the final
   floor, updating main-hand rating and normal/evasive reference chances. Real Additional Accuracy at 0/20 quality
   covers link/removal, attribute changes and unrelated skills. Raw accuracy commands rebuild pools with complete
   source replacement, including Precision and explicit zero; `off` restores sources without relog.
-  Wide signed sums and exact flooring prevent intermediate overflow and fractional drift. Gem combat still
-  needs to consume the selected profile; other conditional/more accuracy and native checks remain open.
+  Wide signed sums and exact flooring prevent intermediate overflow and fractional drift. Area attacks now
+  consume the selected profile under admitted contact, including block and independent critical confirmation;
+  misses/cancelled actions have no critical/impale/on-hit side effects. Fourteen added cases cover Cyclone,
+  Heavy Strike, real support inputs, independent targets, bypass, spells and cancellation; 267 focused checks pass.
+  Gem projectile continuation, per-use critical-roll correlation, other conditional/more accuracy and native
+  checks remain open.
   See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
   Ten native checks used connected ordinary paths and actual mastery selection requests.
   The panel stayed at 711 while target rolls used 995 against Unique, 1066 in close range and 1493 when both held.

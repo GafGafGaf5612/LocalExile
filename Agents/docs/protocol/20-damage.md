@@ -489,8 +489,8 @@ existing relocation gate.
 
 Raw `global_always_hit` from the owner/default skill, or `local_always_hit` from the qualified attacking weapon,
 bypasses both accuracy checks. Inactive/off-hand weapon sources and final hand aliases cannot grant this flag.
-This batch establishes ordinary gameplay, not all source conditions or selected publication: gem attacks still
-need first-hit evasion, critical confirmation and correct projectile continuation; other cannot-evade conditions,
+This establishes ordinary and area attack gameplay, not all source conditions or selected publication: gem
+projectiles still need first-hit evasion, critical confirmation and correct continuation; other cannot-evade conditions,
 off-hand execution, complete chance/always-hit aliases and accuracy-weighted averages/DPS
 remain open. Spell hits continue without attack accuracy. Native revalidation remains pending.
 
@@ -499,7 +499,18 @@ Additional Accuracy's real flat/quality contributions update the selected rating
 raw commands replace all corresponding actor contributions, including Precision, and refresh pools.
 Decision: preserve the original base instead of reversing a floored final value, and apply support inputs before
 the final floor. The alternative would mis-scale flat support values and lose fractional boundaries.
-[Skills §4](11-skills.md) records source evidence, actual support/command tests and the still-open gem consumers.
+[Skills §4](11-skills.md) records source evidence and actual support/command tests.
+
+Area gem attacks now sample that profile at contact, including target Masteries/evasion/Blind and raw cannot-evade
+flags. `HitMonster` admits the action before evasion, block, critical confirmation and damage; rejected contacts
+neither consume impales nor trigger Fortification/Rage/charge callbacks. Critical flask gains occur only after
+accepted damage. Spells skip attack accuracy. Each target keeps its own entropy. Fourteen added cases cover
+channelled/ordinary area attacks, real support inputs, misses, confirmation, cannot-evade, spells, cancellation
+and independent targets; the expanded focused run passes 267. Native checks remain pending.
+Decision: resolve contact rolls under the existing admission lock, rather than consuming random/target state
+before discovering that an action is cancelled. Preserve explicit rejection results instead of converting a
+miss/block into a zero-damage accepted hit, which would still trigger callbacks. Per-use critical-roll correlation,
+gem projectile continuation and broader scope/conditions remain open.
 
 [Mark_GGG's entropy explanation](https://www.pathofexile.com/forum/view-thread/11707/filter-account-type/staff/page/10)
 establishes per-defender state, independent critical confirmation, inactivity resets and separate block checks.
