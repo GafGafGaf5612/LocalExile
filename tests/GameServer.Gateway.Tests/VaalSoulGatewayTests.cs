@@ -8,8 +8,12 @@ namespace GameServer.Gateway.Tests;
 
 public partial class VaalSoulGatewayTests
 {
-    static object Call(string name, params object?[] args) => typeof(Program)
-        .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, args)!;
+    static object Call(string name, params object?[] args)
+    {
+        var method = typeof(Program).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!;
+        return method.Invoke(null, args.Concat(method.GetParameters().Skip(args.Length)
+            .Select(p => p.DefaultValue)).ToArray())!;
+    }
     static void Set(ClientState conn, string name, int value) => conn.PlayerStats[Program.Stats.Key(name)!.Value] = value;
 
     internal sealed class Fixture : IDisposable

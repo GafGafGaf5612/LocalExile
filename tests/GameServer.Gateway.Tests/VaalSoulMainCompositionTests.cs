@@ -44,8 +44,10 @@ public partial class VaalSoulCompositionTests
         await Command(f, w, "/set_stat base_your_auras_are_disabled 1");
         await Command(f, w, "/set_stat spell_skills_deal_no_damage -1");
         await Command(f, w, "/set_stat virtual_aura_vaal_skill_soul_requirement_multipler 100");
-        Assert.Equal((16, 84, 48, 690u),
+        Assert.Equal((16, 84, 48, 138u),
             (f.Conn.Pools.Strength, f.Conn.Pools.Dexterity, f.Conn.Pools.Intelligence, f.Conn.Pools.Mana));
+        // Main's Mental Conditioning converts 80% of 690 Mana into 1104 Armour.
+        Assert.True(f.Conn.Pools.Armour >= 1104);
         Assert.True(f.Conn.Pools.ArmourAppliesToChaosDamage);
         Assert.Single(Fireball(f.Conn).Supports);
         Assert.Equal(0, ((DamagePacket)Call("SupportedHit", f.Conn, Fireball(f.Conn).Id)).MaxTotal);
@@ -61,7 +63,7 @@ public partial class VaalSoulCompositionTests
         await Command(f, w, "/set_stat dexterity_+% off");
         Assert.Equal(new VaalSoulBudget(247, 100, 0), f.Conn.VaalSouls.Read().Single(b => b.ActiveSkillsRow == 247));
         Assert.Single(Fireball(f.Conn).Supports);
-        Assert.Equal(690u, f.Conn.Pools.Mana);
+        Assert.Equal(138u, f.Conn.Pools.Mana);
         Assert.Equal(100u, f.Conn.PlayerLife); Assert.Equal(77u, f.Conn.PlayerMana);
         await Command(f, w, "/set_stat spell_skills_deal_no_damage off");
         Assert.True(((DamagePacket)Call("SupportedHit", f.Conn, Fireball(f.Conn).Id)).MaxTotal > 0);
