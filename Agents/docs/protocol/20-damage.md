@@ -751,14 +751,51 @@ the missing physical/chaos ES aliases. Selected skills recompute all 24 coeffici
 aliases with their qualified supports. These are overlapping display scopes; do not sum them to compute a hit's
 leech. Combine raw actor/support per-hundred-thousand values before unit conversion. [Skills §14](11-skills.md)
 records the pinned source descriptions, real support evidence and the decision to avoid derived-alias feedback.
-Active recovery is still absent; publication does not implement it or certify native formatting.
+The ordinary direct-hit recovery path is now implemented below; publication alone does not certify native formatting.
 
-For the upcoming recovery implementation, [Mark_GGG's worked example](https://www.reddit.com/r/pathofexile/comments/axgevs/comment/ehtoiwd/?context=3)
+The recovery implementation follows [Mark_GGG's worked example](https://www.reddit.com/r/pathofexile/comments/axgevs/comment/ehtoiwd/?context=3)
 distinguishes the fixed per-instance 2%/second rate, amount-based duration, the total recovery modifier and the
 separate total-rate cap. Increasing total recovery does not shorten an instance. Generic recovery rate acts after
 the capped leech contribution. Pinned PoB `CalcOffence.lua:3721` likewise derives duration from amount/full pool
 and its base rate; instant portions and Ghost Reaver remain distinct conversions. Preserve these distinctions
-when adding gameplay rather than using a single regeneration rate or an amount-draining speed multiplier.
+in gameplay rather than using a single regeneration rate or an amount-draining speed multiplier.
+
+`LeechSources`, `LeechRecoveryState`, `LeechSession` and `Program.Leech` now connect raw actor/qualified support/
+attacking-hand inputs to accepted ordinary melee/bow, gem projectile and area contacts. Coefficients apply to final
+damage types after resistance, physical reduction and damage-taken modifiers. Misses, blocks, rejected owners and
+targets, DoT and reflected impales do not grant instances. A monster's `cannot_have_life_leeched_from` gates Life
+only. Real Life Leech, Mana Leech and Energy Leech supports have accepted-hit controls, including attack-only Mana.
+
+Each resource retains separate instances with a creation-time base rate of 2% of its full maximum pool per second.
+The capped nominal amount sets duration; current total recovery, maximum total rate and generic recovery modifiers
+stay separate. The shared limit resolver retains fractions for gameplay even when an integer panel endpoint is zero.
+Configuration settles elapsed recovery before adopting new rates. The existing resource writer integrates every
+expiry boundary, adds Life/Mana with their existing fractional carry and gives ES without starting/resetting recharge.
+General/resource instant percentages split off immediate recovery inside the accepted hit transaction, before another
+enemy hit can act. Instant Life/Mana notifications are marked dirty for the existing writer; ES uses its normal sender.
+Sub-point instant recovery retains a separate carry and discards overflow at full pools.
+
+Ordinary leech ends at full unreserved Mana/full Life/full ES; supported unconditional Life/ES overleech flags retain
+their instances. Instant flasks, block gains and the recovery writer trim full pools at their commits. Death, resurrection,
+successful area transfer and disconnect clear state. Pause uses the stopped game clock. Supported cannot-leech flags
+remove matching instances; cannot-recover Life/ES suppress recovery without inventing a cannot-leech source.
+
+Decisions and alternatives:
+
+- Keep existing total-hit rounding and critical/return scaling. Retain post-mitigation type proportions and scale them
+  to that accepted integer direct total for leech. Rounding each component independently would change existing damage;
+  using pre-mitigation damage would overgrant. This is a local projection, not a measured official rounding rule.
+- Keep ordinary bow offensive leech sources with its existing release snapshot; settle owner recovery limits at contact.
+  Rebuilding bow damage/sources at impact is a separate snapshot-policy review, not an incidental leech change.
+- Clear leech on successful area transfer because the current destination refills resources and owns a fresh clock.
+  Carrying instances/timestamps across connections is unverified; do not silently transfer them or affect another session.
+- Extend the existing resource writer instead of adding another timer. A single writer avoids competing periodic pool
+  updates. Immediate leech stays inside the hit lock; notification latency cannot delay its defensive benefit.
+
+Still open: Ghost Reaver and other conversions, conditional/weapon-family sources and instant percentages, attack-only
+ES overleech, skill-specific recovery-speed ownership, legacy instant flags, current leech-condition publication/consumers,
+remaining cap conditions and current-branch native recovery/prediction/lifecycle parity. These are explicit follow-up
+requirements, not completed by the ordinary engine. No current-branch client/server was launched for these controls.
 
 `LeechLimits` calculates limits independently of active leech recovery. Character.ot's defaults are 10% of the
 full maximum pool per instance, 20% per second total for Life/Mana and 10% per second total for Energy Shield.
@@ -796,7 +833,7 @@ regressions cover tick-only and tick-plus-recovery loops with both native and sy
   increased/more/effectiveness mechanics. Weapon-local flat ranges are in §2a; existing supports retain their own pipeline.
 - Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.
 - Per-monster damage conversion and monster-specific mitigation.
-- Damage reflection, active leech instances/recovery, life/mana gain on hit, and recoup. Leech limits are in §5b.
+- Damage reflection, specialized leech conversions/conditions, life/mana gain on hit, and recoup. Ordinary leech is in §5b.
 - Party/minion damage and the full support-gem effect set.
 
 The next support-gem work (#64) can add its effects as packet operations: `Add` for added damage, `Scale` for

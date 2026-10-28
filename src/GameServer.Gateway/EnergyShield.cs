@@ -24,6 +24,13 @@ sealed class EnergyShield
         return amount - (int)absorbed;
     }
     public void Empty() { Current = 0; fraction = 0; Recharging = false; }
+    // Leech/gain does not start recharge or reset its interruption timer.
+    public void Gain(double amount)
+    {
+        if (!double.IsFinite(amount) || amount <= 0) return;
+        Current = RecoveryPool.Advance(Current, Maximum, amount, ref fraction);
+        if (Current == Maximum) Recharging = false;
+    }
     public static uint Max(int flat, int increased) =>
         (uint)Math.Clamp(((long)Math.Max(0, flat) * Math.Max(0L, 100L + increased) + 50) / 100, 0, int.MaxValue);
     public static double Delay(Func<string, int> get) => 2 / Math.Max(0.01, 1 + get("energy_shield_delay_-%") / 100.0);

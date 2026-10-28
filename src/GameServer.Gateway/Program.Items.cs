@@ -204,6 +204,7 @@ partial class Program
                 return;
             }
             (conn.PlayerLife, conn.PlayerMana) = (lifeAfter, manaAfter) = (l, m);
+            TrimLeechLocked(conn);
         }
         if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), $"0x01b1 player life {lifeAfter} (flask)");
         if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, $"0x01b1 player mana {manaAfter} (flask)");

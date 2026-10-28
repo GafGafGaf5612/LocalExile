@@ -93,6 +93,10 @@ partial class Program
         return (int)Math.Round(total * e.DamageTaken(spell));
     }
 
+    internal static DamagePacket MonsterTakenComponents(SpawnedMonster m, DamagePacket mitigated, bool spell) =>
+        mitigated.Select((type, range) => range.Scale(type == DamageType.Physical
+            ? Math.Max(0, 1 - m.Mods.Effects.PhysicalReduction / 100.0) : 1)).Scale(m.Mods.Effects.DamageTaken(spell));
+
     /// <summary>The player's base_self_critical_strike_multiplier_-% (critical strikes against them deal less extra damage).</summary>
     static int SelfCriticalReduction(ClientState conn) =>
         Stats.Key("base_self_critical_strike_multiplier_-%") is uint key ? CharacterPlayerStats(conn).GetValueOrDefault(key) : 0;

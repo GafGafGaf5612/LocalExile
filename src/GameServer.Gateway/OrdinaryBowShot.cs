@@ -9,6 +9,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
     public ImpaleStats.Settings? ImpaleSettings { get; init; }
     public AttackAccuracyProfile? AccuracyProfile { get; init; }
     public SkillCriticalRoll? CriticalRoll { get; init; }
+    public LeechSources Leech { get; init; } = new(DamagePacket.Empty, DamagePacket.Empty, DamagePacket.Empty);
     public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
@@ -21,6 +22,8 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         var impale = ImpaleStats.From(character, catalog, attack: true, own, weapon.LocalSources);
         return new(hit, accuracy, criticalChance, criticalMultiplier, impale.Chance)
         { ImpaleSettings = impale,
+            Leech = LeechSources.From(name => (int)Math.Clamp((long)Get(name) + Own(name), int.MinValue, int.MaxValue),
+                attack: true, name => weapon.LocalSources?.GetValueOrDefault(name) ?? 0),
             AccuracyProfile = new(accuracy,
                 Get("accuracy_rating_+%_final_vs_unique_enemies_from_mastery"),
                 Get("accuracy_rating_+%_final_vs_enemies_in_close_range_from_mastery"),
@@ -40,7 +43,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         Func<DamagePacket, bool, int>? mitigate = null, int? criticalMultiplier = null,
         int extraCriticalRolls = 0, Random? criticalRandom = null, bool cannotCrit = false,
         double now = 0, Func<double, int>? reflect = null, int avoidImpale = 0,
-        int hitChance = 100, Random? accuracyRandom = null)
+        int hitChance = 100, Random? accuracyRandom = null, Action<int>? directHit = null)
     {
         var rolled = Hit.Roll(random);
         int chance = cannotCrit ? 0 : CriticalChance;
@@ -49,6 +52,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
             && EvasionEntropy.ConfirmsCritical(hitChance, accuracyRandom ?? random);
         int damage = mitigate?.Invoke(rolled, critical) ?? (int)Math.Round(rolled.MinTotal);
         if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier ?? CriticalMultiplier);
+        directHit?.Invoke(damage);
         double physical = rolled[DamageType.Physical].Min * (critical ? Math.Max(0, CriticalMultiplier) / 100.0 : 1);
         var (stored, _) = impale.OnHit(physical, now, ImpaleSettings ?? new(ImpaleChance), random, avoidImpale);
         int reflected = stored > 0 ? reflect?.Invoke(stored) ?? (int)Math.Round(stored) : 0;

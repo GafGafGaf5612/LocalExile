@@ -65,10 +65,19 @@ formatting remain open; [review](issue75-review.md#accuracy-weighted-attack-aver
 
 Partial: 24 scoped coefficient aliases and three speed aliases now compose qualified actor/support/hand sources,
 including general/elemental inputs, physical/chaos ES and combined Life/Mana. Real supports and fractional unit
-composition have automated controls. Active leech recovery, conditional sources, conversions, weapon-family
-conditions and native getter/formatting parity remain open. See [review](issue75-review.md#leech-coefficient-source-composition)
+composition have automated controls. Ordinary direct hits now create timed/instant resource recovery with separate
+instance duration, total recovery and caps. Conditional sources, conversions, weapon-family conditions, skill-specific
+recovery speeds and native getter/recovery parity remain open. See [review](issue75-review.md#ordinary-active-leech-recovery)
 and [damage module](../protocol/20-damage.md#5b-character-panel-leech-limits). Do not add overlapping display scopes
 as independent leech amounts in combat.
+
+## Leech limits and prohibitions
+
+Partial: the 15 limit/prohibition aliases share the resolver consumed by ordinary active recovery. Fractional
+combat caps remain nonzero when whole display endpoints truncate to zero. Raw/virtual replacements, Low Life
+Life/Mana scope, separate amount/rate changes and lifecycle have automated controls. Unsupported cap conditions,
+conversions and current native recovery checks remain open; [review](issue75-review.md#ordinary-active-leech-recovery),
+[module](../protocol/20-damage.md#5b-character-panel-leech-limits). Historical native display checks remain scoped to their recorded revision.
 
 ## Pending audit
 
@@ -106,9 +115,9 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `cannot_be_stunned_by_attacks` | pending | [pending audit](#pending-audit) |
 | `cannot_be_stunned_by_spells` | pending | [pending audit](#pending-audit) |
 | `cannot_gain_bleeding` | pending | [pending audit](#pending-audit) |
-| `cannot_leech_energy_shield` | pending | [pending audit](#pending-audit) |
-| `cannot_leech_life` | pending | [pending audit](#pending-audit) |
-| `cannot_leech_mana` | pending | [pending audit](#pending-audit) |
+| `cannot_leech_energy_shield` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `cannot_leech_life` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `cannot_leech_mana` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `cast_speed_+%` | pending | [pending audit](#pending-audit) |
 | `cast_speed_+%_per_frenzy_charge` | pending | [pending audit](#pending-audit) |
 | `chance_to_dodge_spells_%` | pending | [pending audit](#pending-audit) |
@@ -209,7 +218,7 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `maximum_bleeding_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_bleeding_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_energy_shield` | pending | [pending audit](#pending-audit) |
-| `maximum_energy_shield_leech_amount_per_leech` | pending | [pending audit](#pending-audit) |
+| `maximum_energy_shield_leech_amount_per_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `maximum_ignite_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_ignite_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_ignite_damage_to_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
@@ -219,9 +228,9 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `maximum_ignite_damage_to_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_ignite_damage_to_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_life` | pending | [pending audit](#pending-audit) |
-| `maximum_life_leech_amount_per_leech` | pending | [pending audit](#pending-audit) |
+| `maximum_life_leech_amount_per_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `maximum_mana` | pending | [pending audit](#pending-audit) |
-| `maximum_mana_leech_amount_per_leech` | pending | [pending audit](#pending-audit) |
+| `maximum_mana_leech_amount_per_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `maximum_poison_damage_to_always_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_poison_damage_to_always_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_poison_damage_to_always_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
@@ -238,9 +247,9 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `maximum_poison_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_poison_damage_to_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
 | `maximum_poison_damage_to_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_total_recovery_per_minute_from_energy_shield_leech` | pending | [pending audit](#pending-audit) |
-| `maximum_total_recovery_per_minute_from_life_leech` | pending | [pending audit](#pending-audit) |
-| `maximum_total_recovery_per_minute_from_mana_leech` | pending | [pending audit](#pending-audit) |
+| `maximum_total_recovery_per_minute_from_energy_shield_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `maximum_total_recovery_per_minute_from_life_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `maximum_total_recovery_per_minute_from_mana_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `minimum_bleeding_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
 | `minimum_bleeding_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
 | `minimum_bleeding_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
@@ -403,13 +412,13 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `virtual_maximum_affliction_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_brutal_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_endurance_charges` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_energy_shield_leech_amount_per_leech_permyriad_max_energy_shield` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_energy_shield_leech_rate_permyriad_per_minute` | pending | [pending audit](#pending-audit) |
+| `virtual_maximum_energy_shield_leech_amount_per_leech_permyriad_max_energy_shield` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `virtual_maximum_energy_shield_leech_rate_permyriad_per_minute` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `virtual_maximum_frenzy_charges` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_life_leech_amount_per_leech_permyriad_max_life` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_life_leech_rate_permyriad_per_minute` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_mana_leech_amount_per_leech_permyriad_max_mana` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_mana_leech_rate_permyriad_per_minute` | pending | [pending audit](#pending-audit) |
+| `virtual_maximum_life_leech_amount_per_leech_permyriad_max_life` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `virtual_maximum_life_leech_rate_permyriad_per_minute` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `virtual_maximum_mana_leech_amount_per_leech_permyriad_max_mana` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
+| `virtual_maximum_mana_leech_rate_permyriad_per_minute` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `virtual_maximum_power_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_siphoning_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_spirit_charges` | pending | [pending audit](#pending-audit) |

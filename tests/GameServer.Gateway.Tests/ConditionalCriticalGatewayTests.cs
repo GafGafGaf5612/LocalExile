@@ -151,6 +151,9 @@ public partial class ConditionalCriticalGatewayTests
         public Task RunPanelTick() => (Task)Method("RunPlayerTick").Invoke(null,
             ["critical-panel-test", writer.GetStream(), ciphers, Conn])!;
 
+        public Task RunRecovery() => (Task)Method("RunResourceRecovery").Invoke(null,
+            ["leech-recovery-test", writer.GetStream(), ciphers, Conn])!;
+
         public IReadOnlyList<GrantedSkill> CurrentSkills() =>
             ((IEnumerable<GrantedSkill>)Method("PlayerSkills").Invoke(null, [Conn])!).ToList();
 

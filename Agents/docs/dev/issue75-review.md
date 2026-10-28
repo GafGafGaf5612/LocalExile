@@ -424,6 +424,50 @@ The [skills module](../protocol/11-skills.md) records these choices and alternat
 also records primary GGG evidence distinguishing instance duration, total recovery and maximum-rate caps for the
 next gameplay work. The ledger moves these 27 rows to partial, not complete. No live session was started.
 
+## Ordinary active leech recovery
+
+The preceding coefficient correction exposed the missing authoritative consumer: valid leech supports could
+publish percentages but restore no resource. `LeechSources` now builds per-type raw coefficients; accepted
+ordinary melee/bow, gem projectile and area contacts grant Life/Mana/ES recovery from post-mitigation direct
+damage. Reflected impales, DoT, evasion/block and rejected contact states stay outside that consumer. Monster
+Life-leech immunity is now modelled instead of vacuous, with a Mana control.
+
+`LeechRecoveryState` implements the primary GGG 1000-Life/700-damage example: a 150 nominal capped instance
+has a 20/second base rate and lasts 7.5 seconds; 100% increased total recovery gives 40/second without shortening
+it. Six such instances cap at 230/second, and generic recovery applies after that cap. The shared `LeechLimits`
+resolver keeps fractional gameplay caps while preserving existing integer panel projection. `LeechSession`
+keeps the three resources independent, settles modifiers before adopting new values, handles instant portions
+inside the hit lock, and removes ordinary instances on full pools. The existing writer applies timed recovery;
+pause, death/resurrection, successful transfer and disconnect have explicit ownership/cleanup. Instant flask
+and block gains also trim full pools at their commits rather than waiting for the periodic writer.
+
+Automated evidence: ten timing-model cases, three fractional/limit cases, six source/typed-damage/reflection
+cases, five session cases and nineteen contact/resource-writer cases. The actual level-one Life/Mana/ES supports
+recover their appropriate resource; six ordinary/gem contact routes create timed instances. The focused run
+passes 100 cases (`leech-lifecycle.trx`). Initial focused runs passed 33 shared timing/limit cases, 70 existing
+leech cases and 92 accepted-contact cases. Two test-fixture compilation errors (missing protocol namespace and
+assignment to an init-only hostile flag) were fixed before execution; they were not gameplay regressions.
+After immediate full-pool/death cleanup was added, the solution builds with zero warnings/errors and all required
+suites pass: Core 561, Data 18, Gateway 4,419, no skips, 4,998 total. Receipts are `build-active-leech.log`,
+`core-active-leech.trx`, `data-active-leech.trx` and `gateway-active-leech.trx`. The exact ledger audit still finds
+357 virtual stats, 387 rows and 491 total dependencies across 83 tracked Markdown files.
+
+Decisions and alternatives are also in [damage §5b](../protocol/20-damage.md#5b-character-panel-leech-limits):
+
+- Preserve current whole-hit/critical/return rounding and allocate that direct total by post-mitigation type
+  weights. Component-wise rounding would change established damage; pre-mitigation weighting overgrants typed
+  leech. The chosen projection is explicit and remains unverified against official fractional rounding.
+- Keep ordinary bow leech sources with its existing release snapshot, while owner recovery settings update at
+  contact. Changing all bow snapshot policy at the same time would hide a separate unresolved mechanics decision.
+- Clear on successful transfer into the existing full-pool destination; carrying old-clock instances is unverified.
+  Failed transfers do not clear them. Use the existing recovery writer rather than a competing timer.
+- Keep conversions, conditional/weapon-family sources, attack-only ES overleech, skill-owned recovery speed,
+  legacy instant flags and leech-state consumers open. A tested ordinary engine is useful progress, not completion
+  of the specialized mechanics or native presentation/prediction parity.
+
+The ledger moves 15 specifically audited limit/prohibition rows to partial: 82 partial, 275 pending, zero complete.
+No live process was launched or stopped. The persistent 357-stat goal remains active.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
@@ -465,7 +509,7 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
    secondary averages, cooldown/downtime and DoT remain open.
 4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.
    Protocol 20 section 3 documents helpers, but also the missing execution paths.
-5. Ward, defence estimates, remaining regeneration/recharge conversions, active leech, special charges,
+5. Ward, defence estimates, remaining regeneration/recharge conversions, specialized leech, special charges,
    minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap.
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 

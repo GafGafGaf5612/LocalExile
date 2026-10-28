@@ -42,6 +42,7 @@ partial class Program
             conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife
                 - conn.EnergyShield.Damage(dealt, type == DamageType.Chaos, now) + gainedLife));
             if (block) conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
+            TrimLeechLocked(conn);
             conn.RecentEnemyHits.Record(now);
             if (block) ChargesWhenHit(conn, blocked, spell);
             if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();

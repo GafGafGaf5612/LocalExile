@@ -180,6 +180,7 @@ cells/s, a normal one every 0.125–0.133 s; the server walks it at the same spe
 | `always_crit` | its critical strikes (monster attacks have no base chance; × 130% less the player's `base_self_critical_strike_multiplier_-%`, at least 100%) |
 | `hit_damage_+%_per_10%_missing_enemy_life` | its hit on a wounded player |
 | `self_take_no_extra_damage_from_critical_strikes` | the player's critical hits deal their normal damage |
+| `cannot_have_life_leeched_from` | prevents Life leech from accepted player hits; does not prevent Mana/ES leech (damage §5b) |
 | `life_regeneration_rate_per_minute_%` | it regains life (a 0.5 s server tick, 0x1b1) |
 | `base_cannot_be_stunned` | no hit reaction (the flinch is the hit's stun) |
 

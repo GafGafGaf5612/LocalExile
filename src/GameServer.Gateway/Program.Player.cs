@@ -16,6 +16,7 @@ partial class Program
             conn.ApplyMovementSpeed();
             conn.PlayerLife = on ? conn.PlayerMaxLife : Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
             conn.PlayerMana = on ? (uint)UnreservedMana(conn) : Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+            TrimLeechLocked(conn);
         }
         Console.WriteLine($"[gateway] {remote} god mode {(on ? "on" : "off")}: life {conn.Pools.Life}, mana {conn.Pools.Mana}, {ReservedMana(conn)} reserved");
         await SendCharacterStats(remote, stream, ciphers, conn, on ? "god mode on" : "god mode off");
@@ -106,6 +107,7 @@ partial class Program
             if (conn.PlayerLife != 0) return; // An older notification cannot clear a resurrected owner's new contacts.
             conn.InvalidateIncomingHits();
             FortificationOf(conn).Clear();
+            LeechOf(conn).Clear(conn.Clock.Elapsed.TotalSeconds);
             ClearRageOnDeath(conn);
         }
         await SendRage(remote, stream, ciphers, conn);
@@ -424,32 +426,43 @@ partial class Program
             var (life, mana, ended) = conn.FlaskEffects.Advance(last, now);
             last = now;
             uint lifeBefore, lifeAfter, manaBefore, manaAfter, manaCap;
-            bool dead;
+            bool dead, instantLifeChanged, instantManaChanged;
             lock (conn.Monsters)
             {
                 lifeBefore = conn.PlayerLife;
                 manaBefore = conn.PlayerMana;
                 manaCap = (uint)UnreservedMana(conn);
+                var leech = LeechOf(conn);
+                instantLifeChanged = leech.InstantLifeChanged;
+                instantManaChanged = leech.InstantManaChanged;
+                leech.InstantLifeChanged = leech.InstantManaChanged = false;
                 dead = lifeBefore == 0;
                 if (dead)
                 {
                     lifeCarry = manaCarry = burnCarry = 0;
                     FortificationOf(conn).Clear();
+                    leech.Clear(now);
                     conn.EnergyShield.Empty();
                     lifeAfter = lifeBefore;
                     manaAfter = manaBefore;
                 }
                 else
                 {
+                    leech.ClearFull(now, lifeBefore >= conn.PlayerMaxLife, manaBefore >= manaCap,
+                        conn.EnergyShield.Current >= conn.EnergyShield.Maximum);
+                    var leeched = leech.TakeRecovery(now);
                     burnCarry += burnPerSecond * seconds;
                     int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
                     int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
+                    conn.EnergyShield.Gain(leeched.EnergyShield);
                     double fortificationLife = FortificationOf(conn).TakeRecovery(conn.Clock.Elapsed.TotalSeconds);
                     conn.PlayerLife = lifeAfter = RecoveryPool.Advance(lifeBefore, conn.PlayerMaxLife,
-                        life + lifeRate * seconds + fortificationLife - lifeBurn, ref lifeCarry, minimum: 1);
+                        life + lifeRate * seconds + fortificationLife + leeched.Life - lifeBurn, ref lifeCarry, minimum: 1);
                     conn.PlayerMana = manaAfter = RecoveryPool.Advance(manaBefore, manaCap,
-                        mana + manaRate * seconds, ref manaCarry);
+                        mana + manaRate * seconds + leeched.Mana, ref manaCarry);
+                    leech.ClearFull(now, lifeAfter >= conn.PlayerMaxLife, manaAfter >= manaCap,
+                        conn.EnergyShield.Current >= conn.EnergyShield.Maximum);
                 }
             }
             await SendPlayerEnergyShield(remote, stream, ciphers, conn);
@@ -460,8 +473,8 @@ partial class Program
             }
             if (rf is not null && lifeAfter == 1 && conn.EnergyShield.Current == 0)
                 await EndRighteousFire(remote, stream, ciphers, conn, "one life and no energy shield");
-            if (lifeAfter != lifeBefore) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
-            if (manaAfter != manaBefore) await SendPlayerMana(remote, stream, ciphers, conn, null);
+            if (lifeAfter != lifeBefore || instantLifeChanged) await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, lifeAfter), null);
+            if (manaAfter != manaBefore || instantManaChanged) await SendPlayerMana(remote, stream, ciphers, conn, null);
             bool lifeFull = lifeAfter == conn.PlayerMaxLife, manaFull = manaAfter == manaCap;
             ended.AddRange(conn.FlaskEffects.End(e => (e.LifePerSecond == 0 || lifeFull) && (e.ManaPerSecond == 0 || manaFull)));
             ended = conn.FlaskEffects.KeepRunning(ended, lifeFull, manaFull, now);
@@ -629,6 +642,7 @@ partial class Program
         {
             if (conn.PlayerLife > 0) return;
             conn.InvalidateIncomingHits();
+            LeechOf(conn).Clear(conn.Clock.Elapsed.TotalSeconds);
             conn.PlayerLife = conn.PlayerMaxLife;
             conn.EnergyShield.SetMaximum(conn.Pools.EnergyShield, refill: true);
             conn.HitRecovery.Clear();

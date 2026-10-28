@@ -415,13 +415,18 @@ Part of [Status](../Status.md); what to build next in this area is in
   The current issue #75 review also corrects 24 leech coefficient and three recovery-speed aliases: general,
   typed/elemental, attack/spell and qualified hand sources, missing physical/chaos ES, and real selected supports.
   Actor/support fractional inputs combine before unit conversion. The new composition has automated controls;
-  native getter/formatting parity and active leech recovery remain open (damage §5b, skills §14).
+  native getter/formatting parity remains open (damage §5b, skills §14).
   Six absolute rows and their percent companions include supported increases/reductions and prohibition flags.
   Native controls verify display conversion, Low Life/healing, real item pool conversion, reservation and relog.
   The periodic stat refresh uses one consistent developer snapshot, with four observed-task regressions.
   Fractional endpoint truncation is a documented local projection; official-server rounding is unmeasured.
-  Active leech instances/recovery and unsupported conditional sources remain open.
-  Code: `LeechLimits.cs`, Gateway (`CharacterPlayerStatsCore`).
+  Ordinary accepted melee/bow/projectile/area hits now create separate Life/Mana/ES instances from raw qualified
+  sources and post-mitigation direct damage. Their duration, total recovery, cap and generic recovery multipliers
+  are distinct. Instant portions recover inside the hit transaction; the existing resource writer integrates timed
+  portions and exact expiry boundaries. Full-pool removal, unconditional overleech, prohibition, pause/death/transfer
+  cleanup and real support contacts have automated controls. Specialized conversions/conditions, skill-specific
+  recovery-speed ownership, leech-state consumers and current native recovery/prediction parity remain open.
+  Code: `LeechLimits.cs`, `LeechSources.cs`, `LeechRecoveryState.cs`, `LeechSession.cs`, Gateway (`Program.Leech`, resource writer).
   Docs: [20](../docs/protocol/20-damage.md) §5b.
 - Ordinary Life/Mana regeneration: flat and maximum-pool percentage sources receive regeneration and recovery increases.
   The matching prohibitions stop recovery, and the panel/native prediction inputs share the actual resource writer.
@@ -1001,7 +1006,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Encrypted-wire held-gate tests cover a queued clamp, cleared prediction, death and unchanged-state suppression;
   native checks of this queued-send case remain pending.
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
-  Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
+  Special ES keystones, recoup and conditional substitutions remain unimplemented; ordinary ES leech uses the shared recovery writer (§5b).
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
   Maximum-mana added lightning has original-head native checks and resolved automated checks.
   Not yet: exposure, aura-dependent penetration, other added damage,

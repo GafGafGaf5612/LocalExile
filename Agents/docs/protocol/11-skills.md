@@ -2133,8 +2133,9 @@ Pinned PoB `16de4b82` supplies the three support stat sets and the general/eleme
 (`Data/Skills/sup_str.lua`, `sup_dex.lua`, `sup_int.lua`, `Data/StatDescriptions/stat_descriptions.lua`).
 Scope composition follows those descriptions; current native getter/formatting parity remains unverified.
 Decision: derive each total once from raw sources rather than summing overlapping derived aliases or rounding
-actor/support fractions separately. Keep active leech instances, recovery, conditional sources and conversions
-open instead of treating corrected display coefficients as implemented combat. See damage §5b and the review ledger.
+actor/support fractions separately. Ordinary active leech now consumes raw qualified sources at accepted contacts
+and uses separate instance duration, total recovery and cap rules (damage §5b). Conditional sources, conversions,
+skill-specific recovery-speed ownership and native validation remain open in the review ledger.
 
 Selected impale chance now recomputes all three virtual totals from the raw actor, own support and each hand's
 local snapshot. Real Impale Support grants attack chance 60: actor 10 gives selected 70 while the actor/default

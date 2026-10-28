@@ -213,8 +213,9 @@ partial class Program
                 && GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom);
             int sourceCriticalMultiplier = AttackCriticalMultiplier(conn, player);
             int criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
-            (damage, resistance) = MonsterDamage(m, ownRolled, critical, attack: true, resistanceMods, pen);
+            (damage, resistance) = MonsterDamage(m, ownRolled, critical, attack: true, resistanceMods, pen, out var taken);
             if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
+            LeechOnHitLocked(conn, m, taken, damage, HitLeechSources(player, true, ownPenetration, weapon.LocalSources));
             (damage, stored, impaled) = WithImpaleHitLocked(conn, m, damage, ownRolled, critical, sourceCriticalMultiplier,
                 ImpaleStats.From(player, Stats, attack: true, ownPenetration, weapon.LocalSources, critical));
             impaleStacks = m.Impale.Stacks;
@@ -729,10 +730,11 @@ partial class Program
                 && (!attack || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
             var impaleSources = ImpaleStats.From(stats, Stats, attack, own, weaponLocal, critical);
             int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
-            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, resistanceMods, pen);
+            var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, resistanceMods, pen, out var taken);
             if (critical)
                 damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(m, sourceCriticalMultiplier));
             if (hitMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, hitMore));
+            LeechOnHitLocked(conn, m, taken, damage, HitLeechSources(stats, attack, own, weaponLocal));
             damage = WithImpaleHitLocked(conn, m, damage, rolled, critical, sourceCriticalMultiplier,
                 impaleSources, hitMore).Damage;
             ChargesOnHit(conn, m, critical, spell, gem.Effect, gem.Level, gem.Quality, melee: false);
@@ -915,9 +917,11 @@ partial class Program
                             && (spell || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
                         int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
                         criticalMultiplier = CriticalMultiplierOn(m, sourceCriticalMultiplier);
-                        var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
+                        var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen, out var taken);
                         if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
                         if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
+                        LeechOnHitLocked(conn, m, taken, damage,
+                            HitLeechSources(player, !spell, skillStats, spell ? null : MainHandLocalSources(conn)));
                         if (critical || resistance is not null)
                             Console.WriteLine($"[gateway] {remote} {gem.Name} on 0x{id:x}{(critical ? " (critical)" : "")}" +
                                 (resistance is null ? "" : $", {resistance}"));
@@ -1200,15 +1204,18 @@ partial class Program
                         {
                             if (ordinaryShot is not null && !MonsterBlocks(target, Random.Shared, spell: false))
                             {
+                                DamagePacket taken = DamagePacket.Empty;
+                                CharacterPlayerStats(conn); // Settle current recovery limits before granting the contact.
                                 (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared,
                                     (rolled, crit) => MonsterDamage(target, rolled, crit, attack: true,
-                                        ordinaryShot.ResistanceMods, ordinaryShot.Penetration).Damage,
+                                        ordinaryShot.ResistanceMods, ordinaryShot.Penetration, out taken).Damage,
                                     CriticalMultiplierOn(target, ordinaryShot.CriticalMultiplier),
                                     criticalRandom: conn.CriticalRandom,
                                     cannotCrit: ordinaryShot.CriticalChance > 0 && CriticalProhibited(conn, attack: true),
                                     now: conn.Clock.Elapsed.TotalSeconds, reflect: stored => MonsterImpaleDamage(target, stored),
                                     avoidImpale: target.Mods.Effects["avoid_impale_%"], hitChance: hitChance,
-                                    accuracyRandom: conn.AttackAccuracyRandom);
+                                    accuracyRandom: conn.AttackAccuracyRandom,
+                                    directHit: direct => LeechOnHitLocked(conn, target, taken, direct, ordinaryShot.Leech));
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (hit is not null) RageOnHitLocked(conn, attack: true, melee: false, critical);
                             }
@@ -1471,6 +1478,10 @@ partial class Program
     // Resolve an already-rolled packet using its single critical draw; target damage taken follows mitigation.
     internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket rolled,
         bool critical, bool attack, HitResistances.Mods mods, Penetration.PerType pen = default)
+        => MonsterDamage(m, rolled, critical, attack, mods, pen, out _);
+
+    internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket rolled,
+        bool critical, bool attack, HitResistances.Mods mods, Penetration.PerType pen, out DamagePacket taken)
     {
         var described = new List<string>();
         var strike = new HitResistances.Strike(Critical: critical, Attack: attack);
@@ -1480,6 +1491,7 @@ partial class Program
             if (rolled[type].Max > 0 && HitResistances.Describe(type, value, strike, mods) is { } note) described.Add(note);
             return HitResistances.Effective(type, value, strike, mods);
         });
+        taken = MonsterTakenComponents(m, mitigated, spell: !attack);
         return (MonsterTakesMitigated(m, mitigated, spell: !attack),
             described.Count > 0 ? string.Join(", ", described) : null);
     }

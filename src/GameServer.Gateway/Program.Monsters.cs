@@ -311,6 +311,7 @@ partial class Program
                 int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
                 conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
                 conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
+                TrimLeechLocked(conn);
                 conn.RecentEnemyHits.Record(now);
                 ChargesWhenHit(conn, blocked);
                 if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
