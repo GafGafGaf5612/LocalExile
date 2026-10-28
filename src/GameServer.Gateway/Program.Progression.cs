@@ -177,6 +177,9 @@ partial class Program
         if (Stats.Key(PlayerHitMitigation.ArmourAppliesToChaos) is uint chaosArmour
             && devStats.TryGetValue(chaosArmour, out int chaosArmourOverride))
             bonus = bonus with { ArmourAppliesToChaosDamage = chaosArmourOverride != 0 };
+        if (Stats.Key(PowerOfPurpose.RawFlag) is uint mentalConditioning
+            && devStats.TryGetValue(mentalConditioning, out int flag))
+            bonus = bonus with { MentalConditioning = flag != 0 };
         long RawCriticalSum(string name)
         {
             if (Stats.Key(name) is not uint key) return 0;
@@ -404,6 +407,7 @@ partial class Program
             Armour: Get("base_physical_damage_reduction_rating"), ArmourPct: armourPct,
             Evasion: Get("base_evasion_rating"), EvasionPct: evasionPct,
             SharedDefencesPct: defencesPct, IronReflexes: Get("keystone_iron_reflexes") != 0,
+            MentalConditioning: Get(PowerOfPurpose.RawFlag) != 0,
             ChaosInoculation: Get("keystone_chaos_inoculation") != 0,
             ArmourAppliesToChaosDamage: Get(PlayerHitMitigation.ArmourAppliesToChaos) != 0,
             EnergyShield: Get("base_maximum_energy_shield"),

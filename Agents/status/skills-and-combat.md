@@ -37,7 +37,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   A fresh Witch's 56 mana becomes 80 at 14/15 Strength, 88 at 16 Strength and 110 with 25% increased mana.
   Maximum-mana attack lightning follows the final pool; display-only Strength overrides cannot feed it back.
   Idle aura reservation and current-mana clamps have decrypted command-wire coverage, including the send gate.
-  Native controls use raw inputs and synthetic gear; the other Mental Conditioning flags and class remain separate.
+  Historical native controls use raw inputs and synthetic gear; Phrecia selection remains gated.
+  The full Mental Conditioning node now composes with Power of Purpose in automated tests; native reruns remain pending.
   See [11](../docs/protocol/11-skills.md) section 4.
 
 - Player Actor scale (#299): passive, active item, aura, flask and cosmetic size inputs share final1973.
@@ -77,6 +78,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   Inactive-weapon, cascading-equipment, passive-refund and active-aura composition remain automated-only.
   The evidence does not establish official-server fractional parity or enable Phrecia class selection.
   See [11](../docs/protocol/11-skills.md) section 4 and [13](../docs/protocol/13-items.md) section 2d.
+
+- Power of Purpose (#291): raw `keystone_mental_conditioning` converts 80% of flat mana to twice as much armour.
+  Mana and armour increases add for the converted contribution, under the documented PoB calculation model.
+  Thirteen historical native controls at original head `7678d60` covered toggles, increases, rounding and relog.
+  Those controls exercised actual Steel Willed attack damage and remaining-mana lightning on an unascended Witch.
+  Current-main tests compose mana per final Strength, active equipment, increases, chaos-armour/CI and Mageblood.
+  The rebase onto `939b44fe` adds increased-attribute and complete command-snapshot regressions.
+  Final scaled Strength/Intelligence, odd half mana, independent zero/off overrides and main's bounds compose there.
+  Reservation, clamps, zero/off/removal, Iron Reflexes, MORE and own-aura send-gate freshness have automated coverage.
+  Historical joint validation at `c9cd1864` passed 28 native controls, including eight final-attribute conversion cases.
+  B=127 gives 25 mana / 222 Armour; 100% mana gives 51 / 425; odd final Intelligence retains its half mana.
+  Remaining native cases include reservation, Iron Reflexes, MORE and the full node's independent consumers.
+  The candidate on `939b44fe` has no new native acceptance; the earlier controls remain historical evidence.
+  Phrecia selection remains gated.
+  See [the model and scope](../docs/game/power-of-purpose.md).
 
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's

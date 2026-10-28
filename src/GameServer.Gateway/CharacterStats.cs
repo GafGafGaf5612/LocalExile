@@ -80,7 +80,8 @@ static class CharacterStats
         // The overcapped-resistance flags' derived increases (ResistanceOvercap), computed once in PoolsFor from the
         // final raw resistances and maxima: +1% per 1% of cold overcap on evasion, lightning overcap on crit chance.
         int ColdOvercapEvasionPct = 0, int LightningOvercapCritPct = 0,
-        int ManaPerFourStrength = 0, bool ArmourAppliesToChaosDamage = false, AttributeModifiers Attributes = default)
+        int ManaPerFourStrength = 0, bool ArmourAppliesToChaosDamage = false,
+        AttributeModifiers Attributes = default, bool MentalConditioning = false)
     {
         public static readonly Bonus None = new();
     }
@@ -114,7 +115,7 @@ static class CharacterStats
         // Pool storage is uint, but native Stats and reservation calculations require nonnegative signed int maxima.
         uint life = b.ChaosInoculation ? 1 : (uint)Math.Clamp((c.BaseMaxLife + 12m * level + str / 2 + b.Life)
             * (100m + b.LifePct) / 100m, 1, int.MaxValue);
-        uint mana = b.ManaPerFourStrength == 0
+        uint mana = b.MentalConditioning ? 0 : b.ManaPerFourStrength == 0
             ? (uint)Math.Clamp((c.BaseMaxMana + 6m * level + intel / 2 + b.Mana)
                 * (100m + b.ManaPct) / 100m, 0, int.MaxValue)
             : StrengthMana.Maximum(c.BaseMaxMana + 6L * level + intel / 2 + b.Mana,
@@ -131,7 +132,7 @@ static class CharacterStats
         // overcapped cold resistance's increase is one of the evasion increases (it applies before the conversion, so
         // Iron Reflexes' converted evasion keeps it, as PoB's converted branch reads the same Evasion INC bucket).
         int armourPct = b.ArmourPct;
-        decimal rawArmour = Math.Max(0, decimal.Truncate(
+        decimal rawArmour = b.MentalConditioning ? 0 : Math.Max(0, decimal.Truncate(
             b.Armour * (100m + armourPct) * (100m + b.ArmourMorePct) / 10000m));
         int armour = Rating(rawArmour);
         long evasionPct = (long)dex / 5 + b.EvasionPct + b.ColdOvercapEvasionPct;
@@ -143,11 +144,22 @@ static class CharacterStats
         {
             // Iron Reflexes converts all evasion rating to armour and removes dexterity's evasion bonus. The converted
             // evasion keeps the armour, evasion and shared defence increases (each once), but not dexterity.
-            long convertedPct = (long)armourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct;
-            armour = Rating(rawArmour + decimal.Truncate(evasionBase * (100m + convertedPct)
-                * (100m + b.EvasionMorePct) * (100m + b.ArmourMorePct) / 1000000m));
+            if (!b.MentalConditioning)
+            {
+                long convertedPct = (long)armourPct + b.EvasionPct + b.ColdOvercapEvasionPct - b.SharedDefencesPct;
+                armour = Rating(rawArmour + decimal.Truncate(evasionBase * (100m + convertedPct)
+                    * (100m + b.EvasionMorePct) * (100m + b.ArmourMorePct) / 1000000m));
+            }
             evasionPct = (long)b.EvasionPct + b.ColdOvercapEvasionPct;
             evasion = 0;
+        }
+        if (b.MentalConditioning)
+        {
+            // Final scaled attributes feed conversion once; odd Intelligence keeps its half mana until rounding.
+            long rawFlatManaTwice = 2 * ((long)c.BaseMaxMana + 6 * level + b.Mana
+                + StrengthMana.Flat(str, b.ManaPerFourStrength))
+                + intel;
+            (mana, armour) = PowerOfPurpose.Pools(rawFlatManaTwice, b);
         }
         int Max(int bonus) => Math.Min(DamageModel.MaxResistCap, DamageModel.DefaultMaxResistance + bonus);
         int maxBlock = Math.Min(DamageModel.BlockChanceCap, DamageModel.DefaultMaxBlockChance + b.BlockChanceMax);

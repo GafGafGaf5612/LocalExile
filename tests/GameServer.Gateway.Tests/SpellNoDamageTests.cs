@@ -318,6 +318,7 @@ public class SpellNoDamageTests
         var ordinary = Program.PoolsFor(f.Conn, 100);
         // Raw passive fixtures exercise consumers without admitting or allocating a Phrecia class.
         f.Conn.MainAscendancy = new(Nodes: [49937, 38080, 29437]);
+        f.Set(PowerOfPurpose.RawFlag, 0); // Keep this existing control on ordinary mana and Armour.
         f.Conn.Pools = Program.PoolsFor(f.Conn, 100);
         uint combinedMana = ordinary.Mana + (uint)(ordinary.Strength / 4 * 8);
         Assert.Equal(combinedMana, f.Conn.Pools.Mana);
