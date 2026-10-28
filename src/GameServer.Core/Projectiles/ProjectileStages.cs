@@ -32,7 +32,7 @@ public sealed partial class ProjectileRuntime
                 foreach (var target in world.Actors(Now, Now).OrderBy(a => a.Key.Id))
                     if (target.Team != p.Use.Team && target.Key != p.Use.Owner
                         && (target.Position(Now) - p.Position).Length <= pulse.Radius + target.Radius)
-                        Damage(p, target, pulse.Stage);
+                        Damage(p, target, pulse.Stage, isArea: true);
                 Schedule(Now + pulse.Interval, Pulse);
             }
             Pulse();
@@ -78,25 +78,35 @@ public sealed partial class ProjectileRuntime
 
     void Area(ProjectileEntity p, ProjectileAreaRecipe recipe, ProjectileActorKey? victim = null)
     {
+        double sector = Math.Tau / Math.Max(1, recipe.Count);
+        double rotation = recipe.SectorPlacement ? p.Random.NextDouble() * Math.Tau : 0;
         for (int i = 0; i < recipe.Count; i++)
         {
-            // Each explosion is its own damage event. A terminal Fireball never also emits direct damage.
+            // Independent area events can overlap; only the terminal collision victim shares direct admission.
             long areaId = ++sequence;
             var centre = p.Position;
             if (recipe.Offset > 0)
-                centre += new ProjectileVector(1, 0).Rotate(p.Random.NextDouble() * Math.Tau)
-                    * (recipe.Offset * (.5 + .5 * p.Random.NextDouble()));
-            world.Publish(new(ProjectileEventKind.Area, p, Now, centre, Radius: recipe.Radius));
+            {
+                double angle = recipe.SectorPlacement ? rotation + sector * (i + p.Random.NextDouble())
+                    : p.Random.NextDouble() * Math.Tau;
+                double minimum = Math.Clamp(recipe.MinimumOffset, 0, recipe.Offset);
+                centre += new ProjectileVector(1, 0).Rotate(angle)
+                    * (minimum + (recipe.Offset - minimum) * p.Random.NextDouble());
+                // A collision centre may be exactly on a wall. Test from the incident side of that surface.
+                if (recipe.RespectTerrain && world.TraceTerrain(p.Position - p.Direction * .001, centre) is not null)
+                    continue;
+            }
+            world.Publish(new(ProjectileEventKind.Area, p, Now, centre, Radius: recipe.Radius, Stage: recipe.Stage));
             foreach (var target in world.Actors(Now, Now).OrderBy(a => a.Key.Id).ThenBy(a => a.Key.Generation))
                 if (target.Team != p.Use.Team && target.Key != p.Use.Owner
                     && (!recipe.ExcludeContactTarget || target.Key != victim)
                     && (target.Position(Now) - centre).Length <= recipe.Radius + target.Radius)
                     if (target.Key == victim)
-                        Damage(p, target, recipe.Stage, multiplier: recipe.Multiplier, admissionStage: "direct");
+                        Damage(p, target, recipe.Stage, multiplier: recipe.Multiplier, admissionStage: "direct", isArea: true);
                     else Damage(p, target, recipe.Stage,
                         recipe.Scope == ProjectileHitScope.Emission ? p.EmissionId : areaId, new(), recipe.Multiplier,
                         admissionStage: recipe.Scope == ProjectileHitScope.Emission
-                            ? recipe.Stage + ":" + p.GroundBounces : recipe.Stage);
+                            ? recipe.Stage + ":" + p.GroundBounces : recipe.Stage, isArea: true);
         }
     }
 

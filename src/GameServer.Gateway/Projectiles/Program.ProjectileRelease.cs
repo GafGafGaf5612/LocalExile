@@ -25,7 +25,7 @@ partial class Program
             _ = definition.Resolve(Get, 1);
             var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             if (definition.RequiresTerrain && ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, at.X, at.Y) is null)
-                throw new InvalidOperationException("Projectile recipe requires a projectile terrain mask (D08)");
+                throw new InvalidOperationException("Projectile recipe requires a projectile terrain mask");
             return true;
         }
         catch (InvalidOperationException ex)
@@ -81,7 +81,7 @@ partial class Program
         var at = conn.Walk.Position(session.Runtime.Now / (double)ProjectileRuntime.QuantaPerSecond);
         var origin = ProjectileSession.Vector(at);
         if (definition.RequiresTerrain && ProjectileGrid.Blocks(conn.Layout.Id, conn.Seed, at.X, at.Y) is null)
-            throw new InvalidOperationException("Projectile recipe requires a projectile terrain mask (D08)");
+            throw new InvalidOperationException("Projectile recipe requires a projectile terrain mask");
         var target = ProjectileSession.Vector(aim);
         var direction = (target - origin).Unit;
         // A point closer than the muzzle must not end up behind the released projectile.
@@ -89,9 +89,11 @@ partial class Program
         int variation = SkillArtVariation(conn, gem.Gem);
         profile = profile with { Id = Art.Projectile(profile.Id, variation) };
         bool spell = !Skills.IsAttack(gem.Effect);
-        var shot = new ProjectileOffense(SupportedHit(conn, skillId), spell, conn.Pools.Accuracy,
+        var shot = new ProjectileOffense(SupportedProjectileHit(conn, skillId, area: false), spell, conn.Pools.Accuracy,
             SupportedReleaseCriticalChance(conn, skillId), SupportedCriticalMultiplier(conn, skillId), gem.Name)
         {
+            // Child stages and release specialization can introduce areas after this root is resolved.
+            AreaHit = SupportedProjectileHit(conn, skillId, area: true),
             Effect = gem.Effect, Level = gem.Level, Quality = gem.Quality,
             SkillStats = new Dictionary<uint, int>(own),
             Penetration = Penetration.Of(player, Stats, !spell, own), ResistanceMods = HitResistMods(player, own),

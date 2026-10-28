@@ -1,57 +1,77 @@
-# Projectile framework boundary
+# Projectile framework
 
-The generic implementation is in `src/GameServer.Core/Projectiles/` and
-`src/GameServer.Gateway/Projectiles/`. Concrete registrations live in the optional
-`Projectiles/Upstream/` provider in the upstream-migration layer; the researched skill layer is deferred.
+`src/GameServer.Core/Projectiles/` supplies the single chronological simulator.
+`src/GameServer.Gateway/Projectiles/` binds player skills, combat state and native presentation to it.
+Ordinary bows and catalog-recognized projectile gems use these same production entry points.
+Catalog fallback provides basic straight flight; a registered definition supplies special behavior.
+Missing metadata or an unsupported damage plan is refused before action costs.
 
-`feat/projectile-framework` is based on upstream main. It supplies integer-time simulation,
-30 Hz hosting, continuation and hit-admission primitives, resolved-stat binding, synchronous
-combat/reward mutations and ordered native presentation. It owns the production gem/bow entry points.
-Without the provider, catalog-recognized projectile gems use a basic straight-flight recipe with
-resolved counts and continuations; ordinary bows use the same runtime. This approximation does not
-implement a special skill's explosions, pulses, children, forms or resource rules. Missing metadata
-or an unsupported damage plan is refused before costs, without falling through to an area hit.
+## Simulation and combat
 
-`feat/projectile-upstream-coverage` is stacked on the framework and migrates existing upstream Fireball,
-Kinetic Blast and named return policies while keeping catalog fallback. It contains no researched skill expansion.
-See the [migration policies, differences and native checklist](projectile-upstream-migration.md).
-`feat/projectile-skill-coverage` is preserved at its tested full delivery; porting those recipes onto the minimal
-layer is deferred. Only framework and upstream migration form the first local milestone.
-See the [milestone boundary and plan](../design/projectile-milestone-one.md).
-This migration does not establish official visual parity.
+Time uses 120000 integer quanta per second, with 30 Hz boundaries and exact chronological contacts
+inside each boundary. Actor generations distinguish removed/replaced targets. The host serializes gameplay
+under XP-before-Monsters locking and advances pending projectile history before replacing actor motion or life.
+Hit, charge, Rage, reward and boss-stage changes commit synchronously. An ordered outbox presents the committed
+results without waiting for network output inside the combat lock. Pause freezes the game clock; area transfer,
+death/retirement and connection closure invalidate the appropriate owner epochs and pending work.
 
-## Extension contract
+Release captures position, offensive stats, speed and critical inputs. Evasion, block, resistance, impale state,
+conditional critical restrictions and the actual caster's spell-damage prohibition resolve at contact.
+Gem release always retains separate direct and area damage packets, including for initially direct-only roots
+whose children or release specialization introduce areas. Area increases and area-only support multipliers
+apply to the area packet once; stage multipliers and projectile/form/return multipliers compose at impact.
+Non-projectile damage callers retain their own classification.
 
-- `ProjectileSkillDefinition` supplies metadata, profile resolution, optional terrain admission,
-  optional windup cancellation, release specialization and presentation selection.
-  Paid attacks normally survive Move; a recipe with release-time resources can require the original action.
-  Spells, cooldown tickets, death, recovery and epoch restrictions retain their common admission checks.
-- The common release captures position, damage, stats, critical inputs and speed, then invokes
-  specialization once inside the existing simulation commit. Specialization can supply frozen
-  per-initial-projectile payloads. Continuation children inherit those snapshots.
-- Generic stage controls distinguish contact/terminal areas, excluded contact victims and return phases.
-  Return chance, speed, hit budget, phase-specific quota, denied-contact skipping, collision-only triggers,
-  wall handling and overshoot are recipe inputs. Optional outbound contact budgets retain endpoint travel,
-  while terminal-area policies can suppress a later area after piercing contacts.
-  Defaults retain the existing staged behavior; upstream migration selects its historical policies.
-- `GatewayProjectileModifiers` binds generic counts, continuation grants and prohibitions.
-  Recipes explicitly declare consumed chain or intrinsic split inputs; count conversion runs once.
-- `ProjectilePresentation` chooses flight mesh/clip, second-form clip and event effects.
-  Synthetic or future non-gem sources may supply it directly through `ProjectileOffense`.
-  The host renders native object lifecycle, terrain height, arcs, redirects and effect cleanup.
-- Gameplay commits under XP-before-Monsters locking. Presentation queues never await network
-  output under that lock; pause, transfer, retirement and output overflow retain existing guards.
+## Continuation and hit admission
 
-This is an in-process typed boundary, with no dynamic plugin loader or new assembly.
-`ProjectileRuntime` is the only flight/collision engine. The old callback flight, collision
-estimator and spread/return policy engines have been removed; tests use the same Core runtime
-and Gateway session as production.
-Core actor/team contracts are source-neutral. The current Gateway damage adapter targets monsters;
-live hostile projectile adapters are still future work.
+Continuation priority is split, pierce, fork, chain, then return. Prohibitions override the corresponding grant.
+Finite pierce consumes one grant per admitted contact, then hands off to the next available continuation.
+Boolean fork sources establish one base generation; explicit additional-fork counts add generations.
+Raw and resolved aliases are combined without counting the same source twice. Count conversions declare
+their consumer so an extra projectile cannot expand both primary emission and a secondary stage.
+A declared non-primary consumer retains quantity when a competing split conversion is prohibited by the
+profile or modifiers. Competing viable conversions remain an error; primary count conversion is unchanged.
 
-## Local branch transition
+The common player defaults share direct-hit admission by emission, separately for outbound and return phases.
+Denied siblings pass through that victim. An evaded contact keeps flying without consuming continuation.
+Independent area events have independent admission and may overlap any geometrically covered target.
+A terminal collision victim shares direct admission with its terminal area, receiving one area-classified hit
+instead of a direct hit plus another blast. An evaded terminal victim does not end the flight.
 
-The old `feat/projectile-runtime` ref stays available. Existing CI already includes that history.
-A one-time equal-tree ancestry bridge already joined the refactored old branch to the clean stack.
-Subsequent corrections use normal merges and retain unrelated enabled features; do not reset CI
-or merge CI history into the clean stack.
+Contact areas run at admitted impacts while continuation remains possible. Terminal areas and end emissions
+wait until no continuation, including return, remains. Recipes select terminal reasons and can exclude a
+contact victim when the mechanic requires it. Offset areas support one sample per angular sector, a minimum
+placement distance and skipped terrain-obstructed sectors. Radius, placement radius and damage multiplier
+are separate inputs. Sector sampling and simultaneous area timing are deterministic approximations, not
+measurements of client timing or official random distributions.
+
+Return preserves remaining split/pierce/fork/chain counts and the original lifetime. An expired projectile
+cannot start another flight. Returning children retain their phase and cannot return a second time.
+`returning_projectiles_always_pierce` explicitly grants unlimited return piercing; ordinary return does not.
+Terrain collision remains enabled unless the profile requests otherwise. Common player recipes exclude
+the turnaround victim and continue 150 cells past the captured caster position. The fixed overshoot and
+remaining-count implementation are approximations; moving-anchor tracking and exact engine equivalence
+are not established. Phase-specific hit rules, contact caps, speed and terrain policy remain configurable.
+`OutboundHitLimit` is an independent cap on actor attempts while traveling to the endpoint; finite pierce
+must use `Pierce`, never that cap.
+
+## Skill definitions and presentation
+
+`ProjectileSkillDefinition` supplies metadata, profile resolution, optional terrain admission, windup
+cancellation, release specialization and presentation. Paid attacks normally survive Move; spells and
+definitions with release-time resources retain action cancellation. Cooldown tickets, death, recovery and
+epoch restrictions still apply. Specialization runs once in the simulation commit and may provide frozen
+per-initial-projectile payloads; continuation children inherit their parent's payload.
+
+`ProjectilePresentation` supplies flight mesh/clip, second-form clip and event effects. Non-gem sources may
+supply presentation directly through `ProjectileOffense`. The common host owns object lifecycle, terrain
+height, arcs, redirects and effect cleanup. Core actor/team contracts are source-neutral; the current Gateway
+damage adapter targets monsters. Live hostile projectile adapters remain unimplemented.
+
+Automated checks exercise the production runtime and session, including held-output gameplay, moving
+targets, walls, evasion, continuation combinations, real item stat sources and lifetime boundaries.
+Native animation alignment, platform/doodad surfaces and visual equivalence still require client validation.
+Actor motion uses integer walk estimates and shared collision radii; basic catalog flight does not establish
+complete behavior for every skill.
+
+See [projectile skills](projectile-skills.md) for registered behavior, evidence and client checks.

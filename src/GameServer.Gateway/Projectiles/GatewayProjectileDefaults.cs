@@ -8,6 +8,10 @@ static class GatewayProjectileDefaults
         {
             Speed = speed,
             Count = get("base_number_of_projectiles") is > 0 and var count ? count : 1,
-            AimSpreadDistance = 40
+            AimSpreadDistance = 40,
+            SkipDeniedContacts = true,
+            SkipDeniedReturnContacts = true,
+            ExcludeTurnaroundTarget = true,
+            ReturnOvershoot = 150
         }, get, attack);
 }

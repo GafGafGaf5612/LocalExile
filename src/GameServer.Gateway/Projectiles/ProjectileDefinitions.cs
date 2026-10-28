@@ -2,7 +2,7 @@ using GameServer.Core.Projectiles;
 
 partial class Program
 {
-    // The host has no dependency on a concrete provider. Coverage supplies the optional implementation.
+    // Definitions supply skill-specific recipes through the common host and simulator.
     internal sealed record ProjectileSkillDefinition(string Metadata,
         Func<Func<string, int>, double, ProjectileProfile> Resolve)
     {

@@ -28,6 +28,12 @@ public sealed record ProjectileAreaRecipe(string Stage, double Radius, int Count
     double Multiplier = 1, ProjectileHitScope Scope = ProjectileHitScope.Projectile)
 {
     public bool ExcludeContactTarget { get; init; }
+    /// <summary>Lower placement radius; offset is the upper radius.</summary>
+    public double MinimumOffset { get; init; }
+    /// <summary>Place one independently sampled centre in each angular sector.</summary>
+    public bool SectorPlacement { get; init; }
+    /// <summary>Skip an offset centre whose path crosses blocked projectile terrain.</summary>
+    public bool RespectTerrain { get; init; }
 }
 public sealed record ProjectilePulseRecipe(string Stage, double Radius, long Interval);
 public sealed record ProjectileEmissionRecipe(ProjectileProfile Child, bool Radial = false, long Interval = 0,
@@ -70,6 +76,8 @@ public sealed record ProjectileProfile(string Id)
     public int? OutboundHitLimit { get; init; }
     public bool ReturnOnDistance { get; init; } = true;
     public bool IgnoreTerrainOnReturn { get; init; }
+    /// <summary>Return-phase grant; CannotPierce still overrides it.</summary>
+    public bool PierceAllOnReturn { get; init; }
     public bool ExcludeTurnaroundTarget { get; init; }
     /// <summary>Skip contacts denied by direct-hit admission before running contact stages.</summary>
     public bool SkipDeniedReturnContacts { get; init; }
@@ -171,6 +179,8 @@ public sealed record ProjectileDamage(ProjectileEntity Projectile, ProjectileAct
     ProjectileVector Position, double Multiplier = 1)
 {
     public int Phase { get; } = Projectile.Phase;
+    /// <summary>Selects the host's area offensive snapshot without changing direct-hit admission.</summary>
+    public bool IsArea { get; init; }
 }
 
 public sealed record ProjectileEvent(ProjectileEventKind Kind, ProjectileEntity Projectile, long At,

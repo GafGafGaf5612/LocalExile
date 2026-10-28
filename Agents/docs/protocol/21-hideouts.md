@@ -473,13 +473,25 @@ Real-client verification sent the locker interaction and observed the native han
 Heist window visible (flag 0x800 at +0x1e8) and its open marker set (+0x338), while the client remained in game.
 Tests cover placement across exported templates, editor restoration, native component order and the open message.
 
-### Horticrafting Station (recipe browser only)
+### Horticrafting Station (recipe browser and execution)
 
 HideoutScene places `Metadata/MiscellaneousObjects/Harvest/CraftingSilo_Hideout` beside the ordinary bench on clear floor in every selected hideout. The object has Positioned (blocking size 8), BaseEvents, Animated, MinimapIcon and InteractionAction, with no HideoutDoodad or StateMachine payload. Its built-in Animated model is harvest_workbench.ao. The Gateway registers a blocker and handles its 0x24 interaction separately from the ordinary bench.
 
 After walking within range, send `0x7b` kind **0x39**, four zero u32s. Native dispatcher 0x142163420 uses instance +0x4ef8; HUD callback LAB_140dae88c invokes virtual +0xcc0, PC 0x140dcee40 (window +0x8b0) / controller 0x140d8d750 (window +0x4a8). This differs from 0x33 ordinary crafting and 0x45 Sanctum.
 
-The native Harvest panel builds the complete recipe list from HarvestCraftOptions.dat (0x14048dd00), with its own search/filter, current game-mode filtering and localized descriptions/costs. No ordinary bench unlock flags or server-manufactured recipe list are needed. HarvestCraftingItem (Inventories row 43) is already registered with the player's defaults. This step only opens the browser: Harvest execution and lifeforce payment are not implemented. Station placement and native window opening were confirmed in the real client.
+The native Harvest panel builds the complete recipe list from HarvestCraftOptions.dat (0x14048dd00), with its own search/filter, current game-mode filtering and localized descriptions/costs. No ordinary bench unlock flags or server-manufactured recipe list are needed. HarvestCraftingItem (Inventories row 43, inventory id 44) is already registered with the player's defaults.
+
+The panel's craft button sends **C→S 0x274**, exactly four bytes: u16 message id and u16 **HASH16 of the selected HarvestCraftOptions row** (for example ReforgeFire 0xa3e5). Serializer 0x141f92870 writes the two big-endian words; the PC callback is at 0x140491622 (the second send at 0x1404916e5 is the same request). The live capture was `0274A3E5`. The target is the one item in HarvestCraftingItem; there is no item id in the request. A station craft is served only after its browser was opened in a hideout.
+
+After a request the client sets the panel's pending flag and ignores slot/item changes until it gets **S→C 0x276**, six bytes: u16 message id, u16 crafted item id, then two unused bytes. Dispatcher case 0xce (`0x142153bd2`) reads four raw payload bytes and dispatches the first u16 to the local event list at instance +0x4e70; the Harvest panel looks that item up in HarvestCraftingItem, clears the pending flag and refreshes the slot. The server sends the slot's item removed and re-added as separate 0xbf changes, then the payments, then this event. Without 0x276 the Craft button locks after one use (live); a short packet desynchronises the reader and can show an unrelated result string.
+
+`HarvestCrafting` loads all 74 rows and their exact costs: `LifeforceType` 1/2/3 is Wild/Vivid/Primal Crystallised Lifeforce (`HarvestSeedRed`/`Green`/`Blue`), plus `SacredCost` of Sacred Crystallised Lifeforce (`HarvestSeedBoss`). `ItemMoves.HarvestAtStation` validates the item and every cost before the first write, pays from the main inventory first and the rest from the personal stash, and commits the item and payments in one Saves transaction. A refusal spends nothing. Inventory/stash changes and the changed item in row 43 go out as 0xbf updates, like the ordinary bench.
+
+Implemented recipes are `reroll_with_mod` (a rare item reforged with at least one modifier carrying the requested Tags.dat tag), `reroll_with_current_tags_affinity_multiplier` (reforge weighted by tags the current affixes share; the client's 900 / -90 is a local 10× / 0.1× weighting, not an official probability), `remove_type_and_add_type_mod` (remove one random removable affix, then add the tagged affix), and `convert_mod` (replace a modifier's ModType group with the reversed recipe's same-tier group, for example ColdResistance → FireResistance). The last uses ModType.dat names (`ModTypeKey`), not Mods.dat ids. Corrupted, mirrored and unidentified items and items with bench metamods are refused.
+
+The remaining rows are explicitly unsupported and spend nothing: influence rerolls, stack exchanges (fossils, oils, catalysts, essences, splinters, Delirium orbs, astrolabes, fragments, divination cards), divination-card gambles, gem lenses/recolours, corrupted maps and Harvest quality enchants. Their prerequisite systems are tracked separately.
+
+Tests cover raw-row hashes/costs, a guaranteed-tag reforge, augment removal+addition, affinity shape, ModType conversion, refusal cases, split inventory/stash payment, insufficient funds, save rollback and the 0x276 result packet. Station placement, native window opening, the actual 0x274 request and repeated crafting without reopening were confirmed in the real client.
 
 ### Arrival on the saved waypoint
 

@@ -215,6 +215,19 @@ off, a lower level) stays on but does nothing: no mod stats, no local weapon mod
 kept). After each change, items that fall short are switched off one at a time, counting the attributes of every
 active item including their own, until all active items are satisfied; an inactive item comes back when the character
 and the other active items meet its requirement without its own attributes.
+Requirements use the complete class/passive/active-equipment flat bucket scaled by the generic attribute increases.
+An inactive item's own flat and increased attributes are excluded when testing whether it can return.
+An active item may retain its own flat and increased attributes under the existing staged client policy.
+Each activation/removal step recomputes final attributes through `AttributeModifiers`;
+no final value becomes a raw source.
+Weapon swaps count only the hands' current rows, and raw attribute development overrides replace their own source key.
+Calculated zero attributes remain zero in the panel and requirement stats, including after pool record clones.
+Automated activation, retention, cascading removal, source clearing and swap checks pass.
+Historical controls at `60044ad` reduce and restore a Marauder's attributes while a Plate Vest remains equipped.
+Its 19 Armour disappears below the raw 12-Strength requirement and returns when the requirement is met again.
+Native all-zero requirement values, source clearing and relog are also verified.
+Own-item percentage retention, cascading equipment and weapon-set combinations retain automated coverage.
+See [attribute calculation and rounding model](11-skills.md#4-the-default-attack).
 
 A gem socketed in a worn item whose level or attribute requirement the character no longer meets makes that item
 inactive as well (`CharacterStatSources`: the gem's requirements are checked per socket with `GemRequirementsUnmet`),

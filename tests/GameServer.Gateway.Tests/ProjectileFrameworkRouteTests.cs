@@ -6,6 +6,39 @@ namespace GameServer.Gateway.Tests;
 
 public partial class OwnAuraGatewayTests
 {
+    [Fact]
+    public async Task Equipped_raw_always_pierce_bow_hits_three_targets_through_the_production_route()
+    {
+        using var f = new Fixture();
+        var modifier = Program.Items.Mods.ById("ArrowPierceUniqueBow7")!;
+        Assert.Contains(modifier.Stats, s => s.Id == "base_arrows_always_pierce");
+        f.Items.Change(PlayerInventories.Weapon1, f.Host.Id,
+            _ => ItemCatalog.Create(Program.Items.Find("Crude Bow")!) with
+                { Mods = [new(ModSection.Explicit, modifier.Hash, [1])] });
+        f.Conn.Pools = Program.PoolsFor(f.Conn, 100) with { Accuracy = int.MaxValue };
+        f.Conn.PlayerStats[Program.Stats.Key("global_cannot_crit")!.Value] = 1;
+        var targets = new[] { 50, 70, 90 }.Select(x => new SpawnedMonster("pierce target",
+            new(x, 32, 0, width: 128, height: 128), 0, 2, 10000)).ToArray();
+        for (int i = 0; i < targets.Length; i++) f.Conn.Monsters.Add((uint)(42 + i), targets[i]);
+        await f.Gate.WaitAsync();
+        try
+        {
+            byte[] input = new LoginWriter().U16(0x25).U32(110).U32(32)
+                .U16(SkillCatalog.FirstSkillId).U16(0).U16(1).ToArray();
+            await Program.OnClientMessages("raw-pierce", f.Stream, f.Ciphers,
+                [(InstanceProtocol.UseSkillAtLocationId, input)], [], f.Conn);
+            var session = Assert.IsType<Program.ProjectileSession>(f.Conn.ProjectileRuntime);
+            session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.Time(3));
+            Assert.All(targets, target => Assert.True(target.Life < 10000));
+        }
+        finally
+        {
+            f.Conn.Closed = true; f.Conn.ProjectileRuntime?.Invalidate(); f.Gate.Release();
+            if (f.Conn.ProjectileRuntime is { } session)
+                await session.OutputCompleted.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     [Theory]
     [InlineData("KineticBlast", true)]
     [InlineData("Fireball", false)]

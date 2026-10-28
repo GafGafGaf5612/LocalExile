@@ -4,6 +4,7 @@ using GameServer.Core.World;
 sealed record ProjectileOffense(DamagePacket Hit, bool Spell, int Accuracy, int CriticalChance,
     int CriticalMultiplier, string Label)
 {
+    public DamagePacket? AreaHit { get; init; }
     public Penetration.PerType Penetration { get; init; }
     public HitResistances.Mods ResistanceMods { get; init; }
     public int ImpaleChance { get; init; }

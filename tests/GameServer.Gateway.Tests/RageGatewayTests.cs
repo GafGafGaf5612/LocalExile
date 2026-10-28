@@ -495,8 +495,9 @@ public class RageGatewayTests
         f.Conn.Pools = f.Conn.Pools with { Evasion = evaded ? int.MaxValue : 0 };
         f.Conn.LastEvasionAt = f.Conn.Clock.Elapsed.TotalSeconds;
         f.Conn.EvasionEntropy = evaded ? 0 : 99;
+        f.Conn.Monsters[43] = attacker;
         await (Task)Call("MonsterSwing", "rage-incoming-test", f.Stream, f.Ciphers, f.Conn,
-            43u, attacker, (105, 100), (100, 100));
+            43u, attacker, (105, 100), (100, 100), f.Conn.IncomingHitEpoch);
         Assert.Equal(expected, Current(f.Conn));
         Assert.Equal(evaded ? 1000u : 999u, f.Conn.PlayerLife);
     }
