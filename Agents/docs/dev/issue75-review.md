@@ -1,0 +1,101 @@
+# Character-stat correctness review and completion work
+
+The target is all 357 virtual stats consumed by the 387 character-panel rows in issue #75.
+The rows also reference 134 nonvirtual stats, for 491 distinct dependencies including visibility gates.
+A row is not complete merely because a value is emitted, a source name exists, or a test passes.
+Each needs the applicable source composition, formula, units, conditions, lifecycle and native presentation checked.
+Where a value represents a gameplay mechanic, its authoritative consumer must agree with the display.
+
+## Starting revisions and evidence
+
+PR #318 and local `issue-75-character-stats` both started at `a7f93e566082a6dccecd349658374a2334e50ab6`.
+Fetched upstream `main` was `939b44fec76ba46df762fcd9cdf616fa3d2f8739`, already in the branch's history.
+The initial worktree was clean.
+Only local changes and commits are authorized; do not push or publish the review or its changes.
+
+The fresh baseline solution build passed with zero warnings/errors.
+Core passed 555, Data 18 and Gateway 4,066 tests, with no reported skips.
+The imported historical native evidence retains the limitations in [the port record](issue75-port.md).
+The target checkout has extracted tables but no `Client/` installation at this review checkpoint.
+No native run of these new changes has been performed.
+
+## Repeatable inventory
+
+Run from the repository root in PowerShell:
+
+```powershell
+python -X utf8 scripts/dev/audit-character-panel.py
+```
+
+The local report is `artifacts/issue75-review/panel-inventory.json`.
+It records the Git revision, working-tree status, table hashes, all 491 dependencies and each panel row using them.
+Filter `stats` by `virtual: true` for the exact 357-stat target.
+The initial table inventory reproduces 387 rows, 491 dependencies and 357 virtual stats.
+Every tracked Markdown file is inventoried with its content hash, headings and panel-related references.
+The initial scan covers 81 Markdown files; the new review document adds another on subsequent runs.
+This scan supports document navigation; it is not a claim that every statement has been verified against code.
+
+Exact C# literal matches are navigation candidates only.
+Interpolated names and numeric keys must be traced manually; absence of a literal does not establish missing behavior.
+All generated review states remain `unreviewed`, deliberately avoiding automatic certification.
+The concrete findings below and the protocol/status documents provide the reviewed evidence.
+Generated reports contain extracted metadata and remain ignored; do not commit the tables or client files.
+
+## Confirmed defects addressed
+
+| Finding | Trigger and previous behavior | Change and evidence | Remaining scope |
+|---|---|---|---|
+| Selected spell penetration omitted supports | Actor penetration 10 plus real level-one Fire/Cold/Lightning Penetration support 20 displayed 10 while the hit consumer used 30 | Recompute three selected aliases from raw actor and own inputs; six before-fix regressions reproduced 30 expected / 10 actual; nine new Gateway cases cover composition, requirements, overrides, unlink/removal and isolation | Native formatting, prohibition display and other penetration sources |
+| Attack rows omitted attack-only penetration | General 10 + elemental 5 + typed attack 7 + elemental attack 3 displayed 15 instead of 25 | Add attack-only typed/elemental sources to both hand aliases, including the separate chaos source; four before-fix pure regressions reproduced omissions | Weapon-local and non-base combat consumers and conditions |
+| Selected attack rows omitted supports | Heavy Strike with actor 10 plus linked support 20 displayed 10 | Recompute all eight hand aliases while preserving raw local snapshots; six before-fix Gateway regressions reproduced omissions; twelve added pure/Gateway cases cover sources, removal, hand isolation and inactive gear | Native checks and broader selected aliases |
+
+Implementation: `PanelStats.Selected`, `PanelStats.Sums`, and `Program`'s `PanelSourceSnapshot`.
+Tests: `SelectedMiscPanelTests`, `SelectedPanelStatCompositionTests`, `HandPenetrationPanelTests` and existing
+`PanelStatsTests`/`PenetrationTests`.
+These fixes improve eleven display stats; they do not certify eleven complete stats against every game source.
+
+## Validation of the penetration changes
+
+Local implementation commits are `5052fa3` (selected spell aliases) and `fb80ff9` (attack-hand composition).
+The solution build passed with zero warnings and errors.
+The final required suites passed Core 555, Data 18 and Gateway 4,087: 4,660 tests with no reported skips.
+This is 21 additional Gateway cases relative to the starting revision.
+The first full Gateway run after these changes had one timeout in
+`ConditionalCriticalGatewayTests.Released_ordinary_bow_reads_life_luck_and_prohibition_at_impact(false)`.
+All 28 tests in that class then passed, followed by all 4,087 Gateway tests on the unchanged code.
+The timeout remains recorded; this does not prove its cause or establish fault-free background execution.
+
+Reproduce from the repository root:
+
+```powershell
+dotnet build GameServer.slnx --artifacts-path artifacts/issue75-review/build
+dotnet test tests/GameServer.Core.Tests --no-build --artifacts-path artifacts/issue75-review/build
+dotnet test tests/GameServer.Data.Tests --no-build --artifacts-path artifacts/issue75-review/build
+dotnet test tests/GameServer.Gateway.Tests --no-build --artifacts-path artifacts/issue75-review/build
+```
+
+Local evidence is under `artifacts/issue75-review/results/`.
+`selected-penetration-reproduced.trx` and `hand-penetration-reproduced.trx` preserve before-fix failures.
+The final successes are `core-penetration-final.trx`, `data-penetration-final.trx` and
+`gateway-penetration-recheck.trx`; `gateway-penetration-final.trx` preserves the timeout run.
+No native completion claim follows from these tests.
+
+## Remaining review and implementation
+
+Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
+Prioritize the following confirmed partial systems, then reconcile every remaining inventory entry:
+
+1. Penetration display prohibitions, non-base/global sources and weapon-local combat consumption.
+   `Penetration.cs` explicitly excludes the latter inputs even though some panel sums include them.
+2. Selected ailment, leech and other aliases whose raw support contributions are not recomputed.
+   Prove each omission using real sources before expanding the selected alias set.
+3. Hit averages/DPS, critical weighting, effective critical chances, off-hand selection and secondary damage.
+   `SpellPanelStats` and `AttackPanelStats` still describe pre-critical averages.
+4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.
+   Protocol 20 section 3 documents helpers, but also the missing execution paths.
+5. Ward, defence estimates, remaining regeneration/recharge conversions, active leech, special charges,
+   minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap.
+6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
+
+Do not turn historical client observations, hidden rows, sparse zero packets or source-name matches into completion.
+The persistent goal remains active until every required stat is implemented and supported by adequate evidence.
