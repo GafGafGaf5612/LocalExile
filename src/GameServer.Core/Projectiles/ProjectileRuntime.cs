@@ -328,6 +328,8 @@ public sealed partial class ProjectileRuntime(IProjectileWorld world)
     {
         if (allowReturn && ReturnAnchor(p, reason) is { } anchor)
         {
+            if (p.Profile.EndAreaOnReturnTurnaround && AllowsEndArea(p, reason) && p.Profile.EndArea is { } turnArea)
+                Area(p, turnArea, victim);
             if (terrainNormal is { } normal) p.Position += normal * .001;
             p.Phase = 1; p.Contacts.Clear();
             if (p.Profile.ExcludeTurnaroundTarget) p.TurnaroundTarget = victim;

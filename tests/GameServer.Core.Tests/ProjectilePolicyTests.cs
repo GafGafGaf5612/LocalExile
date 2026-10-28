@@ -22,6 +22,53 @@ public class ProjectilePolicyTests
     static ProjectileUse Use(ProjectileProfile p, int seed = 1) => new(p, new(1), new(1), 1, new(0, 0), new(100, 0))
         { ReturnAnchor = new(1), Seed = seed };
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Selected_endpoint_area_can_run_before_return_while_end_emission_stays_deferred(bool atTurnaround)
+    {
+        var world = new Arena(); var runtime = new ProjectileRuntime(world);
+        var profile = Basic with
+        {
+            DirectDamage = false, Range = 20, Returns = true,
+            EndArea = new("endpoint", 5),
+            EndAreaOnReturnTurnaround = atTurnaround,
+            EndAreaReasons = new HashSet<ProjectileEndReason> { ProjectileEndReason.Distance, ProjectileEndReason.Returned },
+            EndEmission = new(Basic with { DirectDamage = false })
+        };
+        runtime.Release(Use(profile)); runtime.AdvanceTo(24000);
+        Assert.Equal(1, Assert.Single(runtime.Projectiles).Phase);
+        Assert.Equal(atTurnaround ? 1 : 0, world.Events.Count(e => e.Kind == ProjectileEventKind.Area));
+        Assert.Single(world.Events, e => e.Kind == ProjectileEventKind.Spawn);
+        runtime.AdvanceTo(24000); // Re-advancing the same boundary cannot duplicate the stop event.
+        Assert.Equal(atTurnaround ? 1 : 0, world.Events.Count(e => e.Kind == ProjectileEventKind.Area));
+        if (atTurnaround)
+        {
+            var areaIndex = world.Events.FindIndex(e => e.Kind == ProjectileEventKind.Area);
+            Assert.Equal(20, world.Events[areaIndex].Position.X);
+            Assert.True(areaIndex < world.Events.FindIndex(e => e.Kind == ProjectileEventKind.Redirect));
+        }
+        runtime.AdvanceTo(48000);
+        Assert.Equal(atTurnaround ? 2 : 1, world.Events.Count(e => e.Kind == ProjectileEventKind.Area));
+        Assert.Single(world.Events, e => e.Kind == ProjectileEventKind.Spawn && e.Projectile.ParentId != 0);
+    }
+
+    [Fact]
+    public void Turnaround_area_respects_the_selected_stop_reasons()
+    {
+        var world = new Arena(); var runtime = new ProjectileRuntime(world);
+        runtime.Release(Use(Basic with
+        {
+            DirectDamage = false, Range = 20, Returns = true, EndArea = new("end", 5),
+            EndAreaOnReturnTurnaround = true,
+            EndAreaReasons = new HashSet<ProjectileEndReason> { ProjectileEndReason.Returned }
+        }));
+        runtime.AdvanceTo(24000);
+        Assert.DoesNotContain(world.Events, e => e.Kind == ProjectileEventKind.Area);
+        runtime.AdvanceTo(48000);
+        Assert.Equal(0, Assert.Single(world.Events, e => e.Kind == ProjectileEventKind.Area).Position.X);
+    }
+
     [Fact]
     public void Excluded_contact_area_hits_neighbors_without_doubling_the_direct_victim()
     {
