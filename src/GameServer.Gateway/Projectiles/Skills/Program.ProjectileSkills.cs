@@ -20,6 +20,12 @@ partial class Program
         new(metadata, (get, speed) => GatewayProjectileSkillProfiles.Resolve(effect, metadata, get, speed,
             Skills.IsAttack(Skills.EffectRow(effect))))
         {
+            PanelStats = (profile, stats) =>
+            {
+                if (GatewayProjectileSkillProfiles.IsKineticBlast(effect) && profile.ContactArea is { } area
+                    && Stats.Key("virtual_kinectic_blast_number_of_clusters") is uint key)
+                    stats[key] = area.Count;
+            },
             SpecializeRelease = (context, use) =>
             {
                 // Player base increased area is already included in the panel total. Lay the skill's own

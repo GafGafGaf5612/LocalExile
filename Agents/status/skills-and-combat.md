@@ -358,6 +358,7 @@ and can require explicit recipes.
   KB centers use a fixed scaled circle and random sector angles, with separate 1/30 s first-delay/inter-slot parameters.
   Both are user-selected development values, without official measurement or experiential basis.
   Secondary explosions use their own small-burst art and equipped MTX; native art scales to the actual blast radius.
+  Skill-bar explosion totals use the resolved cluster recipe, including quality and Clustering's projectile conversion.
   Fireball wall-contact damage and default/Stygian packets have regression coverage; visual visibility remains unverified.
   Flights retain fixed terrain-plus-offset height (bare offset without a grid); explosion effects follow client terrain.
   Official geometry/timing, surface height and art equivalence still need client validation.
