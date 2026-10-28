@@ -347,6 +347,8 @@ sealed class SkillCatalog(string folder = "data")
 
     public bool IsSpell(int effectRow) => _spellEffects.Value.Contains(effectRow);
     public bool IsProjectile(int effectRow) => _projectileEffects.Value.Contains(effectRow);
+    // Generic monster Melee also carries Projectile. Actual melee classification takes precedence.
+    public bool IsRangedAttack(int effectRow) => IsAttack(effectRow) && IsProjectile(effectRow) && !IsMelee(effectRow);
 
     /// <summary>Classify the gem's base-item row from GemTags/SkillGems metadata, not its display name.</summary>
     public bool FamilyStatRaises(string stat, int gemRow) =>

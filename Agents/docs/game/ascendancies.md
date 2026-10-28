@@ -11,15 +11,17 @@ The server can list the 21 ordinary and 19 Phrecia definitions from the exact 3.
 Each choice is identified by family, stable table Id and revision; two families can share a class number and start node.
 Only one main ascendancy is selected at a time, and it must belong to the character's base class.
 
-**Phrecia play is explicitly gated.**
+**Phrecia play is gated by default.**
 The shipped alternate graph contains older ordinary-tree topology.
 A separately agreed client-compatible graph is required before Phrecia can be enabled in an actual game connection.
-The command rejects a Phrecia choice before saving it, and login refuses an existing Phrecia save before inventory
-loading or passive normalization, retaining its data.
+Antiquarian has an explicit `Game_VERIFIED_ANTIQUARIAN=1` opt-in which verifies exact installed archive bytes read-only.
+Its [whole-class audit](antiquarian.md) records the hashes, all node consumers, legal builds and native acceptance.
+Other Phrecia choices are refused before saving, and their existing saves refuse admission before inventory loading
+or passive normalization, retaining their data.
 There is no automatic graph installation, recovery, archive rewrite, or memory-hook workaround in this slice.
 Ordinary startup and unascended/ordinary characters do not require an alternate-graph match.
 The integration tests use isolated Phrecia lifecycle fixtures; that is not a claim of play on a pristine client.
-The ordinary-client checks below cover the command selection lifecycle; the Phrecia play gate remains in place.
+The earlier ordinary-client checks below cover the command selection lifecycle; Antiquarian has separate evidence.
 
 ## Try ordinary selection
 
@@ -71,8 +73,37 @@ Masteries cannot act as bridges, and proxy/cluster expansion nodes remain unsupp
 A lower development level removes safely removable ordinary leaves only; it retains ascendancy points and nodes.
 
 The existing ordinary passive stat aggregation also sees allocated ascendancy stats.
-No Ward, Rage, charge, minion, granted-skill, passive-buff, presence or other new gameplay engine is imported here.
-Choosing a class is not evidence that its signature gameplay works.
+The selection lifecycle alone does not implement a class's signature gameplay.
+Antiquarian's Ward, Adrenaline, duration, stun and Lioneye consumers are described in its linked class audit.
+
+### Whaletooth Bangle duration stat
+
+Antiquarian node 27339, `Exhibit 39: Whaletooth Bangle`, supplies
+`skill_effect_duration_+%_per_10_strength` = 1 (3.29.3b Stats key 2817).
+`SkillDurationModifiers` adds `floor(max(0, final Strength) / 10) * per-ten value` to the raw
+`skill_effect_duration_+%` in `CharacterPlayerStats`.
+For example, 455 final Strength gives +45%; an ordinary +10% duration passive makes the total +55%.
+The calculation uses the resolved attributes after flat/increased sources, or the explicit final Strength override.
+It runs on a fresh dictionary, never writes back into sources and clamps signed totals after addition.
+An explicit `/set_stat skill_effect_duration_+%` replaces the final result, including zero and negative values.
+Removing that replacement with `off` restores derivation; removing the per-ten source removes its bonus.
+
+The automated lifecycle fixture allocates the real connected Antiquarian path, reloads its saved state,
+refunds the notable for five points, reloads again and reallocates it.
+This fixture does not admit a Phrecia game connection.
+On source `d842288a` over main `0805c0ca`, an unascended synthetic Marauder passed 15 native stat checks.
+The 3.29.3b client received 45% at 455/459 Strength and 46% at 460, plus signed-source and final-override checks.
+Flat/increased attributes produced 455/449 final Strength and 45%/44% duration; repeated rebuilds did not accumulate.
+Source removal and relog cleared the transient derived stats; cleanup returned the single client to character selection.
+Evidence: `logs/whaletooth-native/20261028-120417/` (metadata and results), with Gateway command logs in the checkout.
+Gateway/Core/Host embedded versions, listening Gateway path/CWD and the clean source revision were checked.
+The tested Gateway SHA-256 was `a2f7fb652ec8b6f39aa0d47a9c60b8362468bba26847412b8302d8bf8c35073c`.
+The solution built without warnings; Core 638, Data 18 and Gateway 3500 tests passed with public extracted data.
+The original prerequisite supplied a shared owner stat; the whole-class implementation now executes Enduring Cry recovery.
+Native selected Antiquarian with 272 final Strength recovers for 3.175 seconds rather than 2.5, at the same rate.
+The paired paid-refund control and resource totals are recorded in [Antiquarian](antiquarian.md#native-evidence).
+It does not extend minions' own skills or buffs, charge duration or flask duration.
+Additional skill/summon lifetime engines need their own elapsed-time acceptance.
 
 ### Family gem levels
 
@@ -145,7 +176,7 @@ The client archive was unchanged, and the accepted normal Gateway was restored a
 To repeat, start the single client through `scripts/dev/live.ps1` and use the ordinary commands above.
 Compare the trace's `ascendancyPassives` and `ascendancyGraph` observations with the Gateway log and saved progress.
 The smoke does not test the native Altar chooser, every ordinary class, or special ascendancy combat mechanics.
-A simultaneous ordinary/Phrecia native-play claim requires separate client agreement and cannot be made by this slice.
+That historical selection-only smoke does not replace the separate Antiquarian gameplay acceptance.
 
 Protocol fields and native evidence: [progression](../protocol/15-progression.md) and
 [3.29.3b identity/graph research](../re/ascendancy-client-3.29.3b.md).

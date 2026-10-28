@@ -60,6 +60,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [game/fortification.md](game/fortification.md) | melee-hit protection and the explicit server model |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
 | [game/ascendancies.md](game/ascendancies.md) | selection, points, saves and the Phrecia play gate |
+| [game/antiquarian.md](game/antiquarian.md) | all nine node consumers, verified-graph admission, legal builds and native acceptance |
 | [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |
 
 ## Working notes (history)
