@@ -50,9 +50,16 @@ static class UtilityFlasks
         "immune_to_poison", "immune_to_bleeding",
     };
 
+    static readonly IReadOnlySet<string> ElementalAilmentInputs = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "base_frozen_effect_on_self_+%", "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%",
+        "base_avoid_shock_%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
+        "base_immune_to_freeze", "base_immune_to_chill", "base_immune_to_shock", "base_immune_to_ignite",
+    };
+
     /// <summary>How a flask effect's stat counts here.</summary>
     public static Support SupportOf(string stat) =>
-        ActorScale.IsInput(stat) || Modelled.Contains(stat) ? Support.Modelled
+        ActorScale.IsInput(stat) || Modelled.Contains(stat) || ElementalAilmentInputs.Contains(stat) ? Support.Modelled
         : PanelOnly.Contains(stat) ? Support.PanelOnly
         : stat is "base_ward" or "ward_+%" ? Support.Ward
         : Support.Unsupported;
@@ -94,9 +101,6 @@ static class UtilityFlasks
     /// stats (<see cref="RawStats"/>), or both.</summary>
     public static readonly IReadOnlySet<string> Modelled = new HashSet<string>(StringComparer.Ordinal)
     {
-        "base_frozen_effect_on_self_+%", "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%",
-        "base_avoid_shock_%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
-        "base_immune_to_freeze", "base_immune_to_chill", "base_immune_to_shock", "base_immune_to_ignite",
         "base_fire_damage_resistance_%", "base_cold_damage_resistance_%", "base_lightning_damage_resistance_%",
         "base_chaos_damage_resistance_%", "base_resist_all_elements_%",
         "base_maximum_fire_damage_resistance_%", "base_maximum_cold_damage_resistance_%",
@@ -356,7 +360,7 @@ static class UtilityFlasks
                 // Quartz: the client's Pathfinding reads virtual_phase_through_objects (0x141e9cd68: +0x52e "Phase Through
                 // Objects", which picks its blocker filter, 0x141e7b77c).
                 "phase_through_objects" => "virtual_phase_through_objects",
-                _ when ActorScale.IsInput(stat) || PanelOnly.Contains(stat) => stat,
+                _ when ActorScale.IsInput(stat) || PanelOnly.Contains(stat) || ElementalAilmentInputs.Contains(stat) => stat,
                 _ => null,
             };
             if (name is not null && catalog.Key(name) is uint key)

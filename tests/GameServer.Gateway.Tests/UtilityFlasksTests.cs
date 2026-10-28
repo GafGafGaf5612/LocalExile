@@ -149,7 +149,7 @@ public class UtilityFlasksTests
     }
 
     [Fact]
-    public void Panel_only_stats_go_to_the_client_and_change_no_pool()
+    public void Raw_ailment_stats_reach_the_runtime_and_client_without_changing_pools()
     {
         var aquamarine = UtilityFlasks.For(Of("Aquamarine Flask")!, Flask(), new Dictionary<string, int>(), None).Stats.Select(s => (s.Stat, s.Value)).ToList();
         Assert.Equal(CharacterStats.Bonus.None, UtilityFlasks.Apply(CharacterStats.Bonus.None, aquamarine));
