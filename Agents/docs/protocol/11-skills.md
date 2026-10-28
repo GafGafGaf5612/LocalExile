@@ -2106,6 +2106,33 @@ game has a spell form).
 sent with `skill_uses_main_hand = 1` — the client gates the rows on that flag, so the numbers alone leave them blank. Only
 the main hand is filled, since the server attacks with it; an empty packet adds no rows.
 
+**Critical-weighted hit averages (issue #75 review correction).** Ordinary main-hand attacks and selected
+supported attacks/spells now weight `display_hundred_times_damage_per_skill_use` (2044) and
+`hundred_times_damage_per_second` (679) by their current critical chance and multiplier. They use the same signed
+luck policy as combat: probability `p`, `1-(1-p)^2` when lucky, or `p^2` when unlucky. The mean multiplier is
+`1-p + p*criticalMultiplier/100`. Critical prohibition supplies zero probability. Low-life/Focus/raw luck changes
+therefore update the means without changing the noncritical minimum/maximum ranges. Hitless/suppressed packets
+remain zero. Each supported skill uses its own critical support contributions, not the ordinary attack's values.
+
+`SpellDamage.Display` is the shared hundredths formatter for all three paths. It retains fractional packet means
+and the actual action duration until the final rounding, clamps negative results to zero and saturates values
+above the native signed-int maximum. The selected constructors no longer calculate once with rounded APS/CPS
+and then overwrite the same fields with a second calculation. Their rate parameter is now actions per second.
+No per-hit or target random draw occurs during publication.
+
+Decision: preserve the existing final precise-rate behavior while adding the critical policy already used by
+combat. The alternative of multiplying the rounded displayed rate changes results at every rounding boundary;
+the alternative of retaining precritical means continues to ignore real critical supports. Fractional means remain
+continuous packet estimates, not the expectation of every integer damage-roll/rounding path.
+[Mark_GGG's mechanics answer](https://www.pathofexile.com/forum/view-thread/1676002/filter-account-type/staff/page/1)
+confirms tooltip DPS includes critical strikes and accuracy (the Lacerate/Double Strike answer). This correction
+covers critical weighting; reference-target accuracy, the second attack critical confirmation, dual-hand and
+multi-hit counts, cooldown/downtime, conditional more critical sources and damage-over-time DPS remain open.
+Native validation is pending. The historical numeric observations below are precritical values from the older
+implementation, not evidence for the corrected averages. Automated before-controls reproduce six omissions
+across ordinary melee/bow, Cyclone, Caustic Arrow, Fireball and Ice Nova; source/luck/prohibition, actual rate,
+hitless/support removal, fractional and overflow checks pass.
+
 **Selected attack-gem hit rows (#196)** (`AttackSkillHit`, `AttackPanelStats`): main-hand total and per-type
 ranges now use the same packet constructor as projectile and area attack combat.
 The constructor starts with raw local weapon and added damage, applies the skill's level-aware effectiveness,
@@ -2116,9 +2143,9 @@ Burning Arrow level one uses effectiveness 18000 and 100% skill physical-to-fire
 All twelve main-hand range fields are explicit and floored, including zeros for absent types after conversion.
 `CharacterPanelStats` reads whole-number total keys 670/671, physical 279/280, fire 267/268, cold 263/264,
 lightning 271/272 and chaos 275/276. These rows retain the existing main-hand and spell/secondary gates.
-Per-use average (2044) and DPS (679) are hundredths; packet fractions are retained through the average, and DPS
-uses the skill's already-emitted `hundred_times_attacks_per_second` (678), rather than recalculating attack timing.
-Consequently DPS uses that rounded displayed rate, not a new precise action-rate calculation.
+Per-use average (2044) and DPS (679) are hundredths; packet fractions are retained through the average. The
+current final supported projection uses the exact action duration and critical weighting as described above.
+Earlier standalone range tests use their explicitly supplied rates, while final publication uses the combat rate.
 Copied-save GUI baseline: a 5-13 physical bow with Strength 14 showed 5-13 physical/total, per-use 9.18 and DPS 12.86
 for both ordinary attack and Burning Arrow, while Burning Arrow already showed its corrected APS 0.98.
 The preserved raw packet is 5.1-13.26; Burning Arrow resolves 9.18-23.868 fire, average 16.524.
@@ -2129,7 +2156,8 @@ Clearing the added cold stat returned every cold field to zero and restored the 
 Relog retained Burning Arrow's 9-23, per-use 16.52 and DPS 16.19; ordinary attack stayed 5-13 physical,
 per-use 9.18, DPS 12.86 and APS 1.40.
 The fixture is also regression-tested.
-Crit weighting, accuracy, target mitigation, integer-roll expectation and downtime are excluded.
+Those historical averages exclude critical weighting; the current correction is described above.
+Accuracy, target mitigation, integer-roll expectation and downtime remain excluded.
 Initial creation and refresh both pass raw `CharacterPlayerStats` plus the actual weapon into `GemSkills` separately
 from inherited final display stats. Derived hand ranges cannot feed back into the packet.
 Only attack gems receive this override; ordinary attacks, spells, non-attack actions and off-hand rows keep their
@@ -2148,7 +2176,8 @@ and chaos 258/260 as whole integers, with `casting_spell` (438) required and
 `display_skill_deals_secondary_damage` (1675) excluded. DPS (679), damage per use (2044) and casts per second (682)
 are hundredths (the table's formatter 14), so range values must not be multiplied by 100.
 For example, level-one Fireball's 9–14 with +12% spell damage gives a 10.08–15.68 packet: the range is 10–15,
-per use is 12.88, and DPS at the emitted 1.33 casts/s is 17.13. These averages exclude crit and mitigation.
+per use is 12.88, and DPS at the emitted 1.33 casts/s is 17.13. These historical standalone averages exclude crit
+and mitigation; final supported publication now uses the exact duration and current critical weighting above.
 The same skill construction runs on initial player creation and subsequent refresh; character conversion inputs
 are passed separately from the inherited final weapon/display stats. Attack and unsupported-action displays keep
 their existing path.

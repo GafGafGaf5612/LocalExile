@@ -31,6 +31,16 @@ static class CriticalStrikePolicy
         return extraRolls > 0 ? first || second : first && second;
     }
 
+    /// <summary>Expected damage multiplier of the same ordinary/lucky/unlucky critical policy, before target
+    /// mitigation or attack accuracy. The caller supplies zero chance when critical strikes are prohibited.</summary>
+    public static double DamageFactor(int chancePerMyriad, int multiplier, int extraRolls = 0)
+    {
+        double chance = Math.Clamp(chancePerMyriad, 0, 10_000) / 10_000.0;
+        if (extraRolls > 0) chance = 1 - (1 - chance) * (1 - chance);
+        else if (extraRolls < 0) chance *= chance;
+        return 1 - chance + chance * Math.Max(0, multiplier) / 100.0;
+    }
+
     public static int Multiplier(int ordinaryMultiplier, long rawUnarmedMeleeBonus, bool emptyActiveMainHand,
         bool meleeAttack, bool spell = false) => emptyActiveMainHand && meleeAttack && !spell
             ? (int)Math.Clamp((long)ordinaryMultiplier + rawUnarmedMeleeBonus, int.MinValue, int.MaxValue)

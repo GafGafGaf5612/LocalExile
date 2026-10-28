@@ -217,7 +217,7 @@ public sealed class DamageConversionHistoryTests
         var hit = PlayerHitDamage.Resolve(raw, k => s.GetValueOrDefault(k), new(), spell: true,
             supportModifiers: [("support_controlled_destruction_spell_damage_+%_final", 25)]);
         Assert.Equal(117d, hit[DamageType.Fire].Min);
-        var panel = SpellPanelStats.Compute(new(SkillHitKind.Spell, raw), hit, 100).ToDictionary(v => v.Stat, v => v.Value);
+        var panel = SpellPanelStats.Compute(new(SkillHitKind.Spell, raw), hit, 1).ToDictionary(v => v.Stat, v => v.Value);
         Assert.Equal(117, panel["spell_minimum_fire_damage"]);
         Assert.Equal(117, panel["spell_maximum_total_damage"]);
         Assert.Equal(117, hit.RollTotal(new Random(75)));
@@ -237,7 +237,7 @@ public sealed class DamageConversionHistoryTests
         var type = toChaos ? DamageType.Chaos : DamageType.Fire;
         Assert.Equal(27d, hit[type].Min);
         Assert.Equal(45d, hit[type].Max);
-        var panel = SpellPanelStats.Compute(new(SkillHitKind.Spell, raw), hit, 100).ToDictionary(v => v.Stat, v => v.Value);
+        var panel = SpellPanelStats.Compute(new(SkillHitKind.Spell, raw), hit, 1).ToDictionary(v => v.Stat, v => v.Value);
         Assert.Equal(27, panel[$"spell_minimum_{type.ToString().ToLowerInvariant()}_damage"]);
         Assert.Equal(45, panel["spell_maximum_total_damage"]);
     }

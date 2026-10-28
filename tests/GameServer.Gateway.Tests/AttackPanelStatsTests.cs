@@ -18,7 +18,7 @@ public class AttackPanelStatsTests
             projectile: Program.Supports.Of(row)?.Types.Contains(2) == true);
     }
     static Dictionary<string, int> Rows(string effect, DamagePacket hit, int aps = 140) =>
-        AttackPanelStats.Compute(SkillHitPlan.ForSkill(Skills.Value, Skills.Value.EffectRow(effect), 1), hit, aps)
+        AttackPanelStats.Compute(SkillHitPlan.ForSkill(Skills.Value, Skills.Value.EffectRow(effect), 1), hit, aps / 100.0)
             .ToDictionary(r => r.Stat, r => r.Value);
 
     [Fact]

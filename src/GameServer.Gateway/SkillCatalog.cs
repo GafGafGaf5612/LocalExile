@@ -604,12 +604,13 @@ sealed class SkillCatalog(string folder = "data")
         /// (the client puts only dual wielding's 10 there when it is not sent), the panel's "Attacks per Second" is
         /// hundred_times_attacks_per_second / 100.
         /// </summary>
-        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null, DamagePacket? totalHit = null)
+        public IReadOnlyList<(uint, int)> Stats(IReadOnlyDictionary<uint, int>? player = null, DamagePacket? totalHit = null,
+            double damageFactor = 1)
         {
             var physical = (totalHit ?? HitDamage(player))[DamageType.Physical];
             var (min, max) = ((int)Math.Floor(physical.Min), (int)Math.Floor(physical.Max));
             double attacksPerSecond = 1 / AttackSeconds(player);
-            double averageHit = totalHit?.AverageTotal ?? (min + max) / 2.0;
+            var display = SpellDamage.Display((totalHit?.MinTotal ?? min, totalHit?.MaxTotal ?? max), attacksPerSecond, damageFactor);
             return
             [
                 (StatKeys.MainHandMinPhysical, min), (StatKeys.MainHandMaxPhysical, max),
@@ -620,8 +621,8 @@ sealed class SkillCatalog(string folder = "data")
                 (StatKeys.SkillUsesMainHand, 1),
                 (StatKeys.HundredTimesAttacksPerSecond, (int)Math.Round(100 * attacksPerSecond)),
                 // The character panel's DPS and Damage per Use rows read these; the client derives neither.
-                (StatKeys.HundredTimesDamagePerSecond, (int)Math.Round(100 * averageHit * attacksPerSecond)),
-                (StatKeys.DisplayHundredTimesDamagePerSkillUse, (int)Math.Round(100 * averageHit)),
+                (StatKeys.HundredTimesDamagePerSecond, display.PerSecond),
+                (StatKeys.DisplayHundredTimesDamagePerSkillUse, display.PerUse),
                 (StatKeys.MainHandBaseMaxAttackDistance, Range), (StatKeys.MainHandMaxAttackDistance, Range),
             ];
         }

@@ -68,9 +68,10 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Attack-gem damage/DPS and conditional speed remain separate work.
 - **Spell hit panel (#188):** selected-spell ranges now share combat's converted packet and hitless spells clear
   inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
-  DPS remains a pre-crit/pre-mitigation average; crit weighting, integer-roll expectation, cooldowns and DoT/beam
-  displays remain separate work. Quality conversion and existing modifier precedence are unchanged.
-  Selected attack-gem main-hand ranges and pre-crit averages now share the existing converted combat packet.
+  DPS now includes the current critical chance/multiplier and signed luck, with exact action duration and
+  bounded native integers. Reference accuracy, attack critical confirmation, integer-roll expectation,
+  cooldowns and DoT/beam displays remain separate work. Quality conversion and existing modifier precedence
+  are unchanged. Selected attack-gem main-hand ranges and critical-weighted averages share the combat packet.
   Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.
   Equipment UI refresh remains to be checked separately.
   Off-hand alternation, conditional damage, supports and modifier-scope corrections remain separate work.

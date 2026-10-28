@@ -138,6 +138,29 @@ the change beyond this defect. The module records evidence, limits and these alt
 Gateway 39900/Auth 45972/Patch 56752 were still running at the latest resource check; this task left them alone.
 No current native claim is made, and the goal remains active.
 
+## Critical weighting and duplicate DPS publication
+
+Six before-fix regressions in `critical-average-reproduced.trx` confirm ordinary melee/bow and Cyclone,
+Caustic Arrow, Fireball and Ice Nova still publish noncritical means at 100% crit. The correction weights average
+damage/DPS with the actual critical policy (including conditional luck and prohibition) while preserving direct
+noncritical ranges. It shares one bounded hundredths formatter and removes the selected path's redundant
+rounded-rate calculation that was immediately overwritten using the exact rate. Current initial/refresh paths
+use the same implementation. These are virtual keys 2044/679 in the 357-stat inventory.
+
+The expanded focused run passes 144 tests without skips (`critical-average-expanded.trx`). Existing historical
+support-average controls explicitly disable crit to preserve their old numeric evidence; separate tests cover
+current crit weighting. The first focused run's eight failures were those old precritical expectations, retained
+in `critical-average-focused.trx`. Solution build passes without warnings/errors. Core 555, Data 18 and Gateway
+4,191 pass with no skips, for 4,764 total. Receipts are `core-critical-average.trx`, `data-critical-average.trx`
+and `gateway-critical-average.trx`. The preceding impale implementation is local commit `e979a1c`.
+
+Decision: use the existing combat critical policy and exact final action duration, keeping fractional packet
+means until the integer boundary. The alternatives were retaining the known omission or switching DPS to the
+rounded displayed rate. These choices, primary GGG evidence and limitations are also recorded in the
+[skills module](../protocol/11-skills.md) and [damage module](../protocol/20-damage.md).
+Accuracy and attack crit confirmation, conditional more crit, off-hand/multi-hit averaging, cooldowns, integer-roll
+expectation and DoT/native validation remain open. Neither average/DPS row is marked complete yet.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
@@ -174,8 +197,8 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
    The twelve duration/effect coefficients are corrected; prove other omissions using real sources before expanding
    the selected alias set. `SupportImpale` chance and ordinary/gem impale contact behavior are now corrected as
    described above. Conditional impale sources, application/consumption overrides and native validation remain.
-3. Hit averages/DPS, critical weighting, effective critical chances, off-hand selection and secondary damage.
-   `SpellPanelStats` and `AttackPanelStats` still describe pre-critical averages.
+3. Hit averages/DPS: ordinary critical weighting now follows the combat policy; reference accuracy, attack
+   critical confirmation, conditional more crit, off-hand/multi-hit/secondary averages and DoT remain open.
 4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.
    Protocol 20 section 3 documents helpers, but also the missing execution paths.
 5. Ward, defence estimates, remaining regeneration/recharge conversions, active leech, special charges,

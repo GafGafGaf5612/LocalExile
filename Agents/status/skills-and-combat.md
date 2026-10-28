@@ -745,10 +745,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   Numeric server durations below 1 ms are floored, and invalid factors/unrepresentable waits produce no spell effect.
   Code: `SpellCastTiming.cs`, Gateway (`GemSkills`, `CastMs`, `CastGemSkill`, `LaunchProjectile`, `AreaSkillHit`).
   Docs: [11](../docs/protocol/11-skills.md) section 9.
-- **Selected spell hit damage panel (#188).** Spell total/per-type ranges and pre-crit average damage/DPS
+- **Selected spell hit damage panel (#188).** Spell total/per-type ranges and historical pre-crit average damage/DPS
   now use the same converted packet as projectile and area combat.
   All range fields are explicit, including zeros for absent types; hitless spells clear inherited weapon DPS/per-use.
   Final selected spell records use the supported combat packet for spell and inherited main-hand ranges.
+  The issue #75 review correction now weights ordinary/supported average damage and DPS with current critical
+  chance/multiplier and signed luck, retaining exact action duration and clamping the native integer bounds.
+  Six before-fix regressions reproduce the missing critical weighting; native revalidation, accuracy, multi-hit,
+  dual-hand, cooldown and DoT calculations remain open. See [11](../docs/protocol/11-skills.md).
   This includes explicit zero ranges after spell damage suppression, without changing attack displays.
   Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
   Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.

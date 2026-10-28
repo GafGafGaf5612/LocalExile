@@ -540,6 +540,15 @@ state unchanged. Current-branch native validation remains pending; historical na
 
 ## 4. What the server uses now
 
+The issue #75 publication review now includes current critical chance/multiplier and signed luck in ordinary
+and supported hit average/DPS rows. These are fractional outgoing estimates before reference accuracy/target
+mitigation; the direct packet ranges remain noncritical. Initial creation and refresh share the same publication
+path. Exact action duration is retained until the hundredths formatter, with zero/overflow bounds.
+Decision and alternative: keep that existing precise-rate behavior rather than introduce an extra rounding at
+the displayed APS/CPS boundary; remove the duplicate rounded-then-overwritten calculation instead.
+See [skills module, critical-weighted hit averages](11-skills.md) for the formula, primary evidence, regression
+controls and remaining accuracy/multi-hit/DoT/native work. This does not certify either DPS row as complete.
+
 - The default attack builds the active weapon's typed packet, or the class's Characters.dat unarmed packet, plus
   raw added damage. The shared player resolver traces conversion/gain before inherited increases/more; the caller
   applies attack Rage once, rolls each final type and retains the existing critical/mitigation stages.

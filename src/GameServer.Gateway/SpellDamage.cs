@@ -43,10 +43,15 @@ static class SpellDamage
     /// <summary>One hit: uniform between the minimum and the maximum, fraction dropped.</summary>
     public static int Roll((double Min, double Max) hit, Random rng) => (int)Math.Floor(hit.Min + rng.NextDouble() * (hit.Max - hit.Min));
 
-    /// <summary>The panel's Damage per Use and Damage per Second (both × 100) for a spell cast this often.</summary>
-    public static (int PerUse, int PerSecond) Display((double Min, double Max) hit, double castsPerSecond)
+    /// <summary>Damage per Use and DPS (both × 100), retaining packet fractions and the exact action rate.
+    /// The optional factor weights critical hits; ranges remain the noncritical packet. Saturate native integers.</summary>
+    public static (int PerUse, int PerSecond) Display((double Min, double Max) hit, double usesPerSecond,
+        double damageFactor = 1)
     {
-        double average = (hit.Min + hit.Max) / 2.0;
-        return ((int)Math.Round(100 * average), (int)Math.Round(100 * average * castsPerSecond));
+        double average = (hit.Min + hit.Max) / 2.0 * Math.Max(0, damageFactor);
+        return (Native(100 * average), Native(100 * average * Math.Max(0, usesPerSecond)));
+
+        static int Native(double value) => double.IsNaN(value) || value <= 0 ? 0
+            : (int)Math.Min(int.MaxValue, Math.Round(value));
     }
 }

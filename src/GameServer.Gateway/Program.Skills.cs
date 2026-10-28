@@ -17,7 +17,7 @@ partial class Program
         var character = CharacterPlayerStatsSnapshot(conn, out _, out var panelSources, capturePanelSources: true);
         var player = FinalPlayerStatsFrom(conn, new(character)).ToList();
         return [.. Skills.PlayerDefaults(player),
-            .. GemSkills(conn, player, character, WeaponFor(conn), panelSources!)];
+            .. GemSkills(conn, player, character, panelSources!)];
     }
 
     // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
@@ -66,7 +66,9 @@ partial class Program
     {
         var conversion = DamageStats.Conversion(stats, Stats, attack: true);
         var mainHit = AttackHitConverted(weapon, stats, MeleeAttack(conn), conversion);
-        var list = weapon.Stats(stats, mainHit).ToList();
+        double damageFactor = CriticalStrikePolicy.DamageFactor(CriticalProhibitedBy(stats, attack: true, own: null)
+            ? 0 : conn.Pools.AttackCriticalStrikeChance, AttackCriticalMultiplier(conn, stats), CriticalExtraRollsFor(conn, stats));
+        var list = weapon.Stats(stats, mainHit, damageFactor).ToList();
         AddHand(mainHit, "main_hand");
         if (OffhandWeaponFor(conn) is { } off)
         {
@@ -331,7 +333,7 @@ partial class Program
     // (SkillCatalog.EffectStats: damage, cast time, mana cost) after the player's, with ids after the default attack's that
     // no basic action uses (SkillCatalog.SkillIds).
     static IEnumerable<GrantedSkill> GemSkills(ClientState conn, IEnumerable<(uint, int)> player,
-        IReadOnlyDictionary<uint, int> characterInputs, SkillCatalog.Unarmed mainHand, PanelSourceSnapshot panelSources)
+        IReadOnlyDictionary<uint, int> characterInputs, PanelSourceSnapshot panelSources)
     {
         string? character = conn.Character;
         var playerStats = new Dictionary<uint, int>();
@@ -391,38 +393,31 @@ partial class Program
                 if (Stats.Key("skill_area_of_effect_+%") is uint areaKey) stats[areaKey] = increased;
                 Console.WriteLine($"[gateway] Cyclone area: base {baseRadius}, radius {radius}, increased area {increased}%, radius scale {radiusPercent}%");
             }
-            var hitPlan = SkillHitPlan.ForSkill(Skills, effect, level, quality);
-            if (hitPlan.Kind == SkillHitKind.Attack)
-            {
-                var attackHit = AttackSkillHit.Resolve(mainHand, characterInputs, Skills.EffectStats(effect, level),
-                    Stats, Skills.DamageEffectiveness(effect, level), melee: Skills.IsMelee(effect),
-                    projectile: Supports.Of(effect)?.Types.Contains(2) == true);
-                foreach (var (stat, value) in AttackPanelStats.Compute(hitPlan, attackHit, Get("hundred_times_attacks_per_second")))
-                    if (Stats.Key(stat) is uint key) stats[key] = value;
-            }
             if (Skills.IsAttack(effect) || Skills.IsSpell(effect))
             {
                 var supportedHit = SupportedHit(conn, id);
                 double seconds = Skills.IsAttack(effect) ? SupportedAttackSeconds(conn, id) : Math.Max(.001, (CastMs(conn, effect, id) ?? 0) / 1000.0);
                 var finalPlan = SkillHitPlan.ForSkill(Skills, effect, supported.Level, supported.Quality);
+                int criticalChance = SupportedCriticalChance(conn, id);
+                int criticalMultiplier = SupportedCriticalMultiplier(conn, id);
+                double damageFactor = CriticalStrikePolicy.DamageFactor(
+                    CriticalProhibitedBy(characterInputs, Skills.IsAttack(effect), own) ? 0 : criticalChance,
+                    criticalMultiplier, CriticalExtraRollsFor(conn, characterInputs, own));
                 var ranges = Skills.IsAttack(effect)
-                    ? AttackPanelStats.Compute(finalPlan, supportedHit, (int)Math.Round(100 / seconds))
-                    : SpellPanelStats.Compute(finalPlan, supportedHit, (int)Math.Round(100 / seconds),
-                        includeMainHand: true);
+                    ? AttackPanelStats.Compute(finalPlan, supportedHit, 1 / seconds, damageFactor)
+                    : SpellPanelStats.Compute(finalPlan, supportedHit, 1 / seconds,
+                        includeMainHand: true, damageFactor: damageFactor);
                 foreach (var (key, value) in ranges)
                     if (Stats.Key(key) is uint statKey) stats[statKey] = value;
-                var display = SpellDamage.Display((supportedHit.MinTotal, supportedHit.MaxTotal), 1 / seconds);
-                stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = display.PerUse;
-                stats[StatKeys.HundredTimesDamagePerSecond] = display.PerSecond;
                 if (Skills.IsAttack(effect))
                 {
                     stats[StatKeys.MainHandAttackSpeedPct] = (int)Math.Round((WeaponFor(conn).AttackMs / (seconds * 1000) - 1) * 100);
                     stats[StatKeys.HundredTimesAttacksPerSecond] = (int)Math.Round(100 / seconds);
                 }
                 if (Stats.Key(Skills.IsAttack(effect) ? "main_hand_critical_strike_chance" : "spell_critical_strike_chance") is uint ck)
-                    stats[ck] = SupportedCriticalChance(conn, id);
+                    stats[ck] = criticalChance;
                 if (Stats.Key(Skills.IsAttack(effect) ? "main_hand_critical_strike_multiplier" : "spell_critical_strike_multiplier") is uint cm)
-                    stats[cm] = SupportedCriticalMultiplier(conn, id);
+                    stats[cm] = criticalMultiplier;
             }
             stats[OwnAuraRestriction.BaseAura] = own.GetValueOrDefault(OwnAuraRestriction.BaseAura);
             OwnAuraRestriction.PublishSkill(stats, OwnAuraRestrictionValue(conn));

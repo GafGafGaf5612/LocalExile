@@ -9,10 +9,11 @@ public sealed class SupportedSpellPanelTests
     [Theory]
     [InlineData(false, 1599, 2131, 12, 19, 0, 0)]
     [InlineData(true, 51153, 68205, 11, 18, 397, 595)]
-    public void Previously_native_verified_no_conversion_support_projections_remain_exact(bool combined,
+    public void Historical_support_range_and_average_controls_remain_exact_when_critical_strikes_are_disabled(bool combined,
         int perUse, int dps, int fireMin, int fireMax, int coldMin, int coldMax)
     {
         using var game = new SpellCharacter();
+        game.State.PlayerStats[Program.Stats.Key("global_cannot_crit")!.Value] = 1;
         if (combined)
             game.Socket(("SupportGemControlledDestruction", 20), ("SupportGemLesserMultipleProjectiles", 20),
                 ("SupportGemAddedColdDamage", 20));
@@ -20,7 +21,8 @@ public sealed class SupportedSpellPanelTests
 
         var spell = game.Read();
 
-        // Fixed before this refactor: real native normal-table supports, white sockets, zero gem quality.
+        // Historical native values used precritical averages. Preserve those controls explicitly without crits;
+        // current critical-weighted averages have separate coverage and still require native validation.
         // Preserve the existing double/Math.Round projection at CD's half-cent boundary without adding an epsilon.
         Assert.Equal(perUse, spell.Get("display_hundred_times_damage_per_skill_use"));
         Assert.Equal(dps, spell.Get("hundred_times_damage_per_second"));
@@ -154,10 +156,14 @@ public sealed class SupportedSpellPanelTests
             Assert.Equal((int)Math.Floor(range.Min), view.Get($"spell_minimum_{type}_damage"));
             Assert.Equal((int)Math.Floor(range.Max), view.Get($"spell_maximum_{type}_damage"));
         }
-        Assert.Equal((int)Math.Round(50 * (view.Hit.MinTotal + view.Hit.MaxTotal)),
+        Assert.Equal(0, view.Get("virtual_extra_critical_rolls"));
+        bool cannot = view.Stats.GetValueOrDefault(Program.Stats.Key("global_cannot_crit")!.Value) != 0;
+        double factor = cannot ? 1 : 1 + view.Get("spell_critical_strike_chance") / 10000.0
+            * (view.Get("spell_critical_strike_multiplier") / 100.0 - 1);
+        Assert.Equal((int)Math.Round(50 * (view.Hit.MinTotal + view.Hit.MaxTotal) * factor),
             view.Get("display_hundred_times_damage_per_skill_use"));
         if (!view.Hit.IsZero)
-            Assert.Equal((int)Math.Round(50 * (view.Hit.MinTotal + view.Hit.MaxTotal) / view.CastSeconds),
+            Assert.Equal((int)Math.Round(50 * (view.Hit.MinTotal + view.Hit.MaxTotal) * factor / view.CastSeconds),
                 view.Get("hundred_times_damage_per_second"));
     }
 

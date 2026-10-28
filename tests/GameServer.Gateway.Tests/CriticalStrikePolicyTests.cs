@@ -2,6 +2,21 @@ namespace GameServer.Gateway.Tests;
 
 public class CriticalStrikePolicyTests
 {
+    [Theory]
+    [InlineData(0, 300, 1, 1)]
+    [InlineData(10000, 300, -1, 3)]
+    [InlineData(5000, 200, 0, 1.5)]
+    [InlineData(5000, 200, 1, 1.75)]
+    [InlineData(5000, 200, -1, 1.25)]
+    [InlineData(2500, 300, 1, 1.875)]
+    [InlineData(2500, 300, -1, 1.125)]
+    [InlineData(5000, -100, 0, .5)]
+    [InlineData(-100, 300, 0, 1)]
+    [InlineData(20000, 300, 0, 3)]
+    public void Expected_damage_accounts_for_ordinary_lucky_and_unlucky_critical_outcomes(
+        int chance, int multiplier, int extra, double expected) =>
+        Assert.Equal(expected, CriticalStrikePolicy.DamageFactor(chance, multiplier, extra), 10);
+
     sealed class CountRandom(params int[] values) : Random
     {
         public int Calls { get; private set; }
