@@ -151,6 +151,11 @@ partial class Program
             && Stats.Key("attack_damage_+%") is uint attackDamage)
             stats[attackDamage] = ArmourAttackDamage.Total(Get("attack_damage_+%"),
                 Get("physical_damage_reduction_rating"), perArmour);
+        // Whaletooth Bangle uses complete groups of final Strength. Derive from this fresh snapshot once; never
+        // write back into raw sources. An explicit final-duration /set_stat keeps its usual replacement semantics.
+        if (Stats.Key(SkillDurationModifiers.IncreasedDuration) is uint durationKey && !devSet.Contains(durationKey))
+            stats[durationKey] = SkillDurationModifiers.Total(Get(SkillDurationModifiers.IncreasedDuration),
+                Get("strength"), Get(SkillDurationModifiers.PerTenStrength));
         // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.

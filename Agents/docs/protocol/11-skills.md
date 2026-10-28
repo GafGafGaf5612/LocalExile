@@ -1709,6 +1709,13 @@ ring will require its actual radius rather than this marker. The skill-bar assoc
 
 ## 14. Character panel sums
 
+Whaletooth Bangle's owner duration is projected by `SkillDurationModifiers` in `CharacterPlayerStats`:
+`skill_effect_duration_+%` gains the signed per-ten-Strength value (key 2817) for each complete group of ten final Strength.
+It adds to ordinary raw duration once per rebuild, after attribute resolution; explicit final-stat overrides win.
+The resulting stat reaches the normal player/GrantedSkill stat publication without changing message layouts.
+This is stat projection only; elapsed skill/summon lifetime execution remains separate.
+See [the ascendancy scope and lifecycle checks](../game/ascendancies.md#whaletooth-bangle-duration-stat).
+
 The character panel (CharacterPanelStats.dat, 387 rows) reads mostly virtual stats that the server computes; the client
 derives none of them (§4). Passives and item mods give the base form (`base_stun_recovery_+%`) while the Stun Recovery
 row reads `stun_recovery_+%`. `PanelStats` (issue #75) lists, for about 150 display stats, what each one sums: the display

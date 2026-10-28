@@ -74,6 +74,25 @@ The existing ordinary passive stat aggregation also sees allocated ascendancy st
 No Ward, Rage, charge, minion, granted-skill, passive-buff, presence or other new gameplay engine is imported here.
 Choosing a class is not evidence that its signature gameplay works.
 
+### Whaletooth Bangle duration stat
+
+Antiquarian node 27339, `Exhibit 39: Whaletooth Bangle`, supplies
+`skill_effect_duration_+%_per_10_strength` = 1 (3.29.3b Stats key 2817).
+`SkillDurationModifiers` adds `floor(max(0, final Strength) / 10) * per-ten value` to the raw
+`skill_effect_duration_+%` in `CharacterPlayerStats`.
+For example, 455 final Strength gives +45%; an ordinary +10% duration passive makes the total +55%.
+The calculation uses the resolved attributes after flat/increased sources, or the explicit final Strength override.
+It runs on a fresh dictionary, never writes back into sources and clamps signed totals after addition.
+An explicit `/set_stat skill_effect_duration_+%` replaces the final result, including zero and negative values.
+Removing that replacement with `off` restores derivation; removing the per-ten source removes its bonus.
+
+The automated lifecycle fixture allocates the real connected Antiquarian path, reloads its saved state,
+refunds the notable for five points, reloads again and reallocates it.
+This fixture does not admit a Phrecia game connection.
+The implementation supplies a shared owner stat without adding skill/summon lifetime execution.
+It does not extend minions' own skills or buffs, charge duration or flask duration.
+Elapsed lifetime checks belong with each future duration consumer; full Antiquarian gameplay remains incomplete.
+
 ## Validation and limits
 
 Automated tests cover catalog ownership, family separation, native class packing and graph stat, implicit starts,
