@@ -8,7 +8,7 @@ using GameServer.Core.Protocol.Instance;
 /// second); ComponentCharges its charges. A use puts the buff on the player for the duration and its stats count on the
 /// character until it ends (<see cref="Apply"/>, <see cref="RawStats"/>), as do the flask's "during effect" mods
 /// (<see cref="DuringEffect"/>). How each stat counts is <see cref="SupportOf"/>: modelled, shown on the character panel
-/// only (unsupported ailment/curse effects), or consumed by the authoritative Ward pool.
+/// only (unsupported ailment sources and curses), or consumed by the authoritative Ward pool.
 /// </summary>
 static class UtilityFlasks
 {
@@ -32,8 +32,7 @@ static class UtilityFlasks
     {
         /// <summary>It counts: the pools, the walk speed, the damage code or another mechanic use it.</summary>
         Modelled,
-        /// <summary>It goes to the client for the character panel only: ailments, stun and curses on the player do not
-        /// exist here (monsters only hit), so it changes nothing yet.</summary>
+        /// <summary>It goes to the client for the character panel only; its gameplay source/consumer is unsupported.</summary>
         PanelOnly,
         /// <summary>Ward bonuses consumed by the authoritative pool through <see cref="Apply"/>.</summary>
         Ward,
@@ -44,16 +43,23 @@ static class UtilityFlasks
     /// <summary>The stats only the character panel reads (<see cref="Support.PanelOnly"/>).</summary>
     static readonly IReadOnlySet<string> PanelOnly = new HashSet<string>(StringComparer.Ordinal)
     {
-        "base_frozen_effect_on_self_+%", "stun_threshold_+%",
-        "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%", "base_avoid_shock_%", "base_avoid_stun_%",
-        "base_stun_recovery_+%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
-        "curse_effect_on_self_+%", "chance_to_freeze_shock_ignite_%", "base_immune_to_freeze", "base_immune_to_chill",
-        "base_immune_to_shock", "base_immune_to_ignite", "immune_to_poison", "immune_to_bleeding",
+        "stun_threshold_+%",
+        "base_avoid_stun_%",
+        "base_stun_recovery_+%",
+        "curse_effect_on_self_+%", "chance_to_freeze_shock_ignite_%",
+        "immune_to_poison", "immune_to_bleeding",
+    };
+
+    static readonly IReadOnlySet<string> ElementalAilmentInputs = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "base_frozen_effect_on_self_+%", "base_avoid_chill_%", "base_avoid_freeze_%", "base_avoid_ignite_%",
+        "base_avoid_shock_%", "chill_effectiveness_on_self_+%", "base_self_freeze_duration_-%", "shocked_effect_on_self_+%",
+        "base_immune_to_freeze", "base_immune_to_chill", "base_immune_to_shock", "base_immune_to_ignite",
     };
 
     /// <summary>How a flask effect's stat counts here.</summary>
     public static Support SupportOf(string stat) =>
-        ActorScale.IsInput(stat) || Modelled.Contains(stat) ? Support.Modelled
+        ActorScale.IsInput(stat) || Modelled.Contains(stat) || ElementalAilmentInputs.Contains(stat) ? Support.Modelled
         : PanelOnly.Contains(stat) ? Support.PanelOnly
         : stat is "base_ward" or "ward_+%" ? Support.Ward
         : Support.Unsupported;
@@ -355,7 +361,7 @@ static class UtilityFlasks
                 // Quartz: the client's Pathfinding reads virtual_phase_through_objects (0x141e9cd68: +0x52e "Phase Through
                 // Objects", which picks its blocker filter, 0x141e7b77c).
                 "phase_through_objects" => "virtual_phase_through_objects",
-                _ when ActorScale.IsInput(stat) || PanelOnly.Contains(stat) => stat,
+                _ when ActorScale.IsInput(stat) || PanelOnly.Contains(stat) || ElementalAilmentInputs.Contains(stat) => stat,
                 _ => null,
             };
             if (name is not null && catalog.Key(name) is uint key)

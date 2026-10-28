@@ -161,8 +161,12 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Guarded by Monsters, like projectile impact commits and pause changes.
     public bool LeavingArea;
     public readonly RecentEnemyHits RecentEnemyHits = new();
+    public readonly PlayerElementalAilments ElementalAilments = new();
     public Random IncomingHitRandom = Random.Shared;
     public int IncomingHitEpoch;
+    public int DeathNotificationEpoch = -1;
+    public int FreezeGeneration;
+    public int ActionInterruptionGeneration => unchecked(HitRecovery.Generation + FreezeGeneration);
     public (int Count, int Chance)? PresentedRecentEnemyHits;
 
     // A failed transfer retains history but cannot revive a swing from before the attempted transfer.
@@ -171,7 +175,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         lock (Monsters)
         {
             IncomingHitEpoch++;
-            if (clear) RecentEnemyHits.Clear();
+            if (clear) { RecentEnemyHits.Clear(); ElementalAilments.Clear(); }
         }
     }
     public int ProjectileEpoch;
@@ -269,7 +273,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     /// <summary>Applies the passive movement speed to the server's walk estimate; /set_speed is a dev override.</summary>
     public void ApplyMovementSpeed() =>
-        Walk.SetSpeed(Math.Max(1, Program.WalkSpeed * (100 + Pools.MovementVelocityPct) / 100), Clock.Elapsed.TotalSeconds);
+        Walk.SetSpeed(Math.Max(1, Program.WalkSpeed * (100 + Pools.MovementVelocityPct) / 100 * ElementalAilments.ActionFactor(Clock.Elapsed.TotalSeconds)), Clock.Elapsed.TotalSeconds);
 
     /// <summary>Replaces an area transition of this connection's layout (dev changes; the walk estimate keeps going).</summary>
     public void ReplaceAreaTransition(uint id, AreaTransitionObject transition) =>

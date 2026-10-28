@@ -31,7 +31,7 @@ partial class Program
         {
             double now = ProjectileWorldTime(conn);
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.Paused || conn.PlayerLife == 0
-                || conn.HitRecovery.BlocksInput(requestedAt, now)
+                || PlayerActionBlocked(conn, requestedAt, now)
                 || !AttackTiming.Ready(now, conn.NextAttackAt, duration)) return false;
             requestedAt = Math.Max(requestedAt, conn.ProjectileRuntime?.Runtime.Now / 120000d ?? requestedAt);
             conn.NextAttackAt = AttackTiming.After(now, conn.NextAttackAt, duration);
@@ -49,7 +49,7 @@ partial class Program
     // the use is no more than a quarter of an attack early (the client's jitter). Does not reserve the timer: an attack used
     // on a monster waits for the walk into reach, and CastGemSkill reserves it when the swing starts.
     static double SkillAttackSeconds(ClientState conn, int effect, int level) =>
-        SkillAttackTiming.ForSkill(Skills, effect, level, WeaponFor(conn), CharacterPlayerStats(conn));
+        SkillAttackTiming.ForSkill(Skills, effect, level, WeaponFor(conn), CharacterPlayerStats(conn)) / PlayerActionFactor(conn);
 
     static bool AttackReady(ClientState conn, int effect, int level, out double seconds)
     {
@@ -100,7 +100,7 @@ partial class Program
         var weapon = WeaponFor(conn);
         bool bow = WeaponProfileFor(conn, activeSet: true).Bow;
         double now = conn.Clock.Elapsed.TotalSeconds, duration;
-        lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn));
+        lock (conn.Monsters) duration = weapon.AttackSeconds(CharacterPlayerStats(conn)) / PlayerActionFactor(conn);
         // The client sends one 0x24 per swing while the button is held; jitter makes the next one arrive a little before a
         // full attack time, so accept it up to a quarter of an attack early.
         lock (conn.Monsters)
@@ -116,7 +116,7 @@ partial class Program
         {
             now = ProjectileWorldTime(conn);
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0
-                || conn.HitRecovery.BlocksInput(requestedAt, now)) return;
+                || PlayerActionBlocked(conn, requestedAt, now)) return;
             action = Interlocked.Increment(ref conn.ActionCount);
             target = m.Walk.Position(now);
             (here, stop, arrive) = conn.Walk.Approach(target.X, target.Y, weapon.Range, now, tolerance: m.StopRange - 2);
@@ -223,13 +223,14 @@ partial class Program
             // Read before the hit is applied: a killing blow clears the target's impales.
             impaleStacks = m.Impale.Stacks;
             impaleStored = m.Impale.Bonus;
-            var ownRolled = hit.Roll(Random.Shared);
+            var gambler = GamblerFor(player);
+            var ownRolled = (gambler with { DamageMorePct = 0 }).RollOutgoingHit(hit, Random.Shared);
             // Impale is stored reflected damage, not part of the direct roll which can generate Fortification.
             var rolled = stored > 0 ? ownRolled.Add(DamageType.Physical,
                 new DamageRange(Math.Floor(stored), Math.Floor(stored))) : ownRolled;
             critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration);
             int criticalMultiplier = CriticalMultiplierOn(m, AttackCriticalMultiplier(conn, player));
-            (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, resistanceMods, pen);
+            (damage, resistance) = MonsterDamage(m, rolled, critical, attack: true, resistanceMods, pen, gambler.InvertsResistance(Random.Shared));
             if (critical) damage = DamageModel.CriticalDamage(damage, criticalMultiplier);
             FortificationOnHitLocked(conn, m, RawFortificationDamage(ownRolled, critical, criticalMultiplier),
                 WeaponProfileFor(conn, activeSet: true).Melee, player, ownPenetration);
@@ -377,7 +378,7 @@ partial class Program
         int action = actionToken ?? conn.ActionCount;
         int recoveryGeneration = 0;
         lock (conn.Monsters)
-            if (actionToken is not null && (conn.ActionCount != action || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
+            if (actionToken is not null && (conn.ActionCount != action || conn.ElementalAilments.ActionFactor(conn.Clock.Elapsed.TotalSeconds) == 0 || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
         await EndGracePeriod(remote, stream, ciphers, conn, action: true);
         var gem = GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == skillId);
@@ -480,7 +481,7 @@ partial class Program
                 if (!Current()) return false;
                 paid = PayMana(conn, skillId, out cost);
                 // Capture at paid admission, before output or release scheduling can catch up other hits.
-                recoveryGeneration = conn.HitRecovery.Generation;
+                recoveryGeneration = conn.ActionInterruptionGeneration;
             }
             if (!paid)
             {
@@ -832,10 +833,11 @@ partial class Program
                     criticalChance = SupportedCriticalChance(conn, skillId);
                     sweepMultiplier = SupportedCriticalMultiplier(conn, skillId);
                 }
-                var rolled = sweepHit.Roll(Random.Shared);
+                var gambler = GamblerFor(player);
+                var rolled = (gambler with { DamageMorePct = 0 }).RollOutgoingHit(sweepHit, Random.Shared);
                 critical = RollCriticalStrike(conn, criticalChance, skillStats, attack: !spell);
                 int multiplier = CriticalMultiplierOn(m, sweepMultiplier);
-                (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen);
+                (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen, gambler.InvertsResistance(Random.Shared));
                 if (critical) damage = DamageModel.CriticalDamage(damage, multiplier);
                 applied = ApplyMonsterHitLocked(conn, m, damage);
                 if (applied is { StageStarts: true } staged)
@@ -908,15 +910,16 @@ partial class Program
 
     // Resolve an already-rolled packet using its single critical draw; target damage taken follows mitigation.
     internal static (int Damage, string? Resistance) MonsterDamage(SpawnedMonster m, DamagePacket rolled,
-        bool critical, bool attack, HitResistances.Mods mods, Penetration.PerType pen = default)
+        bool critical, bool attack, HitResistances.Mods mods, Penetration.PerType pen = default, bool invertElemental = false)
     {
         var described = new List<string>();
         var strike = new HitResistances.Strike(Critical: critical, Attack: attack);
-        var mitigated = DamageModel.Mitigate(rolled, type =>
+        var mitigated = rolled.Select((type, range) =>
         {
             var value = MonsterHitResistance(m, type, pen);
             if (rolled[type].Max > 0 && HitResistances.Describe(type, value, strike, mods) is { } note) described.Add(note);
-            return HitResistances.Effective(type, value, strike, mods);
+            double effective = HitResistances.FinalValue(type, value, strike, mods, invertElemental);
+            return range.Scale(Math.Max(0, 1 - effective / 100));
         });
         return (MonsterTakesMitigated(m, mitigated, spell: !attack),
             described.Count > 0 ? string.Join(", ", described) : null);
@@ -1040,7 +1043,7 @@ partial class Program
     {
         lock (conn.Monsters)
             return !conn.Closed && !conn.LeavingArea && !conn.RageRetired && conn.PlayerLife > 0
-                && conn.ActionCount == action && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds);
+                && conn.ActionCount == action && conn.ElementalAilments.ActionFactor(conn.Clock.Elapsed.TotalSeconds) > 0 && !conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds);
     }
 
     // A hit's damage off a monster's life (under the Monsters lock): the new life, and whether the hit starts its boss stage

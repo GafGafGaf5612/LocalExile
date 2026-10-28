@@ -193,6 +193,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Do not inherit an owner's spell-damage restriction onto independent minions or daemons without a skill rule.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
+### Incoming elemental ailment extensions
+
+- Ordinary supported monster basic contacts now exercise ignite/chill/freeze/shock and final avoidance.
+  Finish dedicated native buff icons and source/threshold/conditional-immunity parity before claiming a general ailment engine.
+  Hostile projectile/spell adapters and alternative-ailment sources remain separate work.
+  See [Gambler](../docs/game/gambler.md).
+
 ### Rage extensions
 
 - Generic Rage generation, limits, installed buff/count, actual damage, decay, pause and lifecycle are native-verified.

@@ -45,7 +45,7 @@ partial class Program
             ticket = null;
             SingleUseCooldownState? state = null;
             if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.PlayerLife == 0 || conn.Paused
-                || requestedAt is double asked && conn.HitRecovery.BlocksInput(asked, conn.Clock.Elapsed.TotalSeconds)
+                || requestedAt is double asked && PlayerActionBlocked(conn, asked, conn.Clock.Elapsed.TotalSeconds)
                 || actionToken is int original && conn.ActionCount != original) return false;
             // Soul counters do not enable an executor. Refuse the actual Vaal instance before action/movement,
             // cooldown reservation or native acknowledgement, including when modifiers reduce its cost to zero.
