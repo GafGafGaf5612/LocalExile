@@ -30,7 +30,7 @@ partial class Program
                     !Skills.IsAttack(context.Gem.Effect)) };
                 var shot = (ProjectileOffense)use.Payload!;
                 if (GatewayProjectileSkillProfiles.IsKineticBlast(effect))
-                    return use with { Payload = shot with { AreaVisual = KineticBlastImpactAo,
+                    return use with { Payload = shot with { AreaVisual = Art.AnimatedInPlaceOf(KineticBlastExplosionAo, context.Variation),
                         Presentation = new() { EffectLifetime = ProjectileRuntime.Time(.35) } } };
                 if (!GatewayProjectileSkillProfiles.IsFireball(metadata)) return use;
                 string ao = Art.AnimatedInPlaceOf(DefaultProjectileImpactAo, context.Variation);

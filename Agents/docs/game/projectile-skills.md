@@ -64,17 +64,32 @@ separately. Terrain-blocked center paths are omitted without replacement, redist
 Centers and terrain admission are captured at impact/stop; actors and defenses resolve at each later blast.
 The fixed-circle geometry is a development approximation, not a measured official distribution. Unusual target sizes
 can overlap geometrically; Core supports actor radii while the Gateway currently uses monster centers of radius zero.
+Shared area scaling preserves the blast/placement ratio, not the hit count on a stationary nearby target.
+For example, normal KB's inner uncovered distance grows from 6 to 12 cells when both radii double.
+More area therefore increases overall coverage without guaranteeing single-target or nearby-target overlap.
 
-`ClusterDelayMs = 50` and `ClusterIntervalMs = 50` are separate recipe parameters in `GatewayProjectileSkillProfiles`.
+`ClusterDelaySeconds = 1d / 30` and `ClusterIntervalSeconds = 1d / 30` are separate recipe parameters.
 Slot i generates its native effect and commits its damage at trigger + delay + i * interval (zero-based i), so four
-slots run at 50/100/150/200 ms. Both values are arbitrary development defaults: neither frame measurements nor
-experiential estimates, and no source establishes these exact timings. Omitted terrain slots retain their gaps.
+slots run at 1/30, 2/30, 3/30 and 4/30 seconds. Each parameter converts to exactly 4000 simulation quanta,
+without rounding to integer milliseconds. These are user-selected development values, not frame measurements,
+experiential estimates or established official timings. Omitted terrain slots retain their gaps.
 Pending blasts survive parent continuation/removal, retain the trigger phase and share the simulation pause/teardown.
-The native burst uses `Metadata/Effects/Spells/cluster_burst/big.ao` at each actual center for 0.35 seconds.
+The native secondary burst uses `kinetic_blast_small` (`Metadata/Effects/Spells/cluster_burst/mini.ao` by default)
+at each actual center for 0.35 seconds, resolved through the equipped skill-art variation.
+The separate `kinetic_blast_large` main-impact art is not a substitute for these secondary bursts.
+Area art scales by actual blast radius in world units divided by the selected art's exported native radius.
+For example, normal and Celestial small bursts export 125 world units; art with no known radius stays unscaled.
 Exact official random distribution, radial spiral and sequential timing remain uncalibrated. Fireball art uses
 the selected native variation for 1.5 seconds on actual area events, including the final return event. These lifetimes
 are separate from the KB damage delays. Native height, art alignment and full visual equivalence remain pending
 user-operated client validation.
+Without a captured height grid, flight uses client terrain sampling, without the five-step torso offset.
+Effects also follow client terrain; this is not a forced absolute world height of zero, and platform/doodad height
+is still unresolved. A wall-contact regression verifies Fireball area damage and default/Stygian native packets;
+it does not certify that those effects are visible above every surface in the client.
+Water is not treated as a wall merely because it is unwalkable: the projectile mask admits values 1 through 5,
+blocks 0, and also stops at area boundaries. Maximum range can create a KB group over water without a wall.
+Endpoint logs distinguish Terrain from Distance; area logs expose the selected art, radius and scale.
 
 ## Evidence and versions
 

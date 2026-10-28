@@ -3,9 +3,9 @@ using GameServer.Core.Projectiles;
 /// <summary>Named behavior and catalog policies on the common projectile runtime.</summary>
 static class GatewayProjectileSkillProfiles
 {
-    // Arbitrary development values: neither measured frame timings nor experiential estimates.
-    public const int ClusterDelayMs = 50;
-    public const int ClusterIntervalMs = 50;
+    // User-selected development timings, not measurements of the official game. Keep fractional milliseconds.
+    public const double ClusterDelaySeconds = 1d / 30;
+    public const double ClusterIntervalSeconds = 1d / 30;
     public static IReadOnlyList<string> Effects { get; } = Array.AsReadOnly(new[]
         { "Fireball", "KineticBlast", "KineticBlastAltX", "KineticBlastAltY" });
 
@@ -42,8 +42,8 @@ static class GatewayProjectileSkillProfiles
                 CountConsumer = clustering ? ProjectileCountConsumer.ContactAreas : ProjectileCountConsumer.Primary,
                 ContactArea = new("kinetic-blast", 0, count, Multiplier: Math.Max(0, multiplier))
                     { SectorPlacement = true, RespectTerrain = true,
-                        Delay = ProjectileRuntime.Time(ClusterDelayMs / 1000d),
-                        Interval = ProjectileRuntime.Time(ClusterIntervalMs / 1000d) },
+                        Delay = ProjectileRuntime.Time(ClusterDelaySeconds),
+                        Interval = ProjectileRuntime.Time(ClusterIntervalSeconds) },
                 EndAreaReasons = NonContactStops, EndAreaOnReturnTurnaround = true
             };
         }

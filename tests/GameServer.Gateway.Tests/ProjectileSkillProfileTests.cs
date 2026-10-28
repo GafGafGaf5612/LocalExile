@@ -19,16 +19,16 @@ public class ProjectileSkillProfileTests
     [InlineData("KineticBlast", 4, 20)]
     [InlineData("KineticBlastAltX", 3, 28)]
     [InlineData("KineticBlastAltY", 4, 20)]
-    public void KB_uses_fixed_scaled_circle_and_fifty_millisecond_area_slots(string effect, int count, int placement)
+    public void KB_uses_fixed_scaled_circle_and_thirtieth_second_area_slots(string effect, int count, int placement)
     {
         var w = new ProjectileRuntimeProbe();
         w.Release(Profile(effect, ("skill_area_of_effect_+%", 300)) with { Range = 20 });
         w.Advance(.2); Assert.Empty(Areas(w));
-        w.Advance(.25 - 1d / ProjectileRuntime.QuantaPerSecond); Assert.Empty(Areas(w));
-        w.Advance(.25); Assert.Single(Areas(w));
+        w.Advance(.2 + 1d / 30 - 1d / ProjectileRuntime.QuantaPerSecond); Assert.Empty(Areas(w));
+        w.Advance(.2 + 1d / 30); Assert.Single(Areas(w));
         w.Advance(1);
         var areas = Areas(w); Assert.Equal(count, areas.Length);
-        Assert.Equal(Enumerable.Range(1, count).Select(i => ProjectileRuntime.Time(.2 + .05 * i)), areas.Select(e => e.At));
+        Assert.Equal(Enumerable.Range(1, count).Select(i => ProjectileRuntime.Time(.2) + i * 4000), areas.Select(e => e.At));
         Assert.All(areas, e => Assert.Equal(placement * 2, (e.Position - new ProjectileVector(30, 10)).Length, 7));
         double previous = Math.Atan2(areas[0].Position.Y - 10, areas[0].Position.X - 30), turn = 0;
         foreach (var area in areas.Skip(1))
@@ -284,9 +284,9 @@ public partial class OwnAuraGatewayTests
 {
     [Theory]
     [InlineData("Fireball", "Metadata/Effects/Spells/fireball/explode_new2.ao")]
-    [InlineData("KineticBlast", "Metadata/Effects/Spells/cluster_burst/big.ao")]
-    [InlineData("KineticBlastAltX", "Metadata/Effects/Spells/cluster_burst/big.ao")]
-    [InlineData("KineticBlastAltY", "Metadata/Effects/Spells/cluster_burst/big.ao")]
+    [InlineData("KineticBlast", "Metadata/Effects/Spells/cluster_burst/mini.ao")]
+    [InlineData("KineticBlastAltX", "Metadata/Effects/Spells/cluster_burst/mini.ao")]
+    [InlineData("KineticBlastAltY", "Metadata/Effects/Spells/cluster_burst/mini.ao")]
     public async Task Skill_input_commits_direct_and_cluster_damage_before_native_output(string effect, string art)
     {
         bool fireball = effect == "Fireball";
