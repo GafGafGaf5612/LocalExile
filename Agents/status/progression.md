@@ -51,6 +51,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native ordinary command checks do not establish an expanded chooser or special class gameplay.
   Forest Tracking's attack-damage bonus from final evasion shares the existing Steel Willed calculation.
   Automated checks cover actual node allocation/refund/reload, final defences, signed composition and attack consumers.
+  Seventeen native raw-input controls cover real damage, armour/evasion composition, added damage and relog.
   Full Daughter of Oshabi gameplay remains separate.
   Docs: [scope and compatibility gate](../docs/game/ascendancies.md).
 
