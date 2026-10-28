@@ -13,6 +13,10 @@ public sealed record TileObject(float X, float Y, float Z, uint Flags, float Ang
     public int CellX => Cell?.X ?? (int)MathF.Floor(X / TilePlacement.WorldPerCell);
     public int CellY => Cell?.Y ?? (int)MathF.Floor(Y / TilePlacement.WorldPerCell);
 
+    /// <summary>The text form's flip field: the doodad is mirrored (MapWorldsSanctuary's PaleHorn01_03 in
+    /// innocence_overlap_cc_v01_01.tmd, whose projectile triangle lands on the other side without it).</summary>
+    public bool Mirror { get; init; }
+
     /// <summary>The virtual model the client registers for the record: "&lt;.tdt folder&gt;/&lt;record name&gt;.ao"
     /// (not in the bundle index; Agents/docs/protocol/08-area-transitions.md §5). A text .tmd record without a name gives
     /// the model's whole path as its first string instead (Act 3's slum_sewer_entrance_battlefront.tmd: the recorder
@@ -68,7 +72,7 @@ public static partial class TileObjectFile
 public static partial class TileObjectFile
 {
     /// <summary>The older text form (UTF-16, "version 8"): one record per line, <c>cellX cellY hasPos [worldX worldY] z
-    /// angle qx qy qz qw ? scale "ao" "name" "mesh" "type" [n]</c> (every one of the 3 345 records in the game files).
+    /// angle qx qy qz qw flip scale "ao" "name" "mesh" "type" [n]</c> (every one of the 3 345 records in the game files).
     /// The cell is the record's own (world / (250/23) can land one further: 2_10_6's cart blocker at world y 500 is cell
     /// 45, as the client places it); without a world position the cell's middle is the world position. An empty "ao" is
     /// none.</summary>
@@ -89,7 +93,7 @@ public static partial class TileObjectFile
                 : ((t[0].Float + 0.5f) * TilePlacement.WorldPerCell, (t[1].Float + 0.5f) * TilePlacement.WorldPerCell);
             int z = hasPos ? 5 : 3;
             objects.Add(new TileObject(x, y, t[z].Float, 0, t[z + 1].Float, t[q + 1].Text, t[q + 2].Text, t[q + 3].Text,
-                t[q].Text.Length > 0 ? t[q].Text : null, ((int)t[0].Float, (int)t[1].Float)));
+                t[q].Text.Length > 0 ? t[q].Text : null, ((int)t[0].Float, (int)t[1].Float)) { Mirror = t[z + 6].Float != 0 });
         }
         return objects;
     }

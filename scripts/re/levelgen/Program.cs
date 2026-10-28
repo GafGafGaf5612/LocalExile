@@ -584,6 +584,8 @@ static void WalkArea(GameFileSystem fs, TerrainCache files, string root, string 
     }
     // LEVELGEN_WALK=<file>: the port's walk grid, one byte per cell (as the capture's .bin).
     if (Environment.GetEnvironmentVariable("LEVELGEN_WALK") is { Length: > 0 } walkOut) File.WriteAllBytes(walkOut, walk.Walk);
+    // LEVELGEN_PROJECTILE=<file>: the port's projectile grid (as the capture's .projectile.bin).
+    if (Environment.GetEnvironmentVariable("LEVELGEN_PROJECTILE") is { Length: > 0 } projOut) File.WriteAllBytes(projOut, walk.Projectile);
     Console.WriteLine($"{areaId} seed {seed}: tile hash {grid.Hash()} (client {clientHash}), grid {walk.Width}x{walk.Height}");
     using (var meta = JsonDocument.Parse(File.ReadAllText(stem + ".json")))
         Console.WriteLine($"capture: {meta.RootElement.GetProperty("w")}x{meta.RootElement.GetProperty("h")}");

@@ -448,7 +448,7 @@ public sealed class DoodadStage(TerrainCache files, LevelRandom rng, TileGrid gr
                         while (f >= 6.2831855f) f -= 6.2831855f;
                         if ((f >= 3.1915927f) != wantFar) return;
                     }
-                    Create(new PlacedDoodad(def.Model, x * 23 + cx + def.Dx, y * 23 + cy + def.Dy, angle, def.Scale, mirrors ^ lineMirror ^ def.Mirrored), isStatic);
+                    Create(new PlacedDoodad(def.Model, x * 23 + cx + def.Dx, y * 23 + cy + def.Dy, angle, def.Scale, mirrors ^ lineMirror ^ o.Mirror ^ def.Mirrored), isStatic);
                 }
 
                 if (objects.Count != 0 && (files.TileFlags(tile.Path) & 0x200) != 0) SubTileDoodads(tile, reskin, Line);

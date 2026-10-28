@@ -1523,7 +1523,7 @@
   "capture MapWorldsReef": {"Hash":"match","Draws":12783,"TraceDraws":16132,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":85,"Matched":85,"Captured":85,"Heights":0,"Objects":0},
   "capture MapWorldsRelicChambers": {"Hash":"match","Draws":7532,"TraceDraws":7830,"FirstDiff":"0x141544f0c (port stopped)","Walk":0,"Projectile":0,"Placed":261,"Matched":261,"Captured":261,"Heights":0,"Objects":-1},
   "capture MapWorldsResidence": {"Hash":"match","Draws":9410,"TraceDraws":16110,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":193,"Matched":193,"Captured":193,"Heights":0,"Objects":0},
-  "capture MapWorldsSanctuary": {"Hash":"match","Draws":3163,"TraceDraws":9419,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":6032,"Placed":1406,"Matched":1406,"Captured":1406,"Heights":0,"Objects":-1},
+  "capture MapWorldsSanctuary": {"Hash":"match","Draws":3163,"TraceDraws":9419,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":1406,"Matched":1406,"Captured":1406,"Heights":0,"Objects":-1},
   "capture MapWorldsScriptorium": {"Hash":"match","Draws":4972,"TraceDraws":5277,"FirstDiff":"0x141544f0c (port stopped)","Walk":0,"Projectile":0,"Placed":1067,"Matched":1067,"Captured":1067,"Heights":0,"Objects":0},
   "capture MapWorldsSepulchre": {"Hash":"match","Draws":13515,"TraceDraws":14695,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":879,"Matched":879,"Captured":879,"Heights":0,"Objects":-1},
   "capture MapWorldsShapersRealm": {"Hash":"match","Draws":47715,"TraceDraws":51942,"FirstDiff":"0x141530658 (port stopped)","Walk":0,"Projectile":0,"Placed":1948,"Matched":1948,"Captured":1948,"Heights":0,"Objects":-1},

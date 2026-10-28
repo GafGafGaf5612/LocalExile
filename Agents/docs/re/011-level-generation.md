@@ -1316,6 +1316,11 @@ y, +0x18 height, +0x1b orientation code). Order:
    0.7604, wrapped to [0, 2π), is under 3.1916; a TileUpperDoodad (0x684156a1), TileUpperDoodadNoOverlap (0xdfa74a63) or
    DoodadNoScrollNoJostleExtendTallwall (0xf660e284) only when it is not (each Dreadnought cart lists a wheel at angle
    0 and its reverse at π in the same cell; the one facing away stays). Then `0x142041d40` again. These lines draw nothing without AOSet.
+   A record's own flip (the text `.tmd`'s field after the quaternion, `TileObject.Mirror`) is xored into the mirror
+   too: MapWorldsSanctuary's `innocence_overlap_cc_v01_01.tmd` lists `PaleHorn01_03.ao` at angle −π with flip 1. Its
+   one `proj_tri` then lands on the far side of the horn, outside the walk-blocked cells, and the projectile grid
+   matches (91 cells at each of the tile's 12 placements, 2026-10-28). The binary `.tmd` (version 5) has a flags word
+   (0x80000000 in every record seen) and no known flip.
 
 Each doodad is created by `0x142042360` (nothing outside the map) and added to the world, which stamps its `.ao`
 `Hull` on both grids (§6b, `Walkability.Stamp`: walk grid walk shapes then projectile shapes, projectile grid

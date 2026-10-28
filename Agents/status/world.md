@@ -83,7 +83,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Level generator port.** `GameServer.Data/Terrain/Generation` reproduces the client's level generator: the tile
   grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
   transitions and waypoints (`AreaObjects.cs`).
-  1668 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
+  1669 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
   and 2883 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
   loads the client itself failed to generate, the port fails 110 the same way. The 34 areas the client cannot
   generate at seed 1 (and that need no server data) were toured at random seeds the port generates: all 73 loads match.
