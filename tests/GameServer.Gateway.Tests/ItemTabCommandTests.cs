@@ -76,8 +76,9 @@ public class ItemTabCommandTests : IDisposable
     }
 
     [Fact]
-    public void A_slot_beyond_a_byte_cell_is_skipped_instead_of_wrapping()
+    public void A_slot_beyond_the_tab_width_is_skipped_instead_of_wrapping()
     {
+        // The currency tab is 142 wide; 256 + 1 would also wrap a byte into slot 1.
         var rules = StashRules.For(new() { [ScrollType] = [3], [OrbType] = [3] }, new() { [3] = [StashRules.Currency] },
             new() { [StashRules.Currency] = new() { [ScrollType] = 1, [OrbType] = 256 + 1 } });
         var stash = AccountStash.For(_account, new ItemCatalog(_folder) { Stash = rules });
@@ -98,6 +99,20 @@ public class ItemTabCommandTests : IDisposable
         Assert.Null(stash.FillSlots(Map, 10, Create, Shapes, out why));
         Assert.Contains("doesn't show", why);
         Assert.Empty(stash.Inventory(Normal).Items);
+    }
+
+    // A slot past the advertised width draws over the tab (blight oils at slots 12 and 79–82 in the 12 × 12 default).
+    [Theory]
+    [InlineData(StashRules.Currency), InlineData(StashRules.Essence), InlineData(StashRules.Fragment), InlineData(StashRules.Delve),
+     InlineData(StashRules.Blight), InlineData(StashRules.Delirium), InlineData(StashRules.Divination)]
+    public void Every_real_slot_fits_the_published_tab_size(byte tabType)
+    {
+        var slots = Program.Items.Stash.Slots(tabType);
+        Assert.NotEmpty(slots);
+        Assert.True(AccountStash.Types.TryGetValue(tabType, out var size), $"no size for StashType {tabType}");
+        // Divination: a card's slot is its layout row (a guess); rows past the width are skipped by FillSlots.
+        var checkedSlots = tabType == StashRules.Divination ? slots.Values.Where(s => s < size.Width) : slots.Values;
+        Assert.All(checkedSlots, s => Assert.True(s < size.Width, $"slot {s} outside {size.Name} {size.Width}"));
     }
 
     [Fact]

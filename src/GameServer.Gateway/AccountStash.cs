@@ -54,8 +54,9 @@ sealed class AccountStash
     {
         [0] = ("NormalStash", 12, 12), [1] = ("PremiumStash", 12, 12), [3] = ("CurrencyStash", 142, 4), [4] = ("UniqueStash", 254, 4),
         [5] = ("MapStash", 12, 6), [7] = ("QuadStash", 24, 24), [8] = ("EssenceStash", 110, 4), [9] = ("FragmentStash", 255, 9),
-        [12] = ("DelveStash", 41, 4),
-        [17] = ("FlaskStash", 250, 4), [18] = ("GemStash", 250, 2),
+        [6] = ("DivinationCardStash", 255, 2), [12] = ("DelveStash", 41, 4), [13] = ("BlightStash", 83, 4),
+        [14] = ("UltimatumStash", 62, 5), [15] = ("DeliriumStash", 88, 1),
+        [17] = ("FlaskStash", 250, 4), [18] = ("GemStash", 250, 2), [22] = ("BreachStash", 1, 1),
     };
 
     /// <summary>The tabs every account starts with: two normal tabs, two premium tabs, a quad tab and the special tabs
@@ -525,8 +526,9 @@ sealed class AccountStash
             }
             foreach (var (type, slot) in _rules.Slots(t.Saved.Type).OrderBy(s => s.Value))
             {
-                // A cell's x is a byte: the divination tab's later rows (our slot guess) have no cell to go to.
-                if (slot > byte.MaxValue || create(type) is not { } item || shapeOf(item) is not { } shape) { skipped++; continue; }
+                // A slot past the tab's published width would draw over the tab: the divination tab's later rows (our slot
+                // guess, 470 cards in a 255-wide tab) have no cell to go to.
+                if (slot >= t.Grid.W || create(type) is not { } item || shapeOf(item) is not { } shape) { skipped++; continue; }
                 int at = t.Items.FindIndex(i => i.X == slot && i.Y == 0);
                 // Another type in the slot (two layout rows naming one slot): leave it.
                 if (at >= 0 && t.Items[at].Item.TypeHash != type) { skipped++; continue; }

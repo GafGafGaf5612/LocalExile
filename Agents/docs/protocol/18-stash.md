@@ -87,8 +87,10 @@ connection. Later opens send b = 0x16: the panel keeps its own tab while the con
   (→ +0x28), u8 kind. The handler sets the loaded bit and tells the panel (`+0x8378` → `0x140a87740`), which builds the
   page. The Gateway sends 0xc0 once per connection and tab, 0xc8 every time.
 - Sizes (`AccountStash.Types`): StashType StorageSlots × column 4: Normal and Premium 12 × 12, Quad 24 × 24; the special
-  tabs (Currency 142 × 4, Essence 110 × 4, Fragment 255 × 9, Map 12 × 6, Flask 250 × 4, Gem 250 × 2) are cells x = the
-  layout's slot index (CurrencyStashTabLayout `FirstSlotIndex` …), a guess that loads but is not checked with items.
+  tabs (Currency 142 × 4, Essence 110 × 4, Fragment 255 × 9, Map 12 × 6, Flask 250 × 4, Gem 250 × 2, Delve 41 × 4,
+  Blight 83 × 4, Delirium 88 × 1, Divination 255 × 2, Ultimatum 62 × 5, Breach 1 × 1) are cells x = the layout's slot
+  index (CurrencyStashTabLayout `FirstSlotIndex` …). A type missing here falls back to 12 × 12, and slots past that width
+  draw over the tab: blight oils at slots 12 and 79–82 did (live 2026-10-28) until Blight got its 83 × 4.
 - Items move with the inventory messages of [13](13-items.md): C→S 0x28 / 0x2a with the tab's inventory id; the
   Gateway answers with S→C 0xbf on the tab (manager 0) and on the cursor.
 
@@ -219,7 +221,7 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   - Skipped:
     - types the server can't write;
     - a slot already holding another type;
-    - Divination rows past 255, because a cell's x is a byte.
+    - slots past the tab's width: Divination rows 255 and up, since that tab is 255 wide.
   - Real data: currency 126 types, essence 104, fragment 308 (62 of them non-stacking), delve 33, blight 17,
     delirium 24, divination 470.
 
