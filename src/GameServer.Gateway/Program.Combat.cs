@@ -1001,17 +1001,26 @@ partial class Program
     {
         if (damage <= 0) return null;
         var stats = CharacterPlayerStats(conn);
-        if (stats.Any(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key)))) return null;
+        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        void Trace(string reason)
+        {
+            if (Get(AntiquarianEffects.StunRecoverySource) > 0)
+                Console.WriteLine($"[gateway] Turtle Shell stun: {reason}");
+        }
+        if (stats.FirstOrDefault(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key))) is { Key: > 0 } unsupported)
+        { Trace("unsupported stat " + Stats.Name(unsupported.Key)); return null; }
         // Skill immunity can depend on a native action's contact phase, which this server does not track yet.
         // Conservatively skip builds with any equipped skill carrying it, rather than stun an uninterruptible phase.
         if (GemSkillEffects(conn.Character).Any(g => Skills.EffectStats(g.Effect, g.Level, g.Quality)
-            .Any(s => s.Item2 != 0 && Stats.Name(s.Item1).StartsWith("skill_cannot_be_stunned", StringComparison.Ordinal)))) return null;
-        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
-        if (PlayerHasEnergyShieldForRecovery(conn, Get)) return null;
+            .Any(s => s.Item2 != 0 && Stats.Name(s.Item1).StartsWith("skill_cannot_be_stunned", StringComparison.Ordinal))))
+        { Trace("unsupported skill immunity"); return null; }
+        if (PlayerHasEnergyShieldForRecovery(conn, Get)) { Trace("energy shield present"); return null; }
         double chance = PlayerHitRecovery.Chance(damage, conn.PlayerMaxLife, Get);
         float seconds = PlayerHitRecovery.Duration(Get);
         if (seconds <= 0 || Random.Shared.NextDouble() * 100 >= chance
-            || conn.Closed || conn.PlayerLife == 0 || !conn.HitRecovery.Begin(now, seconds)) return null;
+            || conn.Closed || conn.PlayerLife == 0 || !conn.HitRecovery.Begin(now, seconds))
+        { Trace($"not accepted (chance {chance:0.###}%, duration {seconds:0.###} s)"); return null; }
+        Trace($"accepted ({seconds:0.###} s, {Get(AntiquarianEffects.StunRecoverySource)}% Life over one second)");
         conn.Antiquarian.Stunned(now, conn.PlayerMaxLife, Get(AntiquarianEffects.StunRecoverySource));
         int action = Interlocked.Increment(ref conn.ActionCount);
         conn.ChannelSkill = 0; conn.NextAttackAt = now;

@@ -344,6 +344,9 @@ partial class Program
                 mana = conn.PlayerMana;
                 if (!blocked && !a.Ranged && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
                     recovery = CommitPlayerHitRecoveryLocked(conn, damage, now);
+                else if (Stats.Key(AntiquarianEffects.StunRecoverySource) is uint turtle && stats.GetValueOrDefault(turtle) > 0)
+                    Console.WriteLine($"[gateway] Turtle Shell hit ineligible: block={blocked}, ranged={a.Ranged}, "
+                        + $"alive={life > 0}, types={string.Join(',', a.Damage.Components.Select(c => c.Type))}");
                 RageWhenHitLocked(conn);
                 break;
             }
