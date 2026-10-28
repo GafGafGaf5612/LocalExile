@@ -413,6 +413,13 @@ public static partial class InstanceInventories
         foreach (var it in items ?? []) w.U32(it.Id).U8(it.X).U8(it.Y).Bytes(it.Item.Wire());
         return w.U8(0).U8(0).ToArray();
     }
+
+    /// <summary>S→C 0xc1 (dispatcher case 0x36, 0x141d62700 → 0x141d623b0, class 0x1435c0898): remove an inventory the
+    /// client has: u8 manager, u32 inventory id. Used to unload stash tabs the panel no longer shows.</summary>
+    public static byte[] RemoveInventory(uint inventoryId, byte manager = 0) =>
+        new LoginWriter().U16(RemoveInventoryId).U8(manager).U32(inventoryId).ToArray();
+
+    public const ushort RemoveInventoryId = 0xc1;
 }
 
 /// <summary>

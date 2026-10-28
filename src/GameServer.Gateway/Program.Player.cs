@@ -7,6 +7,12 @@ using DamageOverTime = GameServer.Core.World.DamageOverTime;
 
 partial class Program
 {
+    /// <summary>Whether a stash tab goes out on area entry, so shop prices see the currency in it: a currency or grid tab
+    /// (the only ones that hold shop currency) with currency (class StackableCurrency) in it.</summary>
+    internal static bool PreloadsForPrices(byte? tabType, IEnumerable<InventoryItem> inside, ItemCatalog catalog) =>
+        tabType is byte type && (type == StashRules.Currency || StashRules.IsGrid(type))
+        && inside.Any(i => catalog.ByHash(i.Item.TypeHash)?.Class == "StackableCurrency");
+
     static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool on)
     {
         lock (conn.Monsters)
@@ -832,12 +838,15 @@ partial class Program
             // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:
             // the panel is not open). The client checks a shop price against the currency it knows of, the inventory's and
             // the loaded stash tabs' (3.29 vendors take it from the stash): without this a price was red, and no 0x88 came,
-            // until the stash had been opened in that area (live 2026-10-23, Nessa in the hideout).
+            // until the stash had been opened in that area (live 2026-10-23, Nessa in the hideout). Shop prices are in
+            // currency (class StackableCurrency), which only a currency tab or a grid tab can hold: every other loaded tab
+            // made each stash open slower by its item count (a full divination tab alone is 470 items, fragments 255), and
+            // those tabs still load when the panel shows them (0xc7).
             var personal = PersonalStashOf(conn);
             for (int t = 0; t < personal.Count; t++)
             {
                 var (slot, inside) = personal.Inventory(t);
-                if (!inside.Any(i => i.Item.Components.Contains("Stack")) || !conn.StashTabsSent.Add(t)) continue;
+                if (!PreloadsForPrices(personal.TabType(t), inside, ItemsFor(conn)) || !conn.StashTabsSent.Add(t)) continue;
                 messages.Add(($"0x00c0 stash tab {t} inventory {personal.InventoryOf(t)}: {inside.Count} item(s) (currency for shop prices)",
                     InstanceInventories.AddInventory(personal.InventoryOf(t), slot, 0, inside)));
             }

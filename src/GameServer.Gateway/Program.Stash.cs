@@ -138,10 +138,22 @@ partial class Program
             (chosen ? "" : $" (the panel's tab before it opened on {conn.StashForcedTab}: not kept as the last tab)"));
         if (chosen) stash.SetLastTab(tab);
         uint inventory = stash.InventoryOf(tab);
-        if (TabsSentOf(conn, stash).Add(tab))
+        byte manager = stash.IsGuild ? InstanceStash.GuildManager : (byte)0;
+        // Every loaded tab makes each later stash open slower by its item count (the panel walks them all as it shows), so
+        // the client keeps only the tab it shows: the others are unloaded (0xc1) and asked for again (0xc7) when shown.
+        // Tabs with shop currency stay, so prices see it (PreloadsForPrices).
+        var sent = TabsSentOf(conn, stash);
+        foreach (int other in sent.Where(o => o != tab).ToList())
+        {
+            if (!stash.IsGuild && PreloadsForPrices(stash.TabType(other), stash.Inventory(other).Items, ItemsFor(conn))) continue;
+            sent.Remove(other);
+            await Send(remote, stream, ciphers, InstanceInventories.RemoveInventory(stash.InventoryOf(other), manager),
+                $"0x00c1 unload stash tab {other} inventory {stash.InventoryOf(other)} (the panel shows tab {tab})");
+        }
+        if (sent.Add(tab))
         {
             var (slot, items) = stash.Inventory(tab);
-            await Send(remote, stream, ciphers, InstanceInventories.AddInventory(inventory, slot, stash.IsGuild ? InstanceStash.GuildManager : (byte)0, items),
+            await Send(remote, stream, ciphers, InstanceInventories.AddInventory(inventory, slot, manager, items),
                 $"0x00c0 stash tab {tab} inventory {inventory} ({slot.Width} x {slot.Height}): {items.Count} item(s)");
         }
         await Send(remote, stream, ciphers, InstanceStash.TabLoaded(tab, inventory, stash.IsGuild ? InstanceStash.Guild : InstanceStash.Personal), $"0x00c8 stash tab {tab} loaded");
