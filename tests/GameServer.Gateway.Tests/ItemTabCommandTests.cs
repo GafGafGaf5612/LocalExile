@@ -76,11 +76,11 @@ public class ItemTabCommandTests : IDisposable
     }
 
     [Fact]
-    public void A_slot_beyond_the_tab_width_is_skipped_instead_of_wrapping()
+    public void A_slot_beyond_the_tab_cells_is_skipped_instead_of_wrapping()
     {
-        // The currency tab is 142 wide; 256 + 1 would also wrap a byte into slot 1.
+        // The currency tab has 142 × 4 cells; slot 142 × 4 + 1 would wrap into slot 1.
         var rules = StashRules.For(new() { [ScrollType] = [3], [OrbType] = [3] }, new() { [3] = [StashRules.Currency] },
-            new() { [StashRules.Currency] = new() { [ScrollType] = 1, [OrbType] = 256 + 1 } });
+            new() { [StashRules.Currency] = new() { [ScrollType] = 1, [OrbType] = 142 * 4 + 1 } });
         var stash = AccountStash.For(_account, new ItemCatalog(_folder) { Stash = rules });
 
         var fill = stash.FillSlots(Currency, 5, Create, Shapes, out _)!;
@@ -110,9 +110,24 @@ public class ItemTabCommandTests : IDisposable
         var slots = Program.Items.Stash.Slots(tabType);
         Assert.NotEmpty(slots);
         Assert.True(AccountStash.Types.TryGetValue(tabType, out var size), $"no size for StashType {tabType}");
-        // Divination: a card's slot is its layout row (a guess); rows past the width are skipped by FillSlots.
-        var checkedSlots = tabType == StashRules.Divination ? slots.Values.Where(s => s < size.Width) : slots.Values;
-        Assert.All(checkedSlots, s => Assert.True(s < size.Width, $"slot {s} outside {size.Name} {size.Width}"));
+        // Slot n is cell (n mod width, n / width): the divination tab's 470 cards fill both rows of its 255 × 2.
+        Assert.All(slots.Values, s => Assert.True(s < size.Width * size.Height, $"slot {s} outside {size.Name} {size.Width} x {size.Height}"));
+    }
+
+    [Fact]
+    public void Divination_cards_past_the_first_row_go_into_the_second_and_fill_to_a_complete_set()
+    {
+        const int Divination = 18;   // the starter tabs' divination tab
+        var rules = StashRules.For(new() { [ScrollType] = [6], [OrbType] = [6] }, new() { [6] = [StashRules.Divination] },
+            new() { [StashRules.Divination] = new() { [ScrollType] = 3, [OrbType] = 255 + 4 } });
+        var stash = AccountStash.For(_account, new ItemCatalog(_folder) { Stash = rules });
+        Assert.Equal("DivinationCardStash", stash.TypeOf(Divination));
+
+        var fill = stash.FillSlots(Divination, 1000, Create, Shapes, out _)!;
+
+        var cells = fill.Added.ToDictionary(i => i.Item.TypeHash, i => (i.X, i.Y, (int)i.Item.StackSize));
+        Assert.Equal((3, 0, 40), cells[ScrollType]);   // a complete set: the card's own stack size, not the tab's 5000
+        Assert.Equal((4, 1, 20), cells[OrbType]);
     }
 
     [Fact]

@@ -362,8 +362,12 @@ sealed class AccountStash
         if (!_rules.Slotted(t.Saved.Type)) return (x, y);
         if (_rules.IsOverflowSlot(t.Saved.Type, x, y)) return (x, y);   // a spare cell under the crafting slot: where dropped
         if (_rules.SlotOf(t.Saved.Type, item.TypeHash) is not int slot) { why = $"the {TypeName(t)} tab has no slot for that item"; return null; }
-        return (slot, 0);
+        return SlotCell(t, slot);
     }
+
+    // Slot n of a slotted tab is cell (n mod width, n / width): every layout but the divination tab's fits its first row;
+    // its 470 cards run on into the second row of its 255 × 2.
+    static (int X, int Y) SlotCell(TabState t, int slot) => (slot % t.Grid.W, slot / t.Grid.W);
 
     static string TypeName(TabState t) => Types.TryGetValue(t.Saved.Type, out var n) ? n.Name : $"type {t.Saved.Type}";
 
@@ -526,13 +530,14 @@ sealed class AccountStash
             }
             foreach (var (type, slot) in _rules.Slots(t.Saved.Type).OrderBy(s => s.Value))
             {
-                // A slot past the tab's published width would draw over the tab: the divination tab's later rows (our slot
-                // guess, 470 cards in a 255-wide tab) have no cell to go to.
-                if (slot >= t.Grid.W || create(type) is not { } item || shapeOf(item) is not { } shape) { skipped++; continue; }
-                int at = t.Items.FindIndex(i => i.X == slot && i.Y == 0);
+                // A slot past the tab's published cells would draw over the tab.
+                if (slot >= t.Grid.W * t.Grid.H || create(type) is not { } item || shapeOf(item) is not { } shape) { skipped++; continue; }
+                var (x, y) = SlotCell(t, slot);
+                int at = t.Items.FindIndex(i => i.X == x && i.Y == y);
                 // Another type in the slot (two layout rows naming one slot): leave it.
                 if (at >= 0 && t.Items[at].Item.TypeHash != type) { skipped++; continue; }
-                int max = shape.MaxStack <= 1 ? 1 : MaxStack(t, item, shape, -1, -1);
+                // The divination tab shows a card only once its set is complete (live 2026-10-28): fill it to its set.
+                int max = shape.MaxStack <= 1 || t.Saved.Type == StashRules.Divination ? Math.Max(1, (int)shape.MaxStack) : MaxStack(t, item, shape, -1, -1);
                 int room = max - (at >= 0 ? t.Items[at].Item.StackSize : 0);
                 if (room <= 0) { full++; continue; }
                 int take = Math.Min(amount, room);
@@ -544,7 +549,7 @@ sealed class AccountStash
                 }
                 else
                 {
-                    var placed = new InventoryItem(_nextItemId++, (byte)slot, 0, item with { StackSize = (ushort)take });
+                    var placed = new InventoryItem(_nextItemId++, (byte)x, (byte)y, item with { StackSize = (ushort)take });
                     t.Items.Add(placed);
                     added.Add(placed);
                 }

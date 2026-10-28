@@ -189,8 +189,12 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
   Other slotted tabs retain 5000 (`StashRules.SlotStack`), also the fallback for absent or invalid currency limits.
   The Delve (StashType 12, DelveStashTabLayout) and
   Blight (13, BlightStashTabLayout) and Delirium (15, DeliriumStashTabLayout) tabs are slotted the same way; the
-  Divination tab (6) too, a card's slot being its DivinationCardStashTabLayout row (a guess: the table has no slot
-  numbers). Unique (4), Breach (22) and Ultimatum (14) tabs exist but take nothing yet (`StashRules.NotShown`: uniques
+  Divination tab (6) too, a card's slot being its DivinationCardStashTabLayout row. The client builds a
+  map from each row's card (its BaseItemTypes Id) to the row index (`0x140b31180`), and 470 rows run past the tab's
+  255 cells. So slot n is cell (n mod width, n / width): rows 255–469 go into the second row of its 255 × 2. Every other
+  layout fits its first row. The tab shows a card only once its set is complete (stack = the card's stack size).
+  Live 2026-10-28: with one card each, only the 1-card sets showed; with two each, exactly the 1- and 2-card sets.
+  Luck of the Vaal (row 154, not in game) never showed. Unique (4), Breach (22) and Ultimatum (14) tabs exist but take nothing yet (`StashRules.NotShown`: uniques
   are keyed by unique names and the server has none; 3.29.3b has no breach or ultimatum layout table). The starter tabs
   are four normal tabs "1"-"4", as the real game's, then the premium and special ones; a stash saved before gets the
   missing ones
@@ -215,13 +219,14 @@ item moved into or out of a tab (0x28, 0x2a, 0xe0, 0xe3). Stacks merge into a ta
 - **Filling a slotted tab (dev, `/item_tab <tab name> <count>`).** The tab is found by its name, ignoring case, or else by
   the only tab whose StashType name starts with the text. Each item type with a slot of its own on that tab
   (`StashRules.Slots`) gets up to `count` more, at most 1000 per command. Each type goes into its own slot only, never
-  the spare slots, and is capped by that slot's limit above; an item that doesn't stack gets one.
+  the spare slots, and is capped by that slot's limit above; an item that doesn't stack gets one. A divination card is
+  capped at its complete set, which is what the tab shows.
   `AccountStash.FillSlots` does all of it in one save, and an open tab gets one S→C 0xbf.
   - Refused: normal, premium, quad, flask and gem tabs (no slot per type), and the `NotShown` tabs.
   - Skipped:
     - types the server can't write;
     - a slot already holding another type;
-    - slots past the tab's width: Divination rows 255 and up, since that tab is 255 wide.
+    - slots past the tab's cells (none in the 3.29.3b layouts).
   - Real data: currency 126 types, essence 104, fragment 308 (62 of them non-stacking), delve 33, blight 17,
     delirium 24, divination 470.
 
