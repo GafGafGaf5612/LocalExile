@@ -3,8 +3,8 @@
 Gambler is the Duelist's Phrecia Gladiator identity for client 3.29.3b.
 All nodes offered by the pinned graph have runtime consumers, including their drawbacks.
 This is a bounded implementation of the server's existing combat, not every Path of Exile skill or ailment source.
-Native checks cover the supported class behavior below.
-Final related-PR composition remains a separate readiness condition.
+Native checks and current-base related-PR verification cover the supported class behavior below.
+The composition requires the shared merge resolutions recorded with its exact source pins.
 
 ## Node checklist
 
@@ -101,11 +101,14 @@ Local full-suite and native evidence belongs under this worktree's ignored `logs
 
 ## Verification evidence
 
-Production source `fb76fd7677ea4c0c17217f0bc6af3d2504facfd9` includes current main
-`6a5697ff2731d2e3fafa83b27fa5ff1e71290149`. The solution builds with zero warnings/errors;
-Core 640, Data 18 and Gateway 3603 tests pass. Gateway collections run serially because existing asynchronous
-combat tests have wall-clock deadlines. The encrypted resource-writer tests exercise lethal ignite cleanup,
-once-only publication, stale resurrection/transfer suppression and actual nonlethal RF casting.
+Current-base production source `4209b3cf0da549e20286d30f3352ee0c6d724fd6` includes main
+`59154b749c7711a2b2fe68d7db44c7956d17938a`, including the Vaal, duration and Forest Tracking merge block.
+The current-base solution builds with zero warnings/errors; Core 646, Data 18 and Gateway 3738 pass.
+Gateway collections run serially because existing asynchronous combat tests have wall-clock deadlines.
+The encrypted resource-writer tests exercise lethal ignite cleanup, once-only publication,
+stale resurrection/transfer suppression and actual nonlethal RF casting.
+The earlier `fb76fd76` source on main `6a5697ff` passed Core 640, Data 18 and Gateway 3603;
+its native evidence below remains tied to that original source and artifact hash.
 
 Earlier source `50afc54e` passed 13 class checks and seven real-monster ailment checks, including both legal builds,
 choice/refund rules, 70/210 outgoing damage, 10/125 incoming resistance outcomes, removal, relog and Gateway restart.
@@ -131,5 +134,21 @@ Related-head verification must preserve the typed Ward/ES/physical Mana split, a
 strongest Blind, ailment movement, duration and Vaal behavior. A private merge must suppress pending Mana Recoup in
 the same tick that ignite becomes lethal, before normal death cleanup/publication. This is a required composition
 resolution with Whisperer, not a standalone failure of either class. Private combined test results do not establish
-that the published heads merge without that resolution. Final owner-accepted Whisperer input/native acceptance
-and exact-head composition remain required before this PR is ready.
+that the published heads merge without that resolution.
+Private `ecd979cbef297472f26a377c213963975d178b7f` includes current main, the Gambler source above,
+Behemoth `07699a51a0b235ca668c6223a51d1362d375d7e9` and Whisperer
+`0e2d47ee47469003df6a133ad99cadeb9aee59ff`.
+Its runtime, tools, scripts, schema and solution are byte-identical to fully tested private
+`5d134744bd4eee3a117b81f26b881281ea0bccb6` (warning-free build; Core 646, Data 18, Gateway 3820 pass).
+The only test-file difference removes a trailing blank line; test logic is unchanged.
+The restore conflict keeps Rampage, Vaal Souls and Whisperer restoration after Rage restoration.
+The intended open-PR order is Behemoth, Gambler, then Whisperer on current main, retaining manual resolutions.
+Whisperer's earlier e5 native matrix passed 12 + 14 + 12 checks.
+Its main-591 production pin above passed a warning-free build, Core 646, Data 18 and Gateway 3728 tests,
+then the owner accepted all 12 + 12 affected native checks and explicitly restored/released the runtime
+at 16:42:11 UTC.
+The owner's evidence is `native-whisperer-a-20261028-193937`, `native-whisperer-c-20261028-194055` and
+`native-lease-main59154/restored.json` under that worktree's ignored logs.
+This satisfies the owner-input condition; any later documentation-only descendant retains the accepted runtime.
+The combined private runtime has automated/network coverage; the native class checks were run independently.
+The published Gambler branch contains current main and Gambler only.
