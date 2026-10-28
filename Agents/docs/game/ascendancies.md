@@ -74,6 +74,41 @@ The existing ordinary passive stat aggregation also sees allocated ascendancy st
 No Ward, Rage, charge, minion, granted-skill, passive-buff, presence or other new gameplay engine is imported here.
 Choosing a class is not evidence that its signature gameplay works.
 
+### Family gem levels
+
+The common active-gem calculation consumes four Phrecia family-level sources:
+
+| Node | Source | Bonus |
+|---|---|---|
+| Herald 40058 | `herald_skill_gem_level_+` | +3 |
+| Architect of Chaos 45399 | `vaal_skill_gem_level_+` | +3 |
+| Paladin 34448 | `link_skill_gem_level_+` | +5 |
+| Puppeteer 18817 | `raise_zombie_gem_level_+` | +5 |
+
+`SkillGemFamilies` reads the target client's GemTags stat columns and SkillGems minion-level column.
+Membership belongs to the gem, not its display name or one granted effect.
+The Vaal bonus raises both skills of a Vaal gem; transfigured Raise Zombie retains its family.
+`SkillGemLevel` combines intrinsic level, linked-support level bonus and matching family sources before clamping.
+Explicit family `/set_stat` replacements win over passive/equipment sources; `off` restores the source total.
+Support gems receive no active-family bonus, even when their tags match.
+
+The effective level feeds supported skill stats, cost, reservation, damage and native skill records.
+Repeated reads do not alter gem experience, quality or intrinsic requirement checks.
+The item UI still shows its intrinsic gem level; an inactive host remains inactive.
+Automated checks allocate each real connected class path, reload, pay the notable refund and reallocate it.
+These lifecycle fixtures do not open Phrecia game connections.
+Source `49e804e0` over main `0805c0ca` passed 28 native checks on ordinary synthetic characters in 3.29.3b.
+Herald of Thunder and both Vaal Fireball skills changed from level 1 to 4; Soul Link and Raise Zombie changed to 6.
+Unrelated sources did not affect them; repeated changes, source removal and relog preserved intrinsic gem storage.
+The checks used developer family inputs, not class selection or native refunds.
+Evidence: `logs/family-gem-levels/20261028-123153/`, with Gateway skill-publication logs in the source checkout.
+Gateway/Core/Host embedded revisions, the listening DLL path/CWD and the clean source revision were verified.
+Gateway SHA-256: `2024b41ffac57ffbe12cbb09cb9ad6b1cbc27daf38b49c1e734a2a9437aedc3f`.
+The first observer attempt timed out before feature checks; the accepted run used the existing native skill-list probe.
+The solution built without warnings; Core 638, Data 18 and Gateway 3507 tests passed with public extracted data.
+Family-specific Herald, Link, minion and Vaal execution engines remain separate, as does Phrecia client admission.
+This slice does not implement global active-gem levels/quality, additional support-level bonuses or item-local gem levels.
+
 ## Validation and limits
 
 Automated tests cover catalog ownership, family separation, native class packing and graph stat, implicit starts,

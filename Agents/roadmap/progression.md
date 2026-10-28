@@ -27,5 +27,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
   Phrecia play stays explicitly gated until a client-compatible graph is separately agreed.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
+- **Known:** family gem levels for Herald, Vaal, Link and Raise Zombie reach the common effective skill level.
+  Connected allocation/refund/reload has automated coverage (#244).
+  Family-specific execution engines, global gem bonuses and Phrecia client admission remain separate work.
 - **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
   Implementing all 19 Phrecia classes' special gameplay is separate from this selection lifecycle.

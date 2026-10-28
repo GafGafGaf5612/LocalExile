@@ -329,9 +329,10 @@ partial class Program
         var gems = GemSkillEffects(character).ToArray();
         var singleSources = gems.GroupBy(g => g.Effect).Where(g => g.Count() == 1).Select(g => g.Key).ToHashSet();
         var skillCosmetics = CharacterSaves.SkillCosmetics(string.IsNullOrEmpty(character) ? "Exile" : character);
-        foreach (var (id, effect, name, level, quality, gem) in gems)
+        foreach (var (id, effect, name, _, quality, gem) in gems)
         {
             var supported = SupportedSkill(conn, id);
+            int level = supported.Level;
             var own = supported.Stats;
             var stats = MergeSkillStats(playerStats, own);
             if (Stats.Key("virtual_extra_critical_rolls") is uint criticalRolls)
