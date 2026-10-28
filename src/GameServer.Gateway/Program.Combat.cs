@@ -210,7 +210,7 @@ partial class Program
             // Settle Rage at accepted contact before this hit's gain. It is a final multiplier on the attack packet,
             // never on an existing impale bonus or on generic damage/DoT.
             var player = CharacterPlayerStats(conn);
-            var pen = Penetration.Of(player, Stats, attack: true, ownPenetration);
+            var pen = Penetration.Of(player, Stats, attack: true, ownPenetration, weapon.PenetrationSources);
             var resistanceMods = HitResistMods(player, ownPenetration);
             var hit = AttackHitConverted(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee,
                 ConversionFor(conn, attackEffect, 1, attack: true));
@@ -721,7 +721,8 @@ partial class Program
             var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             var own = SupportedSkill(conn, skillId).Stats;
             int chance = SupportedCriticalChance(conn, skillId);
-            var pen = Penetration.Of(stats, Stats, attack: Skills.IsAttack(gem.Effect), own);
+            bool attack = Skills.IsAttack(gem.Effect);
+            var pen = Penetration.Of(stats, Stats, attack, own, attack ? MainHandPenetrationSources(conn) : null);
             var resistanceMods = HitResistMods(stats, own);
             foreach (var (k, v) in own) stats[k] = v;
             bool spell = projectileHitPlan.Kind == SkillHitKind.Spell;
@@ -884,7 +885,7 @@ partial class Program
         var player = CharacterPlayerStats(conn);
         var stats = FinalPlayerStats(conn).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int criticalChance = SupportedCriticalChance(conn, skillId);
-        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats);
+        var pen = Penetration.Of(stats, Stats, attack: !spell, skillStats, spell ? null : MainHandPenetrationSources(conn));
         var mods = HitResistMods(stats, skillStats);
         foreach (var (k, v) in skillStats) stats[k] = v;
         bool fortificationGranted = false; // One simultaneous sweep, independent of notification latency.

@@ -319,7 +319,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   Raw local hand snapshots preserve each active weapon's contribution during selected-skill recomputation.
   Twelve additional automated cases cover all three elemental supports, chaos/attack-only sums, independent
   local modifiers, inactive weapons, source removal and link changes; native display checks remain pending.
-  Weapon-local and non-base combat penetration, display prohibitions and target conditions remain incomplete.
+  The penetration consumer now includes non-base general elemental/chaos sources and the qualified attacking
+  weapon's local modifiers; spells exclude local/attack-only inputs. Parsed contact cases cover ordinary melee/bow,
+  Cyclone, Burning Arrow and Fireball with/without elemental prohibition. Selected and actor projections emit zero
+  for all nine elemental aliases under prohibition and restore totals when removed; chaos remains separate.
+  Real Elemental Penetration support contributes 14 at level one and agrees with the hit consumer.
+  Current-branch native validation, off-hand attack selection and remaining target conditions are still open.
   Historical LocalExile Ruthless support exclusions are outside this branch. Link/source removal, incompatible or unqualified supports,
   unrelated/default skills and repeated builds are covered; minion combat and item-drop execution remain separate.
   Added-base critical/default-mirror/selected-alias cases pass 52/19/22 new tests plus 95 existing controls:

@@ -1968,8 +1968,16 @@ General 10 plus elemental 5 plus typed attack 7 plus elemental attack 3 gives 25
 Six real-support lifecycle regressions cover selected Heavy Strike for all three elements, five pure regressions
 cover attack-only and local scope, and one real-modifier Gateway case preserves main 6/off 9 while excluding an
 inactive weapon's 30; removing either active modifier or unlinking the support restores the corresponding values.
-These are automated publication checks, not proof of native formatting or weapon-local hit execution.
-Penetration prohibitions in the display and unsupported combat penetration sources remain separate work.
+These are automated publication checks; native formatting remains unverified on this review's changes.
+The player/own `cannot_penetrate_or_ignore_elemental_resistances` flag now explicitly clears all nine elemental
+aliases, including zeros in the actor projection, while leaving the two chaos hand aliases intact.
+Removing the flag restores the source totals. Explicit developer replacements retain their existing final priority.
+Real Elemental Penetration support contributes its non-base elemental input (14 at level one), composing with
+actor 10 and direct elemental 7 to show 31; attack-only 5 raises each hand alias to 36.
+The combat consumer now reads these non-base general inputs and the attacking weapon's local inputs separately;
+[20-damage.md](20-damage.md) records scope, timing, contact tests and remaining off-hand/conditional mechanics.
+Decision: publish explicit elemental zeros when blocked, because a sparse omission could retain an earlier raw
+alias. The alternative of merely hiding the row would leave the underlying selected value incorrect.
 
 `PanelStatDefaults` adds six exact native `Character.ot` values to the original actor sources before derivation:
 

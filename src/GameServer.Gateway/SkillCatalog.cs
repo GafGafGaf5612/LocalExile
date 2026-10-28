@@ -508,6 +508,8 @@ sealed class SkillCatalog(string folder = "data")
     {
         /// <summary>The equipped item's local typed ranges. Class unarmed records retain their physical fallback.</summary>
         public DamagePacket? LocalDamage { get; init; }
+        /// <summary>Raw local modifiers captured with this weapon, so an in-flight attack cannot use another item's penetration.</summary>
+        public IReadOnlyDictionary<string, int>? PenetrationSources { get; init; }
         public static readonly Unarmed Witch = new(833, 2, 5, 8);
 
         /// <summary>The weapon's own added elemental/chaos damage (its local added damage mods, ItemWeapons), added to

@@ -78,17 +78,41 @@ The unconditional stats the server reads (whole percents, this client's Stats.da
 |---|---|
 | `base_reduce_enemy_{fire,cold,lightning}_resistance_%` | every hit on that element; the historical penetration stats despite the name (the per-element Penetration support gems grant them, as do the Heart of Flame/Ice/Thunder passives and the jewel mods) |
 | `base_penetrate_elemental_resistances_%` | every hit on fire, cold and lightning (the Inquisitor's start node, Martyr's Legacy) |
+| `reduce_enemy_elemental_resistance_%`, `reduce_enemy_chaos_resistance_%` | raw general inputs for elemental and chaos hits respectively; level-one Elemental Penetration Support grants 14 through the elemental input |
 | `base_attack_damage_penetrates_{fire,cold,lightning,chaos}_resist_%` | attacks only |
 | `base_attack_damage_penetrates_elemental_resist_%` | attacks only, on fire, cold and lightning (Forces of Nature, Warden) |
+| `local_{fire,cold,lightning,chaos,elemental}_penetration_%` | attacks using the explicitly supplied, qualified active weapon only; spells exclude these inputs |
 | `cannot_penetrate_or_ignore_elemental_resistances` | a flag: every elemental penetration is off for the player's hits; chaos is not elemental |
 
-The `main_hand_…`/`off_hand_…` and `local_…` weapon-hand aliases are not read (the server attacks with the main
-hand's global stats, and a weapon-local scope guess would double-count), and neither are the non-base
-`reduce_enemy_elemental/chaos_resistance_%` variants (Penetration Support's own granted stat in this client) or the
-conditional ones tied to auras or enemy state.
+The derived `main_hand_…`/`off_hand_…` and per-element display aliases are not raw inputs to combat.
+`WeaponIn` captures an immutable local-source dictionary with the weapon's damage. Ordinary melee uses that
+accepted weapon; ordinary bows freeze its penetration at release. Supported projectile/area attacks use their
+current main-hand weapon at contact, consistent with their existing damage path. Inactive-set items, shields and
+unqualified weapons cannot contribute. The current executors still lack off-hand attack selection.
+The source totals use wide intermediates and saturate once at the integer representation boundary.
+Either player or skill prohibition suppresses elemental penetration even if signed flag values would cancel.
 The non-critical companion is handled by the critical resistance rules below; other conditions remain separate work.
-Spells take the supported general stats only; this consumer supports chaos through the attack-only stat in this
-client, only the attack-only one; physical damage never penetrates.
+Spells take only general sources; physical damage never penetrates.
+
+The issue-75 review added parsed contact regressions for ordinary melee/bow, Cyclone, Burning Arrow and Fireball,
+each with and without prohibition. General elemental 7 + attack-only 5 + a real qualified local modifier 5 gives
+17 for attacks and 7 for Fireball; an inactive weapon's 30 is excluded. Fixed 1,000 fire takes 1,170 life on an
+unresistant ordinary attack, or 1,000 under prohibition. These are automated server checks, not new native captures.
+Selected real Elemental Penetration support checks verify actor 10 + direct 7 + own 14 = 31, attacks adding 5,
+explicit zero/restoration under prohibition, and chaos remaining 11.
+
+Decision: pass the attacking item's raw local sources separately and retain the current executors' weapon timing.
+The alternative, feeding published hand aliases back into combat, would double-count their global/skill inputs.
+Changing attack-hand selection or all projectile snapshot semantics is a separate mechanic, requiring its own tests.
+Reference evidence is the local library's PoB snapshot `16de4b82d57f1c0de6eb40f37143c32d4da36a02`
+(`pob/skills/SupportElementalPenetration`, level 1; `pob/mods/Item~1SynthesisImplicitLocalElementalPen3`)
+and the extracted 3.29.3b tables. The library is a labelled 3.29.x fallback, not proof of exact patch parity.
+Validation decision: a bow lifecycle regression now passes one queued send at a time and holds the following
+send before changing the player's action. This replaces polling a short-lived object, which can miss creation
+under scheduler load. Raising its timeout would not fix that observation race. Production flight is unchanged.
+For shared-machine native checks, wait for other agents' clients/listeners to exit before using `live.ps1`;
+that script restarts fixed-port services and is not safe to run over another agent's validation session.
+Stop this task's own test processes afterward. Automated tests use separate loopback connections and can continue.
 
 The same packet is used for attacks, spells and monster hits. The caller decides whether the attack-only or spell-only
 stats apply; `DamageStats` reads the Stats.dat names:

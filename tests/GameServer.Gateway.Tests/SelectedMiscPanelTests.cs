@@ -20,6 +20,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         "fire-penetration" => PenetrationSpec("Fire"),
         "cold-penetration" => PenetrationSpec("Cold"),
         "lightning-penetration" => PenetrationSpec("Lightning"),
+        "elemental-penetration" => ElementalPenetrationSpec,
         "attack-fire-penetration" => AttackPenetrationSpec("Fire"),
         "attack-cold-penetration" => AttackPenetrationSpec("Cold"),
         "attack-lightning-penetration" => AttackPenetrationSpec("Lightning"),
@@ -38,6 +39,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Alias = $"main_hand_attack_damage_penetrates_{element.ToLowerInvariant()}_resist_%",
     };
 
+    static SelectedMiscCase ElementalPenetrationSpec => new("SkillGemFireball",
+        "SupportGemElementalPenetration", "SupportElementalPenetration",
+        "base_penetrate_elemental_resistances_%", "reduce_enemy_elemental_resistance_%",
+        "reduce_enemy_fire_resistance_%", 10, 14, 0);
+
     static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
 
     [Theory]
@@ -47,6 +53,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("fire-penetration")]
     [InlineData("cold-penetration")]
     [InlineData("lightning-penetration")]
+    [InlineData("elemental-penetration")]
     [InlineData("attack-fire-penetration")]
     [InlineData("attack-cold-penetration")]
     [InlineData("attack-lightning-penetration")]
@@ -101,6 +108,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     [InlineData("fire-penetration")]
     [InlineData("cold-penetration")]
     [InlineData("lightning-penetration")]
+    [InlineData("elemental-penetration")]
     [InlineData("attack-fire-penetration")]
     [InlineData("attack-cold-penetration")]
     [InlineData("attack-lightning-penetration")]
@@ -136,6 +144,46 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
         game.AssertControls(spec.Actor);
         Assert.Equal(spec.Actor, game.State.PlayerStats[SelectedMiscKey(spec.ActorSource)]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Selected_elemental_support_matches_hit_and_clears_all_elemental_rows_under_prohibition(bool attack)
+    {
+        var spec = attack ? ElementalPenetrationSpec with { Active = "SkillGemHeavyStrike" } : ElementalPenetrationSpec;
+        using var game = new SelectedMiscCharacter(spec);
+        game.Socket();
+        // These raw general stats must compose with the support rather than be overwritten by it.
+        game.State.PlayerStats[SelectedMiscKey("reduce_enemy_elemental_resistance_%")] = 7;
+        game.State.PlayerStats[SelectedMiscKey("reduce_enemy_chaos_resistance_%")] = 11;
+        game.State.PlayerStats[SelectedMiscKey("base_attack_damage_penetrates_elemental_resist_%")] = 5;
+        game.Refresh();
+        foreach (int prohibition in new[] { 0, 1, 0 })
+        {
+            game.State.PlayerStats[SelectedMiscKey(Penetration.ElementalProhibition)] = prohibition;
+            game.Refresh();
+            var view = game.Read();
+            game.AssertSupported(view);
+            var hit = Penetration.Of(Program.CharacterPlayerStats(game.State), Program.Stats, attack, view.Own);
+            int general = prohibition == 0 ? 31 : 0;
+            int hand = prohibition == 0 ? 36 : 0;
+            foreach (string element in new[] { "fire", "cold", "lightning" })
+            {
+                Assert.Equal(general, view.Get($"reduce_enemy_{element}_resistance_%"));
+                Assert.Equal(hand, view.Get($"main_hand_attack_damage_penetrates_{element}_resist_%"));
+                Assert.Equal(hand, view.Get($"off_hand_attack_damage_penetrates_{element}_resist_%"));
+            }
+            Assert.Equal(new(attack ? hand : general, attack ? hand : general, attack ? hand : general, 11), hit);
+            Assert.Equal(11, view.Get("main_hand_attack_damage_penetrates_chaos_resist_%"));
+            Assert.Equal(11, view.Get("off_hand_attack_damage_penetrates_chaos_resist_%"));
+            game.AssertControls(prohibition == 0 ? 17 : 0);
+        }
+        game.Socket(linked: false);
+        var unlinked = game.Read();
+        Assert.Empty(unlinked.Applied);
+        Assert.Equal(17, unlinked.Get(spec.Alias));
+        Assert.Equal(17, Penetration.Of(Program.CharacterPlayerStats(game.State), Program.Stats, false, unlinked.Own).Fire);
     }
 
     [Theory]

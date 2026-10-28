@@ -45,9 +45,11 @@ Generated reports contain extracted metadata and remain ignored; do not commit t
 
 | Finding | Trigger and previous behavior | Change and evidence | Remaining scope |
 |---|---|---|---|
-| Selected spell penetration omitted supports | Actor penetration 10 plus real level-one Fire/Cold/Lightning Penetration support 20 displayed 10 while the hit consumer used 30 | Recompute three selected aliases from raw actor and own inputs; six before-fix regressions reproduced 30 expected / 10 actual; nine new Gateway cases cover composition, requirements, overrides, unlink/removal and isolation | Native formatting, prohibition display and other penetration sources |
-| Attack rows omitted attack-only penetration | General 10 + elemental 5 + typed attack 7 + elemental attack 3 displayed 15 instead of 25 | Add attack-only typed/elemental sources to both hand aliases, including the separate chaos source; four before-fix pure regressions reproduced omissions | Weapon-local and non-base combat consumers and conditions |
+| Selected spell penetration omitted supports | Actor penetration 10 plus real level-one Fire/Cold/Lightning Penetration support 20 displayed 10 while the hit consumer used 30 | Recompute three selected aliases from raw actor and own inputs; six before-fix regressions reproduced 30 expected / 10 actual; nine new Gateway cases cover composition, requirements, overrides, unlink/removal and isolation | Native formatting and conditional sources |
+| Attack rows omitted attack-only penetration | General 10 + elemental 5 + typed attack 7 + elemental attack 3 displayed 15 instead of 25 | Add attack-only typed/elemental sources to both hand aliases, including the separate chaos source; four before-fix pure regressions reproduced omissions | Off-hand execution and remaining conditions |
 | Selected attack rows omitted supports | Heavy Strike with actor 10 plus linked support 20 displayed 10 | Recompute all eight hand aliases while preserving raw local snapshots; six before-fix Gateway regressions reproduced omissions; twelve added pure/Gateway cases cover sources, removal, hand isolation and inactive gear | Native checks and broader selected aliases |
+| Combat ignored non-base/general and weapon-local penetration | Elemental Penetration Support and local weapon penetration appeared in panel sums but had no hit effect | Consume raw general elemental/chaos inputs plus the attacking weapon's local snapshot; real support, parsed contact, inactive-weapon and shot snapshot checks | Native verification, off-hand attack selection and conditional sources |
+| Elemental prohibition left positive display values | Combat suppressed penetration while the panel retained positive elemental sums | Emit explicit zero for all nine elemental aliases while preserving chaos; check player/own flags, real support composition and restoration | Native presentation; explicit developer overrides intentionally keep their final priority |
 
 Implementation: `PanelStats.Selected`, `PanelStats.Sums`, and `Program`'s `PanelSourceSnapshot`.
 Tests: `SelectedMiscPanelTests`, `SelectedPanelStatCompositionTests`, `HandPenetrationPanelTests` and existing
@@ -80,13 +82,46 @@ The final successes are `core-penetration-final.trx`, `data-penetration-final.tr
 `gateway-penetration-recheck.trx`; `gateway-penetration-final.trx` preserves the timeout run.
 No native completion claim follows from these tests.
 
+The next penetration batch adds 19 Gateway cases (4,106 total): ten parsed contact cases, four real
+Elemental Penetration support/lifecycle cases, two pure source tests, two prohibition projection cases and one
+ordinary-shot snapshot case. The focused run passed 58; build passed without warnings/errors; Core 555 and Data 18 passed.
+The first full Gateway run passed 4,105 and timed out in
+`OrdinaryBowLifecycleTests.Paused_creation_waits_and_a_released_arrow_survives_a_later_player_action_until_one_impact`.
+That test polled for a transient projectile and could miss its whole lifetime if its continuation was delayed.
+It now holds the actual send gate between packets, witnessing creation before changing the action and releasing
+flight. All 15 bow lifecycle/conditional-release checks passed after this test-only correction.
+The subsequent full Gateway run passed all 4,106 tests with no reported skips. Combined with Core 555 and Data 18,
+the required suites pass 4,679 tests. This validates the current automated behavior; native checks remain pending.
+Receipts: `penetration-consumers-final-focused.trx`, `core-penetration-consumers.trx`,
+`data-penetration-consumers.trx`, `gateway-penetration-consumers.trx` (failure), `bow-lifecycle-gated.trx`,
+and `gateway-penetration-consumers-gated.trx` (full success).
+
+## Autonomous decisions and shared validation resources
+
+The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,
+and continuing until an irreversible action is required. Publishing remains prohibited.
+
+- Penetration: supply raw weapon-local sources separately from player/skill inputs. Reusing final hand aliases
+  would double-count inputs. Keep existing attack timing while off-hand execution is reviewed separately.
+  [Damage module rationale](../protocol/20-damage.md) records this choice and the library's pinned source IDs.
+- Prohibition display: send explicit zeros and preserve the existing final developer-override convention.
+  Merely hiding rows would retain incorrect selected values; see [skills documentation](../protocol/11-skills.md).
+- Bow-test timeout: synchronize on the real send gate instead of increasing timeout limits or accepting a lucky rerun.
+  This preserves the test's assertion that a later action occurs before impact; it changes no production flight behavior.
+- Native testing: other agents may use the machine's client and fixed server ports. A Gateway from the parent
+  checkout's `build/quest-validation/wake-skip-final` was running at this checkpoint. Leave it alone and continue
+  independent code/tests while the live slot is occupied. Do not invoke `live.ps1` until the shared resources are
+  free: it stops existing dotnet listeners and patched clients. The alternative of restarting those resources
+  would interrupt another agent's validation. Recheck immediately before launching, and stop only this task's
+  own processes when its test session ends. Preserve logs and existing client/profile data.
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
 Prioritize the following confirmed partial systems, then reconcile every remaining inventory entry:
 
-1. Penetration display prohibitions, non-base/global sources and weapon-local combat consumption.
-   `Penetration.cs` explicitly excludes the latter inputs even though some panel sums include them.
+1. Penetration native validation, off-hand attack selection and remaining target/conditional sources.
+   Unconditional raw composition and display prohibition now have automated coverage, not native certification.
 2. Selected ailment, leech and other aliases whose raw support contributions are not recomputed.
    Prove each omission using real sources before expanding the selected alias set.
 3. Hit averages/DPS, critical weighting, effective critical chances, off-hand selection and secondary damage.

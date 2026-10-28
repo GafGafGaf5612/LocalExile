@@ -3,6 +3,29 @@ namespace GameServer.Gateway.Tests;
 public sealed class HandPenetrationPanelTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Elemental_prohibition_zeroes_all_nine_aliases_without_suppressing_chaos(bool onSkill)
+    {
+        var raw = new Dictionary<string, int>
+        { ["reduce_enemy_elemental_resistance_%"] = 20, ["reduce_enemy_chaos_resistance_%"] = 11 };
+        var own = new Dictionary<string, int> { ["base_reduce_enemy_fire_resistance_%"] = 10 };
+        (onSkill ? own : raw)[Penetration.ElementalProhibition] = 1;
+        var selected = PanelStats.Selected(raw.GetValueOrDefault, own.GetValueOrDefault,
+            mainHand: _ => 6, offHand: _ => 9).ToDictionary(s => s.Stat, s => s.Value);
+        var fields = selected.Where(p => Penetration.IsElementalDisplay(p.Key)).ToArray();
+        Assert.Equal(9, fields.Length);
+        Assert.All(fields, p => Assert.Equal(0, p.Value));
+        Assert.Equal(17, selected["main_hand_attack_damage_penetrates_chaos_resist_%"]);
+        if (!onSkill)
+        {
+            var actor = PanelStats.Compute(raw.GetValueOrDefault).ToDictionary(s => s.Stat, s => s.Value);
+            Assert.Equal(9, actor.Count(p => Penetration.IsElementalDisplay(p.Key)));
+            Assert.All(actor.Where(p => Penetration.IsElementalDisplay(p.Key)), p => Assert.Equal(0, p.Value));
+        }
+    }
+
+    [Theory]
     [InlineData("fire")]
     [InlineData("cold")]
     [InlineData("lightning")]

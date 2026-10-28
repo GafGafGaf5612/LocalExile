@@ -214,8 +214,9 @@ static class PanelStats
         foreach (var sum in Sums)
         {
             var local = sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null };
-            int value = Project(sum, RawSum(sum, get, local, playerLevel));
-            if (value != 0) result.Add((sum.Display, value));
+            bool blocked = Penetration.IsElementalDisplay(sum.Display) && get(Penetration.ElementalProhibition) != 0;
+            int value = blocked ? 0 : Project(sum, RawSum(sum, get, local, playerLevel));
+            if (value != 0 || blocked) result.Add((sum.Display, value));
         }
         return result;
     }
@@ -239,8 +240,9 @@ static class PanelStats
         int playerLevel = 1, Func<string, int>? mainHand = null, Func<string, int>? offHand = null)
     {
         int level = Math.Clamp(playerLevel, 1, Progression.MaxLevel);
+        bool blockElemental = character(Penetration.ElementalProhibition) != 0 || own(Penetration.ElementalProhibition) != 0;
         return [.. SelectedSums.Select(sum => (sum.Display,
-            Project(sum, RawSum(sum, character,
+            blockElemental && Penetration.IsElementalDisplay(sum.Display) ? 0 : Project(sum, RawSum(sum, character,
                 sum.Hand switch { Hand.Main => mainHand, Hand.Off => offHand, _ => null }, level)
                 + RawSum(sum, own, null, level))))];
     }

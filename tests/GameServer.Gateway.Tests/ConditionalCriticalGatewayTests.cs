@@ -74,6 +74,21 @@ public class ConditionalCriticalGatewayTests
         }
 
         public void Set(string name, int value) => Conn.PlayerStats[Program.Stats.Key(name)!.Value] = value;
+        public void EquipPenetration()
+        {
+            var inventory = PlayerInventories.For(character, Program.Items);
+            var main = Assert.Single(inventory.Items(PlayerInventories.Weapon1));
+            var mod = Program.Items.Mods.ById("SynthesisImplicitLocalElementalPen3")!;
+            var source = Assert.Single(mod.Stats);
+            Assert.Equal("local_elemental_penetration_%", source.Id);
+            Assert.True(source.Local);
+            Assert.InRange(5, source.Min, source.Max);
+            Assert.NotNull(inventory.Change(PlayerInventories.Weapon1, main.Id,
+                item => item with { Mods = [new(ModSection.Implicit, mod.Hash, [5])] }));
+            var unused = Program.Items.Mods.ById("LocalElementalPenetrationUnique__1")!;
+            inventory.Add(14, 0, 0, ItemCatalog.Create(Program.Items.Find("Rusted Sword")!) with
+                { Mods = [new(ModSection.Explicit, unused.Hash, [30])] });
+        }
         public void Refresh() => Conn.Pools = Program.PoolsFor(Conn, 40) with
         { Life = 100, Mana = 1000, Accuracy = int.MaxValue, Strength = 1000, Dexterity = 1000, Intelligence = 1000 };
         public int Multiplier => Skill == SkillCatalog.FirstSkillId
@@ -137,6 +152,47 @@ public class ConditionalCriticalGatewayTests
             PlayerInventories.Forget(character);
             Program.GemSkillIdsOf.TryRemove(character, out _);
         }
+    }
+
+    [Theory]
+    [InlineData(null, "Rusted Sword", false)]
+    [InlineData(null, "Crude Bow", false)]
+    [InlineData("Cyclone", "Rusted Sword", false)]
+    [InlineData("BurningArrow", "Crude Bow", false)]
+    [InlineData("Fireball", "Rusted Sword", false)]
+    [InlineData(null, "Rusted Sword", true)]
+    [InlineData(null, "Crude Bow", true)]
+    [InlineData("Cyclone", "Rusted Sword", true)]
+    [InlineData("BurningArrow", "Crude Bow", true)]
+    [InlineData("Fireball", "Rusted Sword", true)]
+    public async Task Parsed_contacts_apply_general_and_only_the_attacking_weapons_penetration(
+        string? gem, string weapon, bool prohibited)
+    {
+        using var f = new Contact(new Draws(), gem, weapon, distance: weapon == "Crude Bow" ? 60 : 2);
+        f.EquipPenetration();
+        f.Set("global_cannot_crit", 1);
+        f.Set("physical_damage_+%", -10000);
+        f.Set("attack_minimum_added_chaos_damage", 0);
+        f.Set("attack_maximum_added_chaos_damage", 0);
+        f.Set("spell_minimum_added_chaos_damage", 0);
+        f.Set("spell_maximum_added_chaos_damage", 0);
+        f.Set("attack_minimum_added_fire_damage", 1000);
+        f.Set("attack_maximum_added_fire_damage", 1000);
+        f.Set("spell_minimum_added_fire_damage", 1000);
+        f.Set("spell_maximum_added_fire_damage", 1000);
+        f.Set("reduce_enemy_elemental_resistance_%", 7);
+        f.Set("base_attack_damage_penetrates_elemental_resist_%", 5);
+        f.Set(Penetration.ElementalProhibition, prohibited ? 1 : 0);
+        f.Refresh();
+        var raw = gem is null ? new DamageRange(1000, 1000) : f.Hit[DamageType.Fire];
+        Assert.True(raw.Min > 0);
+        Assert.NotNull(((SkillCatalog.Unarmed)Method("WeaponFor").Invoke(null, [f.Conn])!).PenetrationSources);
+        // The synthetic target has zero resistance. Spells get general 7 only; attacks get 7 + 5 + local 5.
+        double factor = prohibited ? 1 : gem == "Fireball" ? 1.07 : 1.17;
+        await f.Use();
+        await f.HitLands();
+        Assert.InRange(f.Target.MaxLife - f.Target.Life,
+            (uint)Math.Round(raw.Min * factor), (uint)Math.Round(raw.Max * factor));
     }
 
     [Theory]

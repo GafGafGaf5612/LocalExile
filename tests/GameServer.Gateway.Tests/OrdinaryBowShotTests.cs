@@ -5,6 +5,18 @@ namespace GameServer.Gateway.Tests;
 public class OrdinaryBowShotTests
 {
     [Fact]
+    public void Capture_freezes_local_penetration_and_new_shots_follow_weapon_removal()
+    {
+        var local = new Dictionary<string, int> { ["local_elemental_penetration_%"] = 9 };
+        var weapon = new SkillCatalog.Unarmed(1000, 10, 10, 120) { PenetrationSources = local };
+        var shot = OrdinaryBowShot.Capture(weapon, new Dictionary<uint, int>(), [], Program.Stats, 100, 0, 150);
+        local.Clear();
+        var next = OrdinaryBowShot.Capture(weapon, new Dictionary<uint, int>(), [], Program.Stats, 100, 0, 150);
+        Assert.Equal(new(9, 9, 9, 0), shot.Penetration);
+        Assert.Equal(default, next.Penetration);
+    }
+
+    [Fact]
     public void Capture_keeps_existing_weapon_added_conversion_precedence_and_freezes_the_inputs()
     {
         string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

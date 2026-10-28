@@ -16,7 +16,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
         var hit = RageStats.ApplyAttack(PlayerHitDamage.Resolve(SupportedAttackDamage.Raw(weapon, Get), Get,
             DamageStats.Conversion(conversion, catalog, attack: true), spell: false, projectile: true), Get);
         return new(hit, accuracy, criticalChance, criticalMultiplier, Get("impale_on_hit_%_chance"))
-        { Penetration = global::Penetration.Of(character, catalog, attack: true, own),
+        { Penetration = global::Penetration.Of(character, catalog, attack: true, own, weapon.PenetrationSources),
             ResistanceMods = new(
                 Get("critical_strikes_ignore_elemental_resistances") | Own("critical_strikes_ignore_elemental_resistances"),
                 Get("attack_critical_strikes_ignore_elemental_resistances") | Own("attack_critical_strikes_ignore_elemental_resistances"),
