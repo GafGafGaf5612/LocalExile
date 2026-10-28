@@ -161,6 +161,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public readonly PlayerElementalAilments ElementalAilments = new();
     public Random IncomingHitRandom = Random.Shared;
     public int IncomingHitEpoch;
+    public int DeathNotificationEpoch = -1;
     public int FreezeGeneration;
     public int ActionInterruptionGeneration => unchecked(HitRecovery.Generation + FreezeGeneration);
     public (int Count, int Chance)? PresentedRecentEnemyHits;

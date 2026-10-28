@@ -185,6 +185,37 @@ public sealed partial class AscendancyGatewayIntegrationTests
         public override double NextDouble() => .999;
     }
 
+    [Fact]
+    public async Task Enemy_hit_luck_never_selects_the_separate_monster_ignite_damage_roll()
+    {
+        if (!DataAvailable()) return;
+        using var game = new GatewayCharacter(choice: "Gambler", level: 90);
+        Assert.Null((await game.Change([53426, 16638], allocate: true)).Error);
+        var state = game.State;
+        state.IncomingHitRandom = new IgniteRollRandom(80, 20, 60);
+        uint before = state.PlayerLife;
+        await game.GamblerMonsterHit(DamagePacket.Of(DamageType.Fire, 1, 100));
+        Assert.Equal(26u, before - state.PlayerLife); // Unlucky hit 20, monster critical hit multiplier 130%.
+        Assert.Equal(70.2, state.ElementalAilments.Magnitude(PlayerElementalAilments.Kind.Ignite,
+            state.Clock.Elapsed.TotalSeconds), 8); // Separate ordinary roll 60, 90%/s and monster +30% ailment crit.
+        Assert.Null((await game.Change([16638], allocate: false, refundPoints: true)).Error);
+        state.ElementalAilments.Clear(); state.PlayerLife = state.PlayerMaxLife;
+        state.IncomingHitRandom = new IgniteRollRandom(80, 60);
+        before = state.PlayerLife;
+        await game.GamblerMonsterHit(DamagePacket.Of(DamageType.Fire, 1, 100));
+        Assert.Equal(104u, before - state.PlayerLife);
+        Assert.Equal(70.2, state.ElementalAilments.Magnitude(PlayerElementalAilments.Kind.Ignite,
+            state.Clock.Elapsed.TotalSeconds), 8);
+    }
+
+    sealed class IgniteRollRandom(params int[] rolls) : Random
+    {
+        readonly Queue<int> remaining = new(rolls);
+        public override int Next(int minValue, int maxValue) => remaining.Dequeue();
+        public override int Next(int maxValue) => 0;
+        public override double NextDouble() => .999;
+    }
+
     sealed class GamblerRandom(int value) : Random
     {
         public override int Next(int minValue, int maxValue) => Math.Clamp(value, minValue, maxValue - 1);

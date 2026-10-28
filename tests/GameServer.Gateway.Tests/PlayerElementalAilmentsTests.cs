@@ -13,7 +13,7 @@ public class PlayerElementalAilmentsTests
         var ailments = new PlayerElementalAilments();
         ailments.Apply(Fire(200), Fire(200), true, 1000, 0, None, new Random(1));
         ailments.Apply(Fire(100), Fire(100), true, 1000, 2, None, new Random(1));
-        Assert.Equal(270 * 4 + 135 * 2, ailments.Advance(0, 10, None, 0, 75, false));
+        Assert.Equal(234 * 4 + 117 * 2, ailments.Advance(0, 10, None, 0, 75, false));
         Assert.Equal(0, ailments.Advance(10, 11, None, 0, 75, false));
         Assert.False(ailments.Snapshot(10).Ignite);
     }
@@ -23,8 +23,8 @@ public class PlayerElementalAilmentsTests
     {
         var ailments = new PlayerElementalAilments();
         ailments.Apply(Fire(100), Fire(100), true, 1000, 0, None, new Random(1));
-        Assert.Equal(33, ailments.Advance(0, 1, None, 75, 75, false));
-        Assert.Equal(135, ailments.Advance(1, 2, None, 0, 75, false)); // Fraction carried, no 90% hit override.
+        Assert.Equal(29, ailments.Advance(0, 1, None, 75, 75, false));
+        Assert.Equal(117, ailments.Advance(1, 2, None, 0, 75, false)); // Fraction carried, no 90% hit override.
         int Immune(string key) => key == "immune_to_ignite" ? 1 : 0;
         ailments.Reconcile(Immune);
         Assert.False(ailments.Snapshot(2).Ignite);
@@ -51,8 +51,8 @@ public class PlayerElementalAilmentsTests
         var conn = new ClientState(new(ushort.MaxValue, "ailments", 128, 128, 32, 32, null, []), 0, 1)
         { PlayerLife = 100, Pools = new(1, 100, 100, 0, 0, EnergyShield: 20) };
         conn.EnergyShield.SetMaximum(20, refill: true);
-        conn.ElementalAilments.Apply(Fire(100), Fire(100), true, 100, 0, None, new Random(1));
-        Assert.Equal(135, Program.AdvancePlayerAilmentsLocked(conn, 0, 1, new Dictionary<uint, int>()));
+        conn.ElementalAilments.Apply(Fire(200), Fire(200), true, 100, 0, None, new Random(1));
+        Assert.Equal(234, Program.AdvancePlayerAilmentsLocked(conn, 0, 1, new Dictionary<uint, int>()));
         Assert.Equal(0u, conn.EnergyShield.Current);
         Assert.Equal(0u, conn.PlayerLife);
         Assert.False(conn.ElementalAilments.Snapshot(1).Ignite);

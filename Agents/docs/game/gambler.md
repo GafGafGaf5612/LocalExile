@@ -41,11 +41,14 @@ Blocked and evaded hits do not apply ailments.
 Each eligible ailment independently checks final avoidance once; 65 succeeds and 66 fails against Risk Aversion's 66%.
 Damage luck, critical luck and block luck do not make this avoidance lucky.
 
-Ignite uses 90% per second of the rolled pre-critical fire base, with the ordinary 150% critical ailment multiplier,
+Ignite uses 90% per second of a separate ordinary roll of the pre-hit fire range, with the target monster's 130% critical ailment multiplier,
 for four seconds before self-duration modifiers.
+Monster.ot sets `critical_ailment_dot_multiplier_+ = 30`; Character.ot's +50 applies to player ailments.
+Enemy hit luck never chooses this ailment roll.
 Only the strongest active ignite damages; a weaker longer ignite can resume when the stronger expires.
 Live fire resistance and damage immunity apply to ticks, independently of Risky Exploit's hit-only override.
 Ticks carry fractional damage, absorb Energy Shield first, interrupt recharge and can kill.
+Lethal ticks use the normal death cleanup and an epoch-checked, once-only native death notification.
 They do not block, suppress, apply armour, generate hit recovery or record another enemy hit.
 The resource writer retains RF's separate nonlethal behavior and Fortification recovery.
 

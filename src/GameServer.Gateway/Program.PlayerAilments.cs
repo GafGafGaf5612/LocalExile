@@ -10,7 +10,11 @@ partial class Program
         int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
         double previousAction = conn.ElementalAilments.ActionFactor(now);
         bool frozen = previousAction == 0;
-        conn.ElementalAilments.Apply(baseHit, taken, critical, conn.PlayerMaxLife, now, Get, conn.IncomingHitRandom);
+        // Ailment damage is a separate ordinary roll from the pre-hit range. Hit luck and the hit's critical
+        // multiplier cannot alter its distribution; non-damaging ailments still use the actual mitigated hit.
+        int fire = critical ? baseHit[DamageType.Fire].Roll(conn.IncomingHitRandom) : 0;
+        var ailmentBase = DamagePacket.Of(DamageType.Fire, fire, fire);
+        conn.ElementalAilments.Apply(ailmentBase, taken, critical, conn.PlayerMaxLife, now, Get, conn.IncomingHitRandom);
         if (!frozen && conn.ElementalAilments.ActionFactor(now) == 0)
         {
             conn.FreezeGeneration++;

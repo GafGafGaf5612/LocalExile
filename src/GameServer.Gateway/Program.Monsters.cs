@@ -302,7 +302,6 @@ partial class Program
                 // Roll the whole monster-mod packet, then mitigate each component with this hit's one armour decision.
                 var gambler = GamblerFor(stats);
                 var rolled = gambler.RollIncomingHit(a.Damage, conn.IncomingHitRandom);
-                var ailmentBase = rolled;
                 rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, conn.IncomingHitRandom, out monsterCritical,
                     () => SelfCriticalReduction(conn));   // its crit, Executioner's
                 var mitigated = gambler.MitigateIncomingHit(rolled, type =>
@@ -337,7 +336,7 @@ partial class Program
                 int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
                 conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
                 conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
-                ApplyPlayerAilmentsLocked(conn, ailmentBase, ailmentTaken.Select((_, r) =>
+                ApplyPlayerAilmentsLocked(conn, a.Damage, ailmentTaken.Select((_, r) =>
                     new(FortificationDamageTaken(conn, (int)r.Min), FortificationDamageTaken(conn, (int)r.Max))),
                     monsterCritical, blocked, now, stats);
                 conn.RecentEnemyHits.Record(now);

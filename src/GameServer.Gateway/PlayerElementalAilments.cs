@@ -4,6 +4,9 @@ using GameServer.Core.World;
 /// Alternative ailments require an explicit source and are not substituted for the ordinary ailments here.</summary>
 sealed class PlayerElementalAilments
 {
+    // Target Metadata/Monsters/Monster.ot: critical_ailment_dot_multiplier_+ = 30.
+    // Character.ot's +50 belongs to player ailments, not this incoming monster consumer.
+    internal const double MonsterCriticalAilmentMultiplier = 1.3;
     internal enum Kind { Ignite, Chill, Freeze, Shock }
     sealed record Effect(Kind Kind, double From, double Until, double Magnitude);
     readonly List<Effect> effects = [];
@@ -56,7 +59,7 @@ sealed class PlayerElementalAilments
                     || RandomRolls.Chance(get($"avoid_{Name(kind)}_%"), 100, random)) return;
                 effects.Add(new(kind, now, now + seconds, magnitude));
             }
-            if (critical) Add(Kind.Ignite, baseHit[DamageType.Fire].Min * .9 * 1.5, 4);
+            if (critical) Add(Kind.Ignite, baseHit[DamageType.Fire].Min * .9 * MonsterCriticalAilmentMultiplier, 4);
             if (maxLife == 0) return;
             double cold = taken[DamageType.Cold].Min / maxLife;
             double lightning = taken[DamageType.Lightning].Min / maxLife;
