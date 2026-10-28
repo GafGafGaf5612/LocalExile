@@ -13,7 +13,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     static (PlayerInventories Inventory, Item Boots) FrenzyGear(GatewayCharacter game)
     {
-        var catalog = ProgramValue<ItemCatalog>("ItemsFor", game.State);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         // A single real weapon avoids the separate inherent dual-wield speed multiplier of an empty hand.
         inventory.Add(PlayerInventories.Weapon1, 0, 0, ItemCatalog.Create(catalog.Find("Driftwood Wand")!));
@@ -57,13 +57,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(baseline / (1 + attackPerCharge * held / 100.0), weapon.AttackSeconds(published), 9);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Native_combined_Frenzy_reduction_clears_both_published_coefficients_and_runtime_speed(bool ruthless)
+    [Fact]
+    public void Native_combined_Frenzy_reduction_clears_both_published_coefficients_and_runtime_speed()
     {
         using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Elementalist",
-            classRow: SkillCatalog.WitchRow, baseClass: 3, ruthless: ruthless);
+            classRow: SkillCatalog.WitchRow, baseClass: 3);
         var (inventory, boots) = FrenzyGear(game);
         AssertFrenzySpeed(game.State, FrenzyRefresh(game.State, 3), 4, 4, 3);
         var placed = inventory.Add(PlayerInventories.Boots, 0, 0, boots);
@@ -80,18 +78,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 3)]
-    [InlineData(true, 3)]
-    [InlineData(false, -2)]
-    [InlineData(true, -2)]
-    [InlineData(false, 0)]
-    [InlineData(true, 0)]
-    [InlineData(false, -7)]
-    [InlineData(true, -7)]
-    public void Combined_Frenzy_source_replacements_share_one_coefficient_with_actual_held_count_speed(bool ruthless, int value)
+    [InlineData(3)]
+    [InlineData(-2)]
+    [InlineData(0)]
+    [InlineData(-7)]
+    public void Combined_Frenzy_source_replacements_share_one_coefficient_with_actual_held_count_speed(int value)
     {
         using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Elementalist",
-            classRow: SkillCatalog.WitchRow, baseClass: 3, ruthless: ruthless);
+            classRow: SkillCatalog.WitchRow, baseClass: 3);
         var (inventory, boots) = FrenzyGear(game);
         inventory.Add(PlayerInventories.Boots, 0, 0, boots);
         game.State.PlayerStats[FrenzyKey(FrenzyCombinedSpeed)] = value; // Raw replacement, including explicit zero.
@@ -101,28 +95,24 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AssertFrenzySpeed(game.State, FrenzyRefresh(game.State, 3), 0, 0, 3);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_typed_Frenzy_attack_source_and_combined_reduction_do_not_change_the_cast_coefficient(bool ruthless)
+    [Fact]
+    public void A_typed_Frenzy_attack_source_and_combined_reduction_do_not_change_the_cast_coefficient()
     {
         using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Elementalist",
-            classRow: SkillCatalog.WitchRow, baseClass: 3, ruthless: ruthless);
+            classRow: SkillCatalog.WitchRow, baseClass: 3);
         var (inventory, boots) = FrenzyGear(game);
-        var catalog = ProgramValue<ItemCatalog>("ItemsFor", game.State);
+        var catalog = Program.Items;
         var attack = catalog.Mods.All.Single(m => m.Id == "AttackSpeedPerFrenzyChargeUniqueGlovesDexInt5");
         inventory.Add(PlayerInventories.Boots, 0, 0, boots with
             { Mods = [.. boots.Mods, new(ModSection.Explicit, attack.Hash, [2])] });
         AssertFrenzySpeed(game.State, FrenzyRefresh(game.State, 3), 2, 0, 3);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Explicit_final_Frenzy_panel_zero_remains_a_presentation_override(bool ruthless)
+    [Fact]
+    public void Explicit_final_Frenzy_panel_zero_remains_a_presentation_override()
     {
         using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Elementalist",
-            classRow: SkillCatalog.WitchRow, baseClass: 3, ruthless: ruthless);
+            classRow: SkillCatalog.WitchRow, baseClass: 3);
         FrenzyGear(game);
         game.State.PlayerStats[FrenzyKey(FrenzyCombinedSpeed)] = 3;
         AssertFrenzySpeed(game.State, FrenzyRefresh(game.State, 3), 7, 7, 3);

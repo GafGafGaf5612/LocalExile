@@ -23,15 +23,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     static uint SelectedMiscKey(string name) => Program.Stats.Key(name)!.Value;
 
     [Theory]
-    [InlineData(false, "area")]
-    [InlineData(true, "area")]
-    [InlineData(false, "rarity")]
-    [InlineData(false, "minion")]
-    [InlineData(true, "minion")]
-    public void Selected_misc_real_supports_compose_once_and_follow_link_and_source_removal(bool ruthless, string field)
+    [InlineData("area")]
+    [InlineData("rarity")]
+    [InlineData("minion")]
+    public void Selected_misc_real_supports_compose_once_and_follow_link_and_source_removal(string field)
     {
         var spec = SelectedMiscSpec(field);
-        using var game = new SelectedMiscCharacter(ruthless, spec);
+        using var game = new SelectedMiscCharacter(spec);
         var baseline = game.Read();
         Assert.Equal(spec.Actor, baseline.Get(spec.Alias));
         Assert.Empty(baseline.Applied);
@@ -73,15 +71,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, "area")]
-    [InlineData(true, "area")]
-    [InlineData(false, "rarity")]
-    [InlineData(false, "minion")]
-    [InlineData(true, "minion")]
-    public void Selected_misc_signed_cancellation_and_final_developer_zero_replace_the_full_selected_sum(bool ruthless, string field)
+    [InlineData("area")]
+    [InlineData("rarity")]
+    [InlineData("minion")]
+    public void Selected_misc_signed_cancellation_and_final_developer_zero_replace_the_full_selected_sum(string field)
     {
         var spec = SelectedMiscSpec(field);
-        using var game = new SelectedMiscCharacter(ruthless, spec);
+        using var game = new SelectedMiscCharacter(spec);
         game.Socket();
         game.AssertSupported(game.Read());
         Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
@@ -113,77 +109,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Fact]
-    public void Selected_misc_Ruthless_denies_Item_Rarity_support_through_link_and_source_removal()
-    {
-        var spec = SelectedMiscSpec("rarity");
-        using var game = new SelectedMiscCharacter(true, spec, supportAllowed: false);
-        var baseline = game.Read();
-        Assert.Equal(10, baseline.Get(spec.Alias));
-        game.AssertControls(10);
-
-        game.Socket();
-        var linked = game.Read();
-        game.AssertUnavailableRarity(linked, 10);
-        Assert.Equal(baseline.Skill.Id, linked.Skill.Id);
-        Assert.Equal(linked.Stats.OrderBy(s => s.Key), game.Read().Stats.OrderBy(s => s.Key));
-        game.AssertControls(10);
-        game.Socket(linked: false);
-        game.AssertUnavailableRarity(game.Read(), 10);
-        game.Socket();
-        game.AssertUnavailableRarity(game.Read(), 10);
-        game.Socket(support: false);
-        game.AssertUnavailableRarity(game.Read(), 10);
-
-        // A denied gem cannot keep a contribution alive after the actual actor source disappears.
-        game.Socket();
-        game.RemoveActor();
-        game.AssertUnavailableRarity(game.Read(), 0);
-        game.AssertUnavailableRarity(game.Read(), 0);
-        game.AssertControls(0);
-        game.Socket(active: false);
-        Assert.DoesNotContain(game.Gems(), g => g.Effect == game.ActiveEffect);
-        Assert.DoesNotContain(game.ActorSkills(), s => s.Id == baseline.Skill.Id);
-        Assert.Single(game.Gems());
-        game.AssertControls(0);
-    }
-
-    [Fact]
-    public void Selected_misc_Ruthless_denied_Item_Rarity_preserves_signed_actor_sources_and_final_overrides()
-    {
-        var spec = SelectedMiscSpec("rarity");
-        using var game = new SelectedMiscCharacter(true, spec, supportAllowed: false);
-        game.Socket();
-        game.AssertUnavailableRarity(game.Read(), 10);
-        game.SetActor(-40);
-        // The unavailable support's native +40 must not cancel this controlled actor reduction.
-        game.AssertUnavailableRarity(game.Read(), -40);
-        game.AssertControls(-40);
-        game.SetActor(10);
-        foreach (int replacement in new[] { 0, 7 })
-        {
-            game.State.PlayerStats[SelectedMiscKey(spec.Alias)] = replacement;
-            game.Refresh();
-            game.AssertUnavailableRarity(game.Read(), replacement);
-            game.AssertUnavailableRarity(game.Read(), replacement);
-            game.AssertControls(replacement);
-        }
-        Assert.True(game.State.PlayerStats.Remove(SelectedMiscKey(spec.Alias)));
-        game.Refresh();
-        game.AssertUnavailableRarity(game.Read(), 10);
-        game.AssertControls(10);
-        Assert.Equal(10, game.State.PlayerStats[SelectedMiscKey(spec.ActorSource)]);
-        game.RemoveActor();
-        game.AssertUnavailableRarity(game.Read(), 0);
-        game.AssertControls(0);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Selected_misc_Cyclone_radius_matches_combat_without_counting_the_selected_area_alias_twice(bool ruthless)
+    public void Selected_misc_Cyclone_radius_matches_combat_without_counting_the_selected_area_alias_twice()
     {
         var spec = SelectedMiscSpec("area") with { Active = "SkillGemCyclone" };
-        using var game = new SelectedMiscCharacter(ruthless, spec);
+        using var game = new SelectedMiscCharacter(spec);
         void Check(int area, int radius, int radiusPercent, bool supported)
         {
             var view = game.Read();
@@ -208,13 +137,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Check(20, 17, 9, supported: false);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Selected_misc_incompatible_real_Minion_Damage_does_not_add_quality_or_MORE_to_Fireball(bool ruthless)
+    [Fact]
+    public void Selected_misc_incompatible_real_Minion_Damage_does_not_add_quality_or_MORE_to_Fireball()
     {
         var spec = SelectedMiscSpec("minion") with { Active = "SkillGemFireball" };
-        using var game = new SelectedMiscCharacter(ruthless, spec);
+        using var game = new SelectedMiscCharacter(spec);
         game.Socket();
         game.AssertQualified();
         var view = game.Read();
@@ -227,13 +154,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         game.AssertControls(15);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Selected_misc_support_requirement_failure_and_recovery_leave_the_qualified_host_and_active_gem_available(bool ruthless)
+    [Fact]
+    public void Selected_misc_support_requirement_failure_and_recovery_leave_the_qualified_host_and_active_gem_available()
     {
         var spec = SelectedMiscSpec("area");
-        using var game = new SelectedMiscCharacter(ruthless, spec);
+        using var game = new SelectedMiscCharacter(spec);
         game.Socket();
         var linked = game.Read();
         game.AssertSupported(linked);
@@ -280,11 +205,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         public int ActiveEffect { get; }
         readonly int _otherEffect;
 
-        public SelectedMiscCharacter(bool ruthless, SelectedMiscCase spec, bool supportAllowed = true)
+        public SelectedMiscCharacter(SelectedMiscCase spec)
         {
-            _game = LevelPanelCharacter(ruthless, 100);
+            _game = LevelPanelCharacter(100);
             _spec = spec;
-            _catalog = Program.ItemsFor(State);
+            _catalog = Program.Items;
             _items = ProgramValue<PlayerInventories>("ItemsOf", State);
             // Actual 80..100 native mod on an isolated carrier, without a rarity implicit.
             // The carrier does not claim this unique modifier can be acquired on this base.
@@ -303,7 +228,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
                 ItemCatalog.Create(_catalog.Find("Plate Vest")!, defenceBaseRoll: 0)).Id;
             SetActor(spec.Actor);
             Socket(support: false);
-            AssertQualified(supportAllowed);
+            AssertQualified();
         }
 
         Item Gem(string id, int quality = 0)
@@ -357,25 +282,18 @@ public sealed partial class AscendancyGatewayIntegrationTests
             State.PlayerMana = State.Pools.Mana;
         }
 
-        public void AssertQualified(bool supportAllowed = true)
+        public void AssertQualified()
         {
             Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", State, ActiveGem));
             string? supportFailure = ProgramValue<string?>("GemRequirementsUnmet", State, SupportGem);
-            if (supportAllowed) Assert.Null(supportFailure);
-            else
-            {
-                Assert.True(State.Ruthless);
-                Assert.Equal("SupportItemRarity", _spec.SupportEffect);
-                Assert.NotNull(supportFailure);
-                Assert.Contains("unavailable in Ruthless", supportFailure);
-            }
+            Assert.Null(supportFailure);
             Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", State, _other));
             Assert.DoesNotContain(HostId, Program.InactiveItems[Character]);
         }
 
         public (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)[] Gems() =>
             ((IEnumerable<(ushort, int, string, int, int, uint)>)typeof(Program).GetMethod("GemSkillEffects", Flags,
-                binder: null, types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [State])!).ToArray();
+                binder: null, types: [typeof(string)], modifiers: null)!.Invoke(null, [Character])!).ToArray();
 
         public IReadOnlyList<GrantedSkill> ActorSkills() => ProgramValue<IReadOnlyList<GrantedSkill>>("PlayerSkills", State);
 
@@ -404,15 +322,6 @@ public sealed partial class AscendancyGatewayIntegrationTests
                 Assert.Equal(25, view.Own[SelectedMiscKey("support_minion_damage_+%_final")]);
                 Assert.Equal(25, support.Stats.Single(s => s.Key == SelectedMiscKey("support_minion_damage_+%_final")).Value);
             }
-        }
-
-        public void AssertUnavailableRarity(SelectedMiscView view, int expected)
-        {
-            AssertQualified(supportAllowed: false);
-            Assert.Empty(view.Applied);
-            Assert.Empty(view.Skill.Supports);
-            Assert.Equal(0, view.Own.GetValueOrDefault(SelectedMiscKey(_spec.OwnSource)));
-            Assert.Equal(expected, view.Get(_spec.Alias));
         }
 
         public void AssertControls(int expected)

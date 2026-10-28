@@ -24,7 +24,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     static void SelfDurationAddHarshLessons(GatewayCharacter game)
     {
         Assert.Equal(17087u, SelfDurationKey(SelfDurationAll));
-        var tree = ProgramValue<PassiveTree>("PassivesFor", game.State);
+        var tree = Program.Passives;
         Assert.Equal("Harsh Lessons", tree.Find(SelfDurationHarshLessons)!.Name);
         Assert.Equal(-20, tree.Stats([SelfDurationHarshLessons])[SelfDurationKey(SelfDurationAll)]);
         // Isolate a real node's sources. This does not claim a disconnected node
@@ -32,12 +32,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         game.State.Passives.Add(SelfDurationHarshLessons);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Self_ailment_real_Harsh_Lessons_publishes_all_four_reductions_and_clears_after_removal(bool ruthless)
+    [Fact]
+    public void Self_ailment_real_Harsh_Lessons_publishes_all_four_reductions_and_clears_after_removal()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
+        using var game = LevelPanelCharacter(100);
         SelfDurationAddHarshLessons(game);
         SelfDurationAssertAll(SelfDurationPublished(game), 20);
         SelfDurationAssertAll(SelfDurationPublished(game), 20);
@@ -57,12 +55,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         SelfDurationAssertAll(SelfDurationPublished(game), 20);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Self_ailment_typed_elemental_and_real_global_sources_compose_once_and_remove_independently(bool ruthless)
+    [Fact]
+    public void Self_ailment_typed_elemental_and_real_global_sources_compose_once_and_remove_independently()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
+        using var game = LevelPanelCharacter(100);
         SelfDurationAddHarshLessons(game);
         foreach (string ailment in SelfDurationAilments)
             game.State.PlayerStats[SelfDurationKey($"base_self_{ailment}_duration_-%")] = 20;
@@ -80,13 +76,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         SelfDurationAssertAll(SelfDurationPublished(game), 0);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Self_ailment_real_positive_duration_modifier_publishes_signed_reductions_and_cancels_Harsh_Lessons(bool ruthless)
+    [Fact]
+    public void Self_ailment_real_positive_duration_modifier_publishes_signed_reductions_and_cancels_Harsh_Lessons()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var mod = catalog.Mods.ById("WeaponTreeLocalEvasionRatingIncreasedAilmentDurationOnSelf1")!;
         Assert.Equal(34583, mod.Row);
@@ -112,12 +106,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         SelfDurationAssertAll(SelfDurationPublished(game), 0);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Self_ailment_explicit_final_replacements_including_zero_keep_precedence_over_real_sources(bool ruthless)
+    [Fact]
+    public void Self_ailment_explicit_final_replacements_including_zero_keep_precedence_over_real_sources()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
+        using var game = LevelPanelCharacter(100);
         SelfDurationAddHarshLessons(game);
         SelfDurationAssertAll(SelfDurationPublished(game), 20);
         uint ignite = SelfDurationKey("self_ignite_duration_-%");

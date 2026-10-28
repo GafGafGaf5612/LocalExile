@@ -42,7 +42,8 @@ partial class Program
 
     /// <summary>The sources of the magic utility flasks Mageblood keeps applied, or none when it is not worn. The flasks'
     /// own effect mods count; <paramref name="character"/> is the character's stats for increased flask effect/duration.</summary>
-    internal static IReadOnlyList<UtilityFlasks.Source> MagebloodSources(ClientState conn, Func<string, int> character)
+    internal static IReadOnlyList<UtilityFlasks.Source> MagebloodSources(ClientState conn, Func<string, int> character,
+        int? playerLevel = null)
     {
         if (MagebloodBelt(conn) is not { } belt) return [];
         int count = MagebloodFlaskCount(belt);
@@ -50,7 +51,8 @@ partial class Program
         List<UtilityFlasks.Source> sources = [];
         foreach (var flask in MagebloodFlasks(ItemsOf(conn).Items(PlayerInventories.Flask), count))
             if (Items.ByHash(flask.Item.TypeHash) is { } type && Items.UtilityFlaskOf(type) is { } utility)
-                sources.AddRange(UtilityFlasks.For(utility, flask.Item, ItemModStats.Local(flask.Item, Items.Mods), character).Stats);
+                sources.AddRange(UtilityFlasks.For(utility, flask.Item, ItemModStats.Local(flask.Item, Items.Mods),
+                    character, playerLevel ?? conn.Pools.Level).Stats);
         return sources;
     }
 
@@ -63,8 +65,9 @@ partial class Program
 
     /// <summary>The utility flask stats that count now: the running effects deduplicated against Mageblood's permanent
     /// ones. Callers apply this once, not the two sets separately.</summary>
-    internal static IReadOnlyList<(string Stat, int Value)> UtilityStats(ClientState conn, Func<string, int> character) =>
-        CombineUtilitySources(conn.UtilityFlaskEffects.Sources(), MagebloodSources(conn, character));
+    internal static IReadOnlyList<(string Stat, int Value)> UtilityStats(ClientState conn, Func<string, int> character,
+        int? playerLevel = null) =>
+        CombineUtilitySources(conn.UtilityFlaskEffects.Sources(), MagebloodSources(conn, character, playerLevel));
 
     /// <summary>Whether Mageblood forbids using this flask: magic utility flasks cannot be used while it is worn (normal and
     /// unique ones still can).</summary>

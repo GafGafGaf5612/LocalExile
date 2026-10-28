@@ -6,7 +6,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 {
     static InventoryItem EquipFlaskEffectPair(GatewayCharacter game)
     {
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         return inventory.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",
             LevelPanelMod(catalog, "BeltIncreasedFlaskEffectUnique__2", "flask_effect_+%", -60),
@@ -26,17 +26,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
             ushort.MaxValue, null, [], 0, double.PositiveInfinity)));
 
     [Theory]
-    [InlineData(false, 10, "Quicksilver Flask", "base_movement_velocity_+%", 20, 6)]
-    [InlineData(false, 20, "Quicksilver Flask", "base_movement_velocity_+%", 24, 6)]
-    [InlineData(false, 100, "Granite Flask", "base_physical_damage_reduction_rating", 2100, 6)]
-    [InlineData(true, 10, "Quicksilver Flask", "base_movement_velocity_+%", 20, 2)]
-    [InlineData(true, 20, "Quicksilver Flask", "base_movement_velocity_+%", 24, 2)]
-    [InlineData(true, 100, "Granite Flask", "base_physical_damage_reduction_rating", 2100, 4)]
-    public async Task Actual_utility_use_resolves_native_level_effect_once_without_replacing_raw_publication(bool ruthless,
-        int level, string name, string stat, int expected, double seconds)
+    [InlineData(10, "Quicksilver Flask", "base_movement_velocity_+%", 20, 6)]
+    [InlineData(20, "Quicksilver Flask", "base_movement_velocity_+%", 24, 6)]
+    [InlineData(100, "Granite Flask", "base_physical_damage_reduction_rating", 2100, 6)]
+    public async Task Actual_utility_use_resolves_native_level_effect_once_without_replacing_raw_publication(        int level, string name, string stat, int expected, double seconds)
     {
-        using var game = LevelPanelCharacter(ruthless, level); EquipFlaskEffectPair(game);
-        var catalog = Program.ItemsFor(game.State); var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        using var game = LevelPanelCharacter(level); EquipFlaskEffectPair(game);
+        var catalog = Program.Items; var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find(name)!; var utility = catalog.UtilityFlaskOf(type)!;
         var flask = inventory.Add(PlayerInventories.Flask, 0, 0, ItemCatalog.Create(type) with { Quality = 0, Charges = utility.MaxCharges });
         AssertRawEffectSources(game, -60, 1); HoldEffectTestTicker(game, utility);
@@ -52,16 +48,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 10, 35)]
-    [InlineData(false, 20, 42)]
-    [InlineData(false, 100, 98)]
-    [InlineData(true, 10, 35)]
-    [InlineData(true, 20, 42)]
-    [InlineData(true, 100, 98)]
-    public async Task Actual_life_use_passes_captured_level_into_the_shared_effect_resolver(bool ruthless, int level, double expected)
+    [InlineData(10, 35)]
+    [InlineData(20, 42)]
+    [InlineData(100, 98)]
+    public async Task Actual_life_use_passes_captured_level_into_the_shared_effect_resolver(int level, double expected)
     {
-        using var game = LevelPanelCharacter(ruthless, level); EquipFlaskEffectPair(game);
-        var catalog = Program.ItemsFor(game.State); var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        using var game = LevelPanelCharacter(level); EquipFlaskEffectPair(game);
+        var catalog = Program.Items; var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find("Small Life Flask")!; var native = catalog.FlaskOf(type)!;
         inventory.Add(PlayerInventories.Flask, 0, 0, ItemCatalog.Create(type) with { Quality = 0, Charges = native.MaxCharges });
         game.State.PlayerLife = game.State.Pools.Life / 2;
@@ -76,13 +69,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         finally { game.State.FlaskEffects.End(_ => true); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Level_and_source_changes_affect_the_next_utility_use_while_existing_sources_remain_snapshotted(bool ruthless)
+    [Fact]
+    public async Task Level_and_source_changes_affect_the_next_utility_use_while_existing_sources_remain_snapshotted()
     {
-        using var game = LevelPanelCharacter(ruthless, 10); var source = EquipFlaskEffectPair(game);
-        var catalog = Program.ItemsFor(game.State); var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        using var game = LevelPanelCharacter(10); var source = EquipFlaskEffectPair(game);
+        var catalog = Program.Items; var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find("Quicksilver Flask")!; var utility = catalog.UtilityFlaskOf(type)!;
         var flask = inventory.Add(PlayerInventories.Flask, 0, 0, ItemCatalog.Create(type) with { Quality = 0, Charges = utility.MaxCharges });
         void ResetUse()
@@ -113,13 +104,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         finally { game.State.UtilityFlaskEffects.End(0, true, out _); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Each_raw_effect_override_replaces_only_its_own_source_for_actual_utility_use(bool ruthless)
+    [Fact]
+    public async Task Each_raw_effect_override_replaces_only_its_own_source_for_actual_utility_use()
     {
-        using var game = LevelPanelCharacter(ruthless, 100); EquipFlaskEffectPair(game);
-        var catalog = Program.ItemsFor(game.State); var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        using var game = LevelPanelCharacter(100); EquipFlaskEffectPair(game);
+        var catalog = Program.Items; var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find("Granite Flask")!; var utility = catalog.UtilityFlaskOf(type)!;
         var flask = inventory.Add(PlayerInventories.Flask, 0, 0, ItemCatalog.Create(type) with { Quality = 0, Charges = utility.MaxCharges });
         try
@@ -140,12 +129,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 4.02)]
-    [InlineData(true, 2.68)]
-    public async Task Actual_magic_utility_keeps_native_local_and_magic_only_buckets_separate_from_duration(bool ruthless, double seconds)
+    [InlineData(4.02)]
+    public async Task Actual_magic_utility_keeps_native_local_and_magic_only_buckets_separate_from_duration(double seconds)
     {
-        using var game = LevelPanelCharacter(ruthless, 100); EquipFlaskEffectPair(game);
-        var catalog = Program.ItemsFor(game.State); var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        using var game = LevelPanelCharacter(100); EquipFlaskEffectPair(game);
+        var catalog = Program.Items; var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         inventory.Add(7, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",
             LevelPanelMod(catalog, "RecombinatorSpecialMagicUtilityFlaskEffect", "magic_utility_flask_effect_+%", 20)));
         var type = catalog.Find("Granite Flask")!; var utility = catalog.UtilityFlaskOf(type)!;
@@ -167,13 +155,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         finally { game.State.UtilityFlaskEffects.End(0, true, out _); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Actual_instant_life_use_resolves_effect_without_admitting_magic_utility_only_source(bool ruthless)
+    [Fact]
+    public async Task Actual_instant_life_use_resolves_effect_without_admitting_magic_utility_only_source()
     {
-        using var game = LevelPanelCharacter(ruthless, 100); EquipFlaskEffectPair(game);
-        var catalog = Program.ItemsFor(game.State); var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
+        using var game = LevelPanelCharacter(100); EquipFlaskEffectPair(game);
+        var catalog = Program.Items; var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         inventory.Add(7, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",
             LevelPanelMod(catalog, "RecombinatorSpecialMagicUtilityFlaskEffect", "magic_utility_flask_effect_+%", 20)));
         var type = catalog.Find("Small Life Flask")!; var native = catalog.FlaskOf(type)!;

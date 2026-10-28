@@ -10,7 +10,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     public async Task A_real_charge_gain_mod_affects_actual_flask_awards_and_final_virtual_replacements()
     {
         using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Slayer");
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var inventory = PlayerInventories.For(game.Character, catalog);
         var belt = inventory.Add(10, 0, 0, FlaskModifierBelt(catalog, "BeltIncreasedFlaskChargesGained1", 100));
         var flask = inventory.Add(PlayerInventories.Flask, 0, 0,
@@ -41,15 +41,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Native_belt_Mana_rate_changes_actual_flask_recovery_without_shortening_hybrid_Life(
-        bool ruthless, bool hybrid)
+        bool hybrid)
     {
-        using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Slayer", ruthless: ruthless);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Slayer");
+        var catalog = Program.Items;
         var inventory = PlayerInventories.For(game.Character, catalog);
         inventory.Add(10, 0, 0, FlaskModifierBelt(catalog, "BeltFlaskManaRecoveryRate1_", 100));
         var type = catalog.Find(hybrid ? "Small Hybrid Flask" : "Metadata/Items/Flasks/FlaskMana1")!;
@@ -85,24 +83,20 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.False(game.State.FlaskEffects.Any);
     }
 
-    [Theory]
-    [InlineData(false, false, 8)]
-    [InlineData(true, false, 0)]
-    [InlineData(true, true, 8)]
-    public async Task Increased_gains_keep_the_Ruthless_active_utility_flask_gate(bool ruthless, bool exception, int expected)
+    [Fact]
+    public async Task Increased_gains_apply_to_an_active_ordinary_utility_flask()
     {
-        using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Slayer", ruthless: ruthless);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Slayer");
+        var catalog = Program.Items;
         var inventory = PlayerInventories.For(game.Character, catalog);
         inventory.Add(10, 0, 0, FlaskModifierBelt(catalog, "BeltIncreasedFlaskChargesGained1", 100));
         var type = catalog.Find("Granite Flask")!;
         var flask = inventory.Add(PlayerInventories.Flask, 0, 0, ItemCatalog.Create(type) with { Charges = 0 });
         game.State.UtilityFlaskEffects.Start(new(flask.Id, 0, type.Name, catalog.UtilityFlaskOf(type)!, 10, null, [], 0, 1000));
-        if (exception) game.State.PlayerStats[Program.Stats.Key("hard_mode_utility_flask_gain_charges_while_active")!.Value] = 1;
 
         await game.GiveModifierFlaskCharges(4);
 
-        Assert.Equal(expected, inventory.Items(PlayerInventories.Flask).Single(i => i.Id == flask.Id).Item.Charges);
+        Assert.Equal(8, inventory.Items(PlayerInventories.Flask).Single(i => i.Id == flask.Id).Item.Charges);
     }
 
     [Fact]

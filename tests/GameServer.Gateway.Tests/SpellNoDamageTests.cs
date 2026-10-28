@@ -264,8 +264,8 @@ public class SpellNoDamageTests
             { Quality = 20, Mods = [new(ModSection.Explicit, local.Hash, [100])] });
         var basis = Program.Skills.WeaponBase(Program.Items.Find(weaponName)!.Row)!.Value;
         var weapon = (SkillCatalog.Unarmed)Method("WeaponFor").Invoke(null, [f.Conn])!;
-        Assert.Equal((int)Math.Floor(basis.Min * 2 * 1.2), weapon.MinDamage);
-        Assert.Equal((int)Math.Floor(basis.Max * 2 * 1.2), weapon.MaxDamage);
+        Assert.Equal((int)Math.Round(basis.Min * 2m * 1.2m, MidpointRounding.AwayFromZero), weapon.MinDamage);
+        Assert.Equal((int)Math.Round(basis.Max * 2m * 1.2m, MidpointRounding.AwayFromZero), weapon.MaxDamage);
         f.Set("no_inherent_rage_loss", 1);
         f.Set("attack_minimum_added_chaos_damage", 100);
         f.Set("attack_maximum_added_chaos_damage", 100);

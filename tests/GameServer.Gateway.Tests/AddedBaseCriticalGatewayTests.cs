@@ -17,17 +17,17 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     static PlayerInventories AddedCritInventory(GatewayCharacter game) => ProgramValue<PlayerInventories>("ItemsOf", game.State);
-    static ItemCatalog AddedCritCatalog(GatewayCharacter game) => Program.ItemsFor(game.State);
+    static ItemCatalog AddedCritCatalog(GatewayCharacter game) => Program.Items;
     static uint AddedCritKey(string name) => Program.Stats.Key(name)!.Value;
-    static GatewayCharacter AddedCritCharacter(bool ruthless, bool ascendant = false) => ascendant
-        ? new(level: 100, classRow: 2, baseClass: 0, choice: "Ascendant", family: AscendancyFamily.Normal, ruthless: ruthless)
-        : LevelPanelCharacter(ruthless, 100);
+    static GatewayCharacter AddedCritCharacter(bool ascendant = false) => ascendant
+        ? new(level: 100, classRow: 2, baseClass: 0, choice: "Ascendant", family: AscendancyFamily.Normal)
+        : LevelPanelCharacter(100);
 
     static ushort AddedCritSkill(GatewayCharacter game)
     {
         var gems = ((IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)typeof(Program)
             .GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic, binder: null,
-                types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [game.State])!).ToArray();
+                types: [typeof(string)], modifiers: null)!.Invoke(null, [game.Character])!).ToArray();
         return Assert.Single(gems).Id;
     }
 
@@ -75,13 +75,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void Added_base_native_typed_item_sources_isolate_actor_families_and_ICS_own200_once(bool ruthless, bool attack)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Added_base_native_typed_item_sources_isolate_actor_families_and_ICS_own200_once(bool attack)
     {
-        using var game = AddedCritCharacter(ruthless); var catalog = AddedCritCatalog(game);
+        using var game = AddedCritCharacter(); var catalog = AddedCritCatalog(game);
         AddedCritEquip(game, attack);
         var inventory = AddedCritInventory(game);
         string matching = attack ? "V2IncreasedAtackCriticalStrikeCorruption" : "V2IncreasedSpellCriticalStrikeCorruption";
@@ -99,19 +97,16 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, false, 1485, 750)]
-    [InlineData(false, true, 1485, 750)]
-    [InlineData(true, false, 1350, 660)]
-    [InlineData(true, true, 1350, 660)]
-    public async Task Added_base_real_Ascendant_Assassin_uses_native_mode_stats_and_link_changes_once(bool ruthless,
-        bool attack, int supported, int unlinked)
+    [InlineData(false, 1485, 750)]
+    [InlineData(true, 1485, 750)]
+    public async Task Added_base_real_Ascendant_Assassin_uses_native_mode_stats_and_link_changes_once(        bool attack, int supported, int unlinked)
     {
-        using var game = AddedCritCharacter(ruthless, ascendant: true);
+        using var game = AddedCritCharacter(ascendant: true);
         // Connected native Ascendant path including the paid Shadow choice and its free Assassin option.
         Assert.Null((await game.Change([45403, 42546, 772, 43122], allocate: true)).Error);
-        var tree = ProgramValue<PassiveTree>("PassivesFor", game.State);
+        var tree = Program.Passives;
         Assert.Equal("Assassin", tree.Find(43122)!.Name);
-        Assert.Equal(ruthless ? 0 : 75, tree.Stats([43122]).GetValueOrDefault(AddedCritKey(AddedBaseCriticalStrike.Generic)));
+        Assert.Equal(75, tree.Stats([43122]).GetValueOrDefault(AddedCritKey(AddedBaseCriticalStrike.Generic)));
         var catalog = AddedCritCatalog(game); var inventory = AddedCritInventory(game);
         AddedCritEquip(game, attack, support: true);
         inventory.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AddedCritMod(catalog,
@@ -127,12 +122,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AddedCritAssertSelected(game, attack, unlinked);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Added_base_native_weapon_local_flat_precedes_local_INC_then_override_actor_and_support(bool ruthless)
+    [Fact]
+    public void Added_base_native_weapon_local_flat_precedes_local_INC_then_override_actor_and_support()
     {
-        using var game = AddedCritCharacter(ruthless); var catalog = AddedCritCatalog(game); var inventory = AddedCritInventory(game);
+        using var game = AddedCritCharacter(); var catalog = AddedCritCatalog(game); var inventory = AddedCritInventory(game);
         var localBase = AddedCritMod(catalog, "WeaponTreeLocalCritChanceCritsDealNoExtraDamage1", 400, 1);
         var localInc = AddedCritMod(catalog, "LocalCriticalStrikeChance3", 20);
         var weapon = AddedCritEquip(game, attack: true, support: true, localBase, localInc);
@@ -153,12 +146,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AddedCritAssertSelected(game, attack: true, 1200);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Added_base_real_set_stat_refreshes_both_pool_families_and_explicit_zero_replaces_its_source(bool ruthless)
+    [Fact]
+    public async Task Added_base_real_set_stat_refreshes_both_pool_families_and_explicit_zero_replaces_its_source()
     {
-        using var game = AddedCritCharacter(ruthless); AddedCritEquip(game, attack: false);
+        using var game = AddedCritCharacter(); AddedCritEquip(game, attack: false);
         Assert.Null((await game.Command("/set_stat additional_base_critical_strike_chance 75")).Error);
         Assert.Equal(575, game.State.Pools.AttackCriticalStrikeChance); Assert.Equal(575, game.State.Pools.SpellCriticalStrikeChance);
         Assert.Null((await game.Command("/set_stat attack_additional_critical_strike_chance_permyriad 50")).Error);
@@ -171,12 +162,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AddedCritAssertSelected(game, attack: false, 500);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Added_base_hitless_and_missing_selected_skills_never_gain_a_critical_chance(bool ruthless)
+    [Fact]
+    public void Added_base_hitless_and_missing_selected_skills_never_gain_a_critical_chance()
     {
-        using var game = AddedCritCharacter(ruthless); AddedCritEquip(game, attack: false);
+        using var game = AddedCritCharacter(); AddedCritEquip(game, attack: false);
         game.State.PlayerStats[AddedCritKey(AddedBaseCriticalStrike.Generic)] = 10000;
         AddedCritSocket(game, attack: false, support: true, gemName: "SkillGemRighteousFire");
         AddedCritAssertSelected(game, attack: false, 0);

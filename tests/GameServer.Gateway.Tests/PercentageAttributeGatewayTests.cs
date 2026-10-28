@@ -6,12 +6,12 @@ public sealed partial class AscendancyGatewayIntegrationTests
 {
     static uint PercentageAttributeKey(string name) => Program.Stats.Key(name)!.Value;
 
-    static GatewayCharacter PercentageCharacter(bool ruthless) => new(level: 100,
+    static GatewayCharacter PercentageCharacter() => new(level: 100,
         family: AscendancyFamily.Normal, choice: "Elementalist", classRow: SkillCatalog.WitchRow,
-        baseClass: 3, ruthless: ruthless);
+        baseClass: 3);
 
     static (ItemCatalog Catalog, PlayerInventories Inventory) PercentageEquipment(GatewayCharacter game) =>
-        (ProgramValue<ItemCatalog>("ItemsFor", game.State), ProgramValue<PlayerInventories>("ItemsOf", game.State));
+        (Program.Items, ProgramValue<PlayerInventories>("ItemsOf", game.State));
 
     // These are controlled source-isolation values on actual native modifier rows. This helper does not claim
     // that arbitrary combinations or supplied values form a legal rolled rare/unique item.
@@ -66,17 +66,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 49772, "strength_+%", 58, 14, 32)]
-    [InlineData(true, 49772, "strength_+%", 58, 14, 32)]
-    [InlineData(false, 63921, "dexterity_+%", 14, 58, 32)]
-    [InlineData(true, 63921, "dexterity_+%", 14, 58, 32)]
-    [InlineData(false, 55114, "intelligence_+%", 14, 14, 78)]
-    [InlineData(true, 55114, "intelligence_+%", 14, 14, 78)]
+    [InlineData(49772, "strength_+%", 58, 14, 32)]
+    [InlineData(63921, "dexterity_+%", 14, 58, 32)]
+    [InlineData(55114, "intelligence_+%", 14, 14, 78)]
     public void Real_Utmost_flat_and_percentage_sources_scale_the_class_before_publication_and_derived_bonuses(
-        bool ruthless, ushort node, string percentageStat, int strength, int dexterity, int intelligence)
+        ushort node, string percentageStat, int strength, int dexterity, int intelligence)
     {
-        using var game = PercentageCharacter(ruthless);
-        var tree = ProgramValue<PassiveTree>("PassivesFor", game.State);
+        using var game = PercentageCharacter();
+        var tree = Program.Passives;
         var source = tree.Stats([node]);
         Assert.Equal(40, source[PercentageAttributeKey("base_" + percentageStat[..^3])]);
         Assert.Equal(8, source[PercentageAttributeKey(percentageStat)]);
@@ -104,12 +101,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AssertPercentageAttributes(game.State, PercentageRefresh(game), 14, 14, 32);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Typed_and_all_attribute_item_increases_share_one_bucket_and_removal_restores_every_consumer(bool ruthless)
+    [Fact]
+    public void Typed_and_all_attribute_item_increases_share_one_bucket_and_removal_restores_every_consumer()
     {
-        using var game = PercentageCharacter(ruthless);
+        using var game = PercentageCharacter();
         var (catalog, inventory) = PercentageEquipment(game);
         inventory.Add(6, 0, 0, PercentageRing(catalog, ("additional_all_attributes", 36), ("base_maximum_energy_shield", 100)));
         var percentages = PercentageRing(catalog, ("strength_+%", 20), ("dexterity_+%", 20),
@@ -139,12 +134,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Increased();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Three_native_minus_one_hundred_percent_sources_publish_legitimate_zero_attributes_without_class_fallback(bool ruthless)
+    [Fact]
+    public void Three_native_minus_one_hundred_percent_sources_publish_legitimate_zero_attributes_without_class_fallback()
     {
-        using var game = PercentageCharacter(ruthless);
+        using var game = PercentageCharacter();
         var (catalog, inventory) = PercentageEquipment(game);
         var ring = ItemCatalog.Create(catalog.Find("Iron Ring")!) with
         {
@@ -167,12 +160,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AssertPercentageAttributes(game.State, PercentageRefresh(game), 14, 14, 32);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_percentage_source_activates_real_equipment_and_removal_then_recovery_changes_its_actual_mods(bool ruthless)
+    [Fact]
+    public void A_percentage_source_activates_real_equipment_and_removal_then_recovery_changes_its_actual_mods()
     {
-        using var game = PercentageCharacter(ruthless);
+        using var game = PercentageCharacter();
         var (catalog, inventory) = PercentageEquipment(game);
         inventory.Add(6, 0, 0, PercentageRing(catalog, ("additional_strength", 6)));
         var type = catalog.Find("Chestplate")!;
@@ -198,16 +189,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(1350u, game.State.Pools.Life);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_percentage_source_qualifies_a_real_socketed_gem_without_disabling_its_host_when_the_source_is_removed(bool ruthless)
+    [Fact]
+    public void A_percentage_source_qualifies_a_real_socketed_gem_without_disabling_its_host_when_the_source_is_removed()
     {
-        using var game = PercentageCharacter(ruthless);
+        using var game = PercentageCharacter();
         var (catalog, inventory) = PercentageEquipment(game);
         var gem = PercentageGem(catalog, "SkillGemFireball", 9);
         int effect = catalog.Gem(catalog.ByHash(gem.TypeHash)!)!.Variant(0).Effect;
-        var skills = ProgramValue<SkillCatalog>("SkillsFor", game.State);
+        var skills = Program.Skills;
         Assert.Equal(67, SkillCatalog.GemAttributeRequirement(100, skills.PlayerLevelReq(effect, 9), support: false));
         var body = inventory.Add(PlayerInventories.BodyArmour, 0, 0, ItemCatalog.Create(catalog.Find("Plate Vest")!) with
             { Sockets = [new(SocketColour.White, gem)], Links = [1] });
@@ -231,12 +220,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Null(ProgramValue<string?>("GemDisabled", game.State, effect));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void A_percentage_source_on_an_inactive_weapon_only_applies_after_the_existing_weapon_set_swap(bool ruthless)
+    [Fact]
+    public void A_percentage_source_on_an_inactive_weapon_only_applies_after_the_existing_weapon_set_swap()
     {
-        using var game = PercentageCharacter(ruthless);
+        using var game = PercentageCharacter();
         var (catalog, inventory) = PercentageEquipment(game);
         inventory.Add(PlayerInventories.Weapon1, 0, 0, ItemCatalog.Create(catalog.Find("Rusted Sword")!));
         inventory.Add(PlayerInventories.Weapon2, 0, 0, ItemCatalog.Create(catalog.Find("Rusted Sword")!) with
@@ -253,12 +240,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(1245u, game.State.Pools.Life);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task A_final_development_strength_override_changes_display_and_requirements_without_becoming_a_percentage_source(bool ruthless)
+    [Fact]
+    public async Task A_final_development_strength_override_changes_display_and_requirements_without_becoming_a_percentage_source()
     {
-        using var game = PercentageCharacter(ruthless);
+        using var game = PercentageCharacter();
         var (catalog, inventory) = PercentageEquipment(game);
         inventory.Add(6, 0, 0, PercentageRing(catalog, ("additional_all_attributes", 36)));
         inventory.Add(7, 0, 0, PercentageRing(catalog, ("strength_+%", 20), ("dexterity_+%", 20),

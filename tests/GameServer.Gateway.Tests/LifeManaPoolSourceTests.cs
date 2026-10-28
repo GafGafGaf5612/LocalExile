@@ -99,29 +99,29 @@ public sealed class LifeManaPoolSourceTests
 
     public static IEnumerable<object[]> NativeItemSources()
     {
-        foreach (bool ruthless in new[] { false, true })
         {
-            yield return [ruthless, 14152, "LifePerLevelUnique__1", 369u, 2, 185u, 110u];
-            yield return [ruthless, 14153, "ManaPerLevelUnique__1", 370u, 2, 165u, 130u];
-            yield return [ruthless, 39378, "MutatedUniqueRing26ManaPerLevel", 370u, 2, 165u, 130u];
-            yield return [ruthless, 13772, "MaximumLifePer10DexterityUnique__1", 5473u, 2, 167u, 110u];
-            yield return [ruthless, 39622, "DivergentMaximumLifePer10DexterityUnique__1", 5473u, 2, 167u, 110u];
-            yield return [ruthless, 21199, "LifePer10IntelligenceUnique__1", 9749u, 2, 171u, 110u];
-            yield return [ruthless, 13591, "LifePerDexterityUnique__1", 4995u, 1, 168u, 110u];
-            yield return [ruthless, 16634, "IncreasedLifePerIntelligenceUnique__1", 7963u, 1, 181u, 110u];
+            yield return [14152, "LifePerLevelUnique__1", 369u, 2, 185u, 110u];
+            yield return [14153, "ManaPerLevelUnique__1", 370u, 2, 165u, 130u];
+            yield return [39378, "MutatedUniqueRing26ManaPerLevel", 370u, 2, 165u, 130u];
+            yield return [13772, "MaximumLifePer10DexterityUnique__1", 5473u, 2, 167u, 110u];
+            yield return [39622, "DivergentMaximumLifePer10DexterityUnique__1", 5473u, 2, 167u, 110u];
+            yield return [21199, "LifePer10IntelligenceUnique__1", 9749u, 2, 171u, 110u];
+            yield return [13591, "LifePerDexterityUnique__1", 4995u, 1, 168u, 110u];
+            yield return [16634, "IncreasedLifePerIntelligenceUnique__1", 7963u, 1, 181u, 110u];
         }
     }
 
     static CharacterStats.Bonus SourceBonus(Dictionary<uint, int> raw) =>
         (CharacterStats.Bonus)typeof(Program).GetMethod("PassiveBonus", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, [raw, default(WeaponProfile)])!;
+            .Invoke(null, [raw, default(WeaponProfile), AttributeModifiers.From(name =>
+                Program.Stats.Key(name) is uint key ? raw.GetValueOrDefault(key) : 0)])!;
 
     [Theory]
     [MemberData(nameof(NativeItemSources))]
-    public void Exact_native_item_rows_feed_real_pool_bonus_consumers_in_both_modes(bool ruthless, int row,
+    public void Exact_native_item_rows_feed_real_pool_bonus_consumers(int row,
         string id, uint key, int coefficient, uint life, uint mana)
     {
-        var catalog = new ItemCatalog("data", ruthless: ruthless);
+        var catalog = new ItemCatalog("data");
         var stats = new StatCatalog("data");
         var source = catalog.Mods.Row(row)!;
         Assert.Equal(id, source.Id);
@@ -142,16 +142,12 @@ public sealed class LifeManaPoolSourceTests
     }
 
     [Theory]
-    [InlineData(false, 56940, "The Apostate", -12, 38u)]
-    [InlineData(true, 56940, "The Apostate", -12, 38u)]
-    [InlineData(false, 20931, "Crimson Power", -6, 98u)]
-    [InlineData(true, 20931, "Crimson Power", -6, 98u)]
-    [InlineData(false, 24063, "Sanguine Power", -3, 128u)]
-    [InlineData(true, 24063, "Sanguine Power", -3, 128u)]
-    public void Actual_negative_passive_vectors_remain_signed_without_claiming_tree_admission(bool ruthless,
-        ushort graph, string name, int coefficient, uint expectedLife)
+    [InlineData(56940, "The Apostate", -12, 38u)]
+    [InlineData(20931, "Crimson Power", -6, 98u)]
+    [InlineData(24063, "Sanguine Power", -3, 128u)]
+    public void Actual_negative_passive_vectors_remain_signed_without_claiming_tree_admission(        ushort graph, string name, int coefficient, uint expectedLife)
     {
-        var tree = new PassiveTree("data", ruthless: ruthless);
+        var tree = new PassiveTree("data");
         Assert.Equal(name, tree.Find(graph)!.Name);
         var raw = tree.Stats([graph]);
         Assert.Equal(coefficient, raw[369]);

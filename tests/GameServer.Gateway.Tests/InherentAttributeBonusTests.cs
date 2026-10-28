@@ -32,7 +32,7 @@ public sealed class InherentAttributeBonusTests
         Assert.Equal((life, mana, accuracy, melee, energyShield, evasion),
             (pools.Life, pools.Mana, pools.Accuracy, pools.MeleePhysicalDamagePct, pools.EnergyShield, pools.Evasion));
         Assert.Equal((100, 100, 100), (pools.Strength, pools.Dexterity, pools.Intelligence));
-        Assert.True(pools.AttributesCalculated);
+        Assert.True(pools.AttributesResolved);
     }
 
     [Theory]
@@ -160,7 +160,8 @@ public sealed class InherentAttributeBonusTests
 
     static CharacterStats.Bonus SourceBonus(Dictionary<uint, int> raw) =>
         (CharacterStats.Bonus)typeof(Program).GetMethod("PassiveBonus", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, [raw, default(WeaponProfile)])!;
+            .Invoke(null, [raw, default(WeaponProfile), AttributeModifiers.From(name =>
+                Program.Stats.Key(name) is uint key ? raw.GetValueOrDefault(key) : 0)])!;
 
     [Fact]
     public void Unsourced_Dexterity_evasion_key_is_not_an_alias_for_broad_Dexterity_or_Iron_Reflexes()
@@ -177,41 +178,39 @@ public sealed class InherentAttributeBonusTests
     }
 
     static readonly Lazy<ItemCatalog> Ordinary = new(() => new("data"));
-    static readonly Lazy<ItemCatalog> Ruthless = new(() => new("data", ruthless: true));
     static readonly Lazy<JsonDocument> NativeMods = new(() =>
         JsonDocument.Parse(File.ReadAllBytes(Path.Combine("data", "tables", "Mods.json"))));
-    static ItemCatalog Catalog(bool ruthless) => (ruthless ? Ruthless : Ordinary).Value;
+    static ItemCatalog Catalog() => Ordinary.Value;
 
     public static IEnumerable<object[]> NativeSources()
     {
-        foreach (bool ruthless in new[] { false, true })
         {
-            yield return [ruthless, 16635, "NoMaximumLifePerStrengthUnique__1", 57170, InherentAttributeBonuses.NoLifeFromStrength, 7964u, "", 0u, 0, 3];
-            yield return [ruthless, 16636, "NoMaximumLifePerStrengthUnique__2", 7062, InherentAttributeBonuses.NoLifeFromStrength, 7964u, "", 0u, 0, 3];
-            yield return [ruthless, 16637, "NoMaximumManaPerIntelligenceUnique__1", 24103, InherentAttributeBonuses.NoManaFromIntelligence, 7965u, "", 0u, 0, 3];
-            yield return [ruthless, 35358, "WeaponTreeStrengthAndNoInherentBonusFromStrength1", 18252, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 60, 31];
-            yield return [ruthless, 35359, "WeaponTreeStrengthAndNoInherentBonusFromStrength2", 4210, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 80, 31];
-            yield return [ruthless, 35360, "WeaponTreeStrengthAndNoInherentBonusFromStrength2h1", 8883, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 90, 31];
-            yield return [ruthless, 35361, "WeaponTreeStrengthAndNoInherentBonusFromStrength2h2", 2451, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 120, 31];
-            yield return [ruthless, 39310, "MutatedUniqueBodyStr7GainNoInherentBonusFromStrength", 44021, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "", 0u, 0, 3];
-            yield return [ruthless, 35350, "WeaponTreeDexterityAndNoInherentBonusFromDexterity1", 16930, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 60, 31];
-            yield return [ruthless, 35351, "WeaponTreeDexterityAndNoInherentBonusFromDexterity2", 8354, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 80, 31];
-            yield return [ruthless, 35352, "WeaponTreeDexterityAndNoInherentBonusFromDexterity2h1", 38614, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 90, 31];
-            yield return [ruthless, 35353, "WeaponTreeDexterityAndNoInherentBonusFromDexterity2h2", 4318, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 120, 31];
-            yield return [ruthless, 35354, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence1", 51377, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 60, 31];
-            yield return [ruthless, 35355, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence2", 10817, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 80, 31];
-            yield return [ruthless, 35356, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence2h1", 54004, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 90, 31];
-            yield return [ruthless, 35357, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence2h2", 48986, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 120, 31];
+            yield return [16635, "NoMaximumLifePerStrengthUnique__1", 57170, InherentAttributeBonuses.NoLifeFromStrength, 7964u, "", 0u, 0, 3];
+            yield return [16636, "NoMaximumLifePerStrengthUnique__2", 7062, InherentAttributeBonuses.NoLifeFromStrength, 7964u, "", 0u, 0, 3];
+            yield return [16637, "NoMaximumManaPerIntelligenceUnique__1", 24103, InherentAttributeBonuses.NoManaFromIntelligence, 7965u, "", 0u, 0, 3];
+            yield return [35358, "WeaponTreeStrengthAndNoInherentBonusFromStrength1", 18252, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 60, 31];
+            yield return [35359, "WeaponTreeStrengthAndNoInherentBonusFromStrength2", 4210, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 80, 31];
+            yield return [35360, "WeaponTreeStrengthAndNoInherentBonusFromStrength2h1", 8883, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 90, 31];
+            yield return [35361, "WeaponTreeStrengthAndNoInherentBonusFromStrength2h2", 2451, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "additional_strength", 577u, 120, 31];
+            yield return [39310, "MutatedUniqueBodyStr7GainNoInherentBonusFromStrength", 44021, InherentAttributeBonuses.NoStrengthBonuses, 15532u, "", 0u, 0, 3];
+            yield return [35350, "WeaponTreeDexterityAndNoInherentBonusFromDexterity1", 16930, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 60, 31];
+            yield return [35351, "WeaponTreeDexterityAndNoInherentBonusFromDexterity2", 8354, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 80, 31];
+            yield return [35352, "WeaponTreeDexterityAndNoInherentBonusFromDexterity2h1", 38614, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 90, 31];
+            yield return [35353, "WeaponTreeDexterityAndNoInherentBonusFromDexterity2h2", 4318, InherentAttributeBonuses.NoDexterityBonuses, 18387u, "additional_dexterity", 583u, 120, 31];
+            yield return [35354, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence1", 51377, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 60, 31];
+            yield return [35355, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence2", 10817, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 80, 31];
+            yield return [35356, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence2h1", 54004, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 90, 31];
+            yield return [35357, "WeaponTreeIntelligenceAndNoInherentBonusFromIntelligence2h2", 48986, InherentAttributeBonuses.NoIntelligenceBonuses, 18388u, "additional_intelligence", 580u, 120, 31];
         }
     }
 
     [Theory]
     [MemberData(nameof(NativeSources))]
-    public void Sixteen_complete_native_vectors_survive_both_mode_catalogs_and_saved_roundtrips(
-        bool ruthless, int row, string id, int hash, string flag, uint flagKey,
+    public void Sixteen_complete_native_vectors_survive_the_catalog_and_saved_roundtrips(
+        int row, string id, int hash, string flag, uint flagKey,
         string attribute, uint attributeKey, int addedAttribute, int generation)
     {
-        var catalog = Catalog(ruthless); var stats = new StatCatalog("data");
+        var catalog = Catalog(); var stats = new StatCatalog("data");
         var source = catalog.Mods.Row(row)!; var native = NativeMods.Value.RootElement[row];
         Assert.Equal(row, source.Row);
         Assert.Equal((id, (ushort)hash, 1, generation, 1),
@@ -266,12 +265,10 @@ public sealed class InherentAttributeBonusTests
         Assert.Equal(flag == InherentAttributeBonuses.NoIntelligenceBonuses ? 100u : 110u, pools.EnergyShield);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Duplicate_real_Life_flags_sum_but_suppress_the_inherent_grant_only_once(bool ruthless)
+    [Fact]
+    public void Duplicate_real_Life_flags_sum_but_suppress_the_inherent_grant_only_once()
     {
-        var catalog = Catalog(ruthless); var stats = new StatCatalog("data");
+        var catalog = Catalog(); var stats = new StatCatalog("data");
         var first = catalog.Mods.Row(16635)!; var second = catalog.Mods.Row(16636)!;
         var item = ItemCatalog.Create(catalog.Find("Iron Ring")!) with
             { Mods = [new(ModSection.Explicit, first.Hash, [1]), new(ModSection.Explicit, second.Hash, [1])] };

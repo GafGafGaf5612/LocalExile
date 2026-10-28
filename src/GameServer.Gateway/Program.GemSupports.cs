@@ -127,7 +127,7 @@ partial class Program
     static int SupportedCriticalChance(ClientState conn, ushort skillId)
     {
         var gem = SupportedSkill(conn, skillId);
-        var hitPlan = SkillHitPlan.ForSkill(SkillsFor(conn), gem.Effect, gem.Level, gem.Quality);
+        var hitPlan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!hitPlan.CanHit) return 0;
         var player = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
         int Own(string name) => Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
@@ -135,7 +135,7 @@ partial class Program
         {
             int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
             var weapon = WeaponProfileFor(conn, activeSet: true);
-            int basis = weapon.Unarmed && (!SkillsFor(conn).IsMelee(gem.Effect) || SkillsFor(conn).IsSpell(gem.Effect)) ? 0
+            int basis = weapon.Unarmed && (!Skills.IsMelee(gem.Effect) || Skills.IsSpell(gem.Effect)) ? 0
                 : AttackBaseCriticalStrike.OfMainHand(!weapon.Unarmed, weapon.Critical, Player);
             long increased = conn.Pools.CriticalStrikeChancePct
                 + AttackBaseCriticalStrike.IncreasedSum(weapon, name => Own(name));

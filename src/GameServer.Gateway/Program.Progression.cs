@@ -257,8 +257,9 @@ partial class Program
         };
         // Running utility flasks and Mageblood's permanent ones combined before one strongest-per-effect pass: the same
         // effect never counts twice.
-        int MagebloodGet(string name) => Stats.Key(name) is uint k ? sources.GetValueOrDefault(k) : 0;
-        bonus = UtilityFlasks.Apply(bonus, UtilityStats(conn, MagebloodGet));
+        int MagebloodGet(string name) => Stats.Key(name) is uint k
+            ? devStats.TryGetValue(k, out int value) ? value : sources.GetValueOrDefault(k) : 0;
+        bonus = UtilityFlasks.Apply(bonus, UtilityStats(conn, MagebloodGet, level));
         if (conn.God)
             bonus = bonus with { Strength = bonus.Strength + 1000, Dexterity = bonus.Dexterity + 1000, Intelligence = bonus.Intelligence + 1000,
                 Life = bonus.Life + 10_000, AttackSpeedPct = bonus.AttackSpeedPct + 1000 };

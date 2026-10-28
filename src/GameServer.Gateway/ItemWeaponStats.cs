@@ -21,9 +21,14 @@ static class ItemWeaponStats
                         string name = row.Stats[i].Id;
                         local[name] = local.GetValueOrDefault(name) + mod.Values[i];
                     }
-        long Get(string name) => local.GetValueOrDefault(name);
+        return Calculate(basis, name => local.GetValueOrDefault(name), item.Quality);
+    }
+
+    public static Result Calculate((int AttackMs, int Min, int Max, int Range) basis,
+        Func<string, long> Get, int itemQuality)
+    {
         long quality = Get("local_quality_does_not_increase_physical_damage") != 0 ? 0
-            : Math.Max(0L, item.Quality + Get("local_item_quality_+"));
+            : Math.Max(0L, itemQuality + Get("local_item_quality_+"));
 
         int Bound(long value, long increased, long quality = 0)
         {
@@ -45,7 +50,8 @@ static class ItemWeaponStats
             long minimum = (type == DamageType.Physical ? basis.Min : 0L) + Get($"local_minimum_added_{slug}_damage");
             long maximum = (type == DamageType.Physical ? basis.Max : 0L) + Get($"local_maximum_added_{slug}_damage");
             long increased = type == DamageType.Physical ? Get("local_physical_damage_+%")
-                : DamageTypes.IsElemental(type) ? Get("local_elemental_damage_+%") : 0;
+                : DamageTypes.IsElemental(type) ? Get("local_elemental_damage_+%")
+                    + Get("local_attacks_with_this_weapon_elemental_damage_+%") : 0;
             int lo = Bound(minimum, increased, type == DamageType.Physical ? quality : 0);
             int hi = Bound(maximum, increased, type == DamageType.Physical ? quality : 0);
             hit = hit.Add(type, new DamageRange(lo, Math.Max(lo, hi)));

@@ -64,8 +64,8 @@ public class AttributeModifiersTests
         Assert.Equal(100, pools.Accuracy);
         Assert.Equal(42, pools.Evasion); // (15 + 23) * 1.10 = 41.8, rounded once by the native defence rule.
         Assert.Equal(10, pools.EvasionPct);
-        Assert.Equal(14, pools.EnergyShieldPct);
-        Assert.Equal(114u, pools.EnergyShield);
+        Assert.Equal(11, pools.EnergyShieldPct); // 33 Intelligence grants three complete 1% ES groups.
+        Assert.Equal(111u, pools.EnergyShield);
         Assert.Equal(12, pools.MeleePhysicalDamagePct);
     }
 
@@ -139,8 +139,8 @@ public class AttributeModifiersTests
             new(EnergyShield: 14, EnergyShieldPct: int.MaxValue, MeleePhysicalDamagePct: int.MaxValue,
                 Attributes: new(Strength: int.MaxValue, Intelligence: int.MaxValue)));
         Assert.Equal(int.MaxValue, pools.EnergyShieldPct);
-        // Keep the full 2576980376% increase, then apply the shared native half-up defence rounding once.
-        Assert.Equal(360777267u, pools.EnergyShield);
+        // 2147483647 + floor(2147483647 / 10) = 2362232011%, retained before final rounding.
+        Assert.Equal(330712496u, pools.EnergyShield);
         Assert.Equal(int.MaxValue, pools.MeleePhysicalDamagePct);
     }
 

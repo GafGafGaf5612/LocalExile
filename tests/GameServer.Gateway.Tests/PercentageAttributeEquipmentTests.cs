@@ -5,8 +5,7 @@ namespace GameServer.Gateway.Tests;
 public class PercentageAttributeEquipmentTests
 {
     static readonly Lazy<ItemCatalog> Ordinary = new(() => new(BenchCraftingTests.Data()));
-    static readonly Lazy<ItemCatalog> Ruthless = new(() => new(BenchCraftingTests.Data(), ruthless: true));
-    static ModCatalog Mods(bool ruthless) => (ruthless ? Ruthless : Ordinary).Value.Mods;
+    static ModCatalog Mods() => Ordinary.Value.Mods;
 
     // Controlled source combinations test qualification, not legal acquisition of a named unique. Every percentage
     // below uses its actual native modifier row and value; flat helpers isolate the indicated native stat.
@@ -40,12 +39,10 @@ public class PercentageAttributeEquipmentTests
             (Get("strength_+%"), Get("dexterity_+%"), Get("intelligence_+%")), Get("all_attributes_+%"));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Whole_base_and_all_active_flats_share_typed_and_all_increases(bool ruthless)
+    [Fact]
+    public void Whole_base_and_all_active_flats_share_typed_and_all_increases()
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         ItemModStats.Worn[] worn =
         [
             Wear(1, Flat(mods, "additional_strength", 50)),
@@ -61,12 +58,10 @@ public class PercentageAttributeEquipmentTests
         Assert.Equal((201, 0, 0), Total(mods, result.Active, (100, 0, 0)));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Inactive_percentage_source_cannot_reactivate_using_its_own_increase(bool ruthless)
+    [Fact]
+    public void Inactive_percentage_source_cannot_reactivate_using_its_own_increase()
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         var percentage = Wear(1, Source(mods, ("PercentageStrengthUniqueBootsStrInt2", 18)), str: 110);
 
         var inactive = ItemModStats.ResolveEquipment([percentage], (100, 0, 0), 100, mods, new HashSet<uint> { 1 });
@@ -84,12 +79,10 @@ public class PercentageAttributeEquipmentTests
         Assert.Equal((130, 0, 0), Total(mods, restored.Active, (100, 0, 0)));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Removal_cascades_after_percentage_source_fails_and_external_support_recovers_it(bool ruthless)
+    [Fact]
+    public void Removal_cascades_after_percentage_source_fails_and_external_support_recovers_it()
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         var percentage = Wear(1, Source(mods, ("PercentageStrengthUniqueBootsStrInt2", 18)), str: 120);
         var dependent = Wear(2, str: 140);
         var support = Wear(3, Flat(mods, "additional_strength", 20));
@@ -105,12 +98,10 @@ public class PercentageAttributeEquipmentTests
         Assert.Equal((142, 0, 0), Total(mods, restored.Active, (100, 0, 0)));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Real_negative_percentage_disables_other_gear_and_removal_restores_it(bool ruthless)
+    [Fact]
+    public void Real_negative_percentage_disables_other_gear_and_removal_restores_it()
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         var reduction = Wear(1, Source(mods, ("PercentageStrengthUnique__4_", -10)));
         var dependent = Wear(2, str: 95);
         var result = ItemModStats.ResolveEquipment([reduction, dependent], (100, 0, 0), 100, mods);
@@ -123,12 +114,10 @@ public class PercentageAttributeEquipmentTests
         Assert.Empty(restored.Inactive);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Real_minus_one_hundred_typed_sources_leave_zero_attributes_and_no_dependent_gear(bool ruthless)
+    [Fact]
+    public void Real_minus_one_hundred_typed_sources_leave_zero_attributes_and_no_dependent_gear()
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         var zero = Source(mods, ("PercentageStrengthUnique__1", -100),
             ("PercentageDexterityUnique__1", -100), ("PercentageIntelligenceUnique__1", -100));
         var result = ItemModStats.ResolveEquipment(
@@ -139,12 +128,10 @@ public class PercentageAttributeEquipmentTests
         Assert.Equal((0, 0, 0), Total(mods, result.Active, (100, 100, 100)));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Whole_active_set_callback_recalculates_after_each_deactivation(bool ruthless)
+    [Fact]
+    public void Whole_active_set_callback_recalculates_after_each_deactivation()
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         var reduction = Wear(1, Source(mods, ("PercentageStrengthUnique__4_", -10)), intel: 110);
         var dependent = Wear(2, str: 95);
         var observations = new List<(int Count, int Str)>();
@@ -163,13 +150,11 @@ public class PercentageAttributeEquipmentTests
     }
 
     [Theory]
-    [InlineData(false, "local_no_attribute_requirements")]
-    [InlineData(true, "local_no_attribute_requirements")]
-    [InlineData(false, "local_unique_tabula_rasa_no_requirement_or_energy_shield")]
-    [InlineData(true, "local_unique_tabula_rasa_no_requirement_or_energy_shield")]
-    public void Both_equipment_overloads_share_no_attribute_requirement_and_level_rules(bool ruthless, string flag)
+    [InlineData("local_no_attribute_requirements")]
+    [InlineData("local_unique_tabula_rasa_no_requirement_or_energy_shield")]
+    public void Both_equipment_overloads_share_no_attribute_requirement_and_level_rules(string flag)
     {
-        var mods = Mods(ruthless);
+        var mods = Mods();
         var noRequirements = mods.All.First(m => m.Stats.Any(s => s.Id == flag));
         var item = new Item(1, ["Mods"], 0)
         {
@@ -189,7 +174,7 @@ public class PercentageAttributeEquipmentTests
     [Fact]
     public void Signed_mutual_dependency_remains_an_unresolved_repeated_evaluation_boundary()
     {
-        var mods = Mods(false);
+        var mods = Mods();
         ItemModStats.Worn[] worn =
         [
             Wear(1, Flat(mods, "additional_intelligence", 10), intel: 110),

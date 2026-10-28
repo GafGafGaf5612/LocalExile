@@ -6,7 +6,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 {
     static InventoryItem EquipDurationSources(GatewayCharacter game)
     {
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         // Exact native duration pair only. Nevalius' independent effect modifiers are a separate operator gap.
         return inventory.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",
@@ -15,17 +15,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 10, 13.8)]
-    [InlineData(false, 20, 12.6)]
-    [InlineData(false, 100, 3.0)]
-    [InlineData(true, 10, 9.2)]
-    [InlineData(true, 20, 8.4)]
-    [InlineData(true, 100, 2.0)]
-    public async Task Actual_utility_use_passes_current_player_level_with_real_duration_modifiers(bool ruthless, int level, double expected)
+    [InlineData(10, 13.8)]
+    [InlineData(20, 12.6)]
+    [InlineData(100, 3.0)]
+    public async Task Actual_utility_use_passes_current_player_level_with_real_duration_modifiers(int level, double expected)
     {
-        using var game = LevelPanelCharacter(ruthless, level);
+        using var game = LevelPanelCharacter(level);
         EquipDurationSources(game);
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find("Granite Flask")!;
         var utility = catalog.UtilityFlaskOf(type)!;
@@ -49,18 +46,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 10, 161, 6.9)]
-    [InlineData(false, 20, 147, 6.3)]
-    [InlineData(false, 100, 35, 1.5)]
-    [InlineData(true, 10, 161, 6.9)]
-    [InlineData(true, 20, 147, 6.3)]
-    [InlineData(true, 100, 35, 1.5)]
-    public async Task Actual_recovery_use_passes_current_player_level_and_schedules_the_fixed_amount(bool ruthless,
-        int level, double expectedLife, double expectedSeconds)
+    [InlineData(10, 161, 6.9)]
+    [InlineData(20, 147, 6.3)]
+    [InlineData(100, 35, 1.5)]
+    public async Task Actual_recovery_use_passes_current_player_level_and_schedules_the_fixed_amount(        int level, double expectedLife, double expectedSeconds)
     {
-        using var game = LevelPanelCharacter(ruthless, level);
+        using var game = LevelPanelCharacter(level);
         EquipDurationSources(game);
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find("Small Life Flask")!;
         var native = catalog.FlaskOf(type)!;
@@ -79,15 +72,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
         finally { game.State.FlaskEffects.End(_ => true); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Utility_local_duration_multiplies_current_global_duration_after_level_change_and_source_removal(bool ruthless)
+    [Fact]
+    public async Task Utility_local_duration_multiplies_current_global_duration_after_level_change_and_source_removal()
     {
-        using var game = LevelPanelCharacter(ruthless, 10);
+        using var game = LevelPanelCharacter(10);
         var source = EquipDurationSources(game);
         Assert.Null((await game.SetLevel(20)).Error);
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var type = catalog.Find("Granite Flask")!;
         var utility = catalog.UtilityFlaskOf(type)!;
@@ -103,7 +94,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         {
             Assert.Null((await game.UseModifierFlask()).Error);
             var first = game.State.UtilityFlaskEffects.Of(flask.Id)!;
-            Assert.Equal(ruthless ? 10.92 : 16.38, first.Ends - first.Started, 8);
+            Assert.Equal(16.38, first.Ends - first.Started, 8);
             game.State.UtilityFlaskEffects.End(0, true, out _);
             Assert.NotNull(inventory.Remove(6, source.Id));
             Assert.NotNull(inventory.Change(PlayerInventories.Flask, flask.Id, item => item with { Charges = utility.MaxCharges }));
@@ -111,7 +102,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
                 ushort.MaxValue, null, [], 0, double.PositiveInfinity)));
             Assert.Null((await game.UseModifierFlask()).Error);
             var plainGlobal = game.State.UtilityFlaskEffects.Of(flask.Id)!;
-            Assert.Equal(ruthless ? 5.2 : 7.8, plainGlobal.Ends - plainGlobal.Started, 8);
+            Assert.Equal(7.8, plainGlobal.Ends - plainGlobal.Started, 8);
         }
         finally { game.State.UtilityFlaskEffects.End(0, true, out _); }
     }

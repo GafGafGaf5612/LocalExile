@@ -45,7 +45,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     // does not claim legal unique acquisition. The independent100 ES is nonlocal, not fabricated local item ES.
     static InventoryItem AttributeDefenceFoundation(GatewayCharacter game)
     {
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         return AttributeDefenceItems(game).Add(5, 0, 0, LevelPanelCarrier(catalog, "Coral Amulet",
             AttributeDefenceMod(catalog, AttributeDefenceQualifier), AttributeDefenceMod(catalog, AttributeDefenceFlatEs))
             with { ItemLevel = 100 });
@@ -56,7 +56,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     static void AttributeDefenceQualified(GatewayCharacter game, params InventoryItem[] carriers)
     {
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         foreach (var carrier in carriers)
         {
             Assert.DoesNotContain(carrier.Id, Program.InactiveItems[game.Character]);
@@ -93,13 +93,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Attribute_defence_real_native_pairs_add_remove_and_publish_once_with_unchanged_payloads(bool ruthless)
+    [Fact]
+    public void Attribute_defence_real_native_pairs_add_remove_and_publish_once_with_unchanged_payloads()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State); var items = AttributeDefenceItems(game);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items; var items = AttributeDefenceItems(game);
         var foundation = AttributeDefenceFoundation(game);
         // Int132 supplies13% ES; each native Strength coefficient adds11% on the independent100 ES.
         AttributeDefenceAssert(game, 113, 18, 0, 0, 13, 22);
@@ -130,13 +128,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.DoesNotContain(AttributeDefenceKey(AttributeDefenceEv), game.State.PlayerStats.Keys);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Attribute_defence_native_sources_follow_active_weapon_set_and_actual_host_qualification(bool ruthless)
+    [Fact]
+    public void Attribute_defence_native_sources_follow_active_weapon_set_and_actual_host_qualification()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State); var items = AttributeDefenceItems(game);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items; var items = AttributeDefenceItems(game);
         items.Add(7, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefenceMod(catalog, AttributeDefenceFlatEs)));
         var weapon = items.Add(PlayerInventories.Weapon2, 0, 0, LevelPanelCarrier(catalog, "Rusted Sword", AttributeDefencePair(catalog)));
         var body = items.Add(PlayerInventories.BodyArmour, 0, 0, LevelPanelCarrier(catalog, "Chestplate", AttributeDefencePair(catalog)));
@@ -159,13 +155,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AttributeDefenceQualified(game, body);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Attribute_defence_divergent_native_pair_requires_its_real_level_and_returns_after_level_change(bool ruthless)
+    [Fact]
+    public async Task Attribute_defence_divergent_native_pair_requires_its_real_level_and_returns_after_level_change()
     {
-        using var game = LevelPanelCharacter(ruthless, 10);
-        var catalog = Program.ItemsFor(game.State); var items = AttributeDefenceItems(game);
+        using var game = LevelPanelCharacter(10);
+        var catalog = Program.Items; var items = AttributeDefenceItems(game);
         AttributeDefenceFoundation(game);
         var carrier = items.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog, divergent: true)));
         Assert.Equal(52, ItemModStats.LevelRequirement(carrier.Item, catalog.ByHash(carrier.Item.TypeHash)!.DropLevel, catalog.Mods));
@@ -179,13 +173,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Contains(carrier.Id, Program.InactiveItems[game.Character]);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Attribute_defence_actual_ES_source_commands_replace_zero_clamp_publish_and_never_refill(bool ruthless)
+    [Fact]
+    public async Task Attribute_defence_actual_ES_source_commands_replace_zero_clamp_publish_and_never_refill()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         AttributeDefenceFoundation(game);
         AttributeDefenceItems(game).Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)));
         AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
@@ -213,13 +205,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(113u, game.State.EnergyShield.Current);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Attribute_defence_actual_EV_source_commands_replace_the_coefficient_without_refilling_other_resources(bool ruthless)
+    [Fact]
+    public async Task Attribute_defence_actual_EV_source_commands_replace_the_coefficient_without_refilling_other_resources()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         AttributeDefenceFoundation(game);
         AttributeDefenceItems(game).Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)));
         AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
@@ -243,13 +233,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(117u, game.State.EnergyShield.Current);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Attribute_defence_final_display_overrides_win_without_becoming_attribute_group_inputs(bool ruthless)
+    [Fact]
+    public void Attribute_defence_final_display_overrides_win_without_becoming_attribute_group_inputs()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         AttributeDefenceFoundation(game);
         AttributeDefenceItems(game).Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)));
         AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
@@ -274,13 +262,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         AttributeDefenceAssert(game, 124, 22, 1, 2, 24, 48);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Attribute_defence_strength_increase_scales_independent_ES_without_changing_converted_local_ES_life(bool ruthless)
+    [Fact]
+    public void Attribute_defence_strength_increase_scales_independent_ES_without_changing_converted_local_ES_life()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State); var items = AttributeDefenceItems(game);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items; var items = AttributeDefenceItems(game);
         AttributeDefenceFoundation(game);
         var type = catalog.Find("Wool Gloves")!;
         Assert.Equal((1339, 3963300936u), (type.Row, type.Hash));

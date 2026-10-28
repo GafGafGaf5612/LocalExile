@@ -257,7 +257,7 @@ public sealed class DamageConversionHistoryTests
         var wanted = Packet((DamageType.Fire, expected, expected));
         EqualPacket(wanted, Program.AttackHitConverted(weapon, stats, melee: true, conversion));
         EqualPacket(wanted, AttackSkillHit.Resolve(weapon, stats, [], Program.Stats, 10000, melee: false, projectile: true));
-        EqualPacket(wanted, OrdinaryRangedShot.Capture(weapon, stats, [], Program.Stats, 100, 0, 150).Hit);
+        EqualPacket(wanted, OrdinaryBowShot.Capture(weapon, stats, [], Program.Stats, 100, 0, 150).Hit);
         EqualPacket(wanted, SpellHit.Resolve(new(SkillHitKind.Spell, Packet((DamageType.Physical, 100, 100))),
             Program.Stats, stats, new Dictionary<uint, int>(), conversion));
     }
@@ -267,11 +267,11 @@ public sealed class DamageConversionHistoryTests
     {
         var source = NativeSources(Sources(("physical_damage_%_to_convert_to_fire", 100), ("fire_damage_+%", 100),
             ("object_inherent_damage_+%_final_per_frenzy_charge", 4), ("current_frenzy_charges", 3)));
-        var shot = OrdinaryRangedShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
+        var shot = OrdinaryBowShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
         source[Program.Stats.Key("current_frenzy_charges")!.Value] = 0;
         source[Program.Stats.Key("fire_damage_+%")!.Value] = 0;
         EqualPacket(Packet((DamageType.Fire, 224, 224)), shot.Hit);
-        var fresh = OrdinaryRangedShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
+        var fresh = OrdinaryBowShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
         EqualPacket(Packet((DamageType.Fire, 100, 100)), fresh.Hit);
     }
 
@@ -321,8 +321,8 @@ public sealed partial class AscendancyGatewayIntegrationTests
     {
         using var game = new GatewayCharacter(level: 100, family: AscendancyFamily.Normal, choice: "Elementalist",
             classRow: SkillCatalog.WitchRow, baseClass: 3);
-        var catalog = ProgramValue<ItemCatalog>("ItemsFor", game.State);
-        var skills = ProgramValue<SkillCatalog>("SkillsFor", game.State);
+        var catalog = Program.Items;
+        var skills = Program.Skills;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         inventory.Add(6, 0, 0, ItemCatalog.Create(catalog.Find("Iron Ring")!) with
             { Mods = [PercentageAttributeMod(catalog, "additional_all_attributes", 200)] });
@@ -343,7 +343,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         game.State.Pools = Program.PoolsFor(game.State, 100);
         var gems = ((IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)typeof(Program)
             .GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic, binder: null,
-                types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [game.State])!).ToArray();
+                types: [typeof(string)], modifiers: null)!.Invoke(null, [game.Character])!).ToArray();
         var selected = Assert.Single(gems);
         Assert.Equal(spell ? "Fireball" : "BurningArrow", skills.EffectId(selected.Effect));
         if (!spell)

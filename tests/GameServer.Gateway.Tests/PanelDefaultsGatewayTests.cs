@@ -30,7 +30,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     static void PanelDefaultsAddBrandEquity(GatewayCharacter game)
     {
-        var tree = ProgramValue<PassiveTree>("PassivesFor", game.State);
+        var tree = Program.Passives;
         Assert.Equal("Brand Equity", tree.Find(PanelDefaultsBrandEquity)!.Name);
         Assert.Equal(2, tree.Stats([PanelDefaultsBrandEquity])[PanelDefaultsKey(PanelDefaultsBrandLimit)]);
         // Isolate the real node's contribution; this is not a disconnected-tree admission or acquisition claim.
@@ -43,13 +43,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
             Assert.Equal(stat == PanelDefaultsBrandLimit ? brand : expected, values[PanelDefaultsKey(stat)]);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Panel_defaults_native_Brand_item_and_Brand_Equity_add_once_and_final_replacements_recover(bool ruthless)
+    [Fact]
+    public void Panel_defaults_native_Brand_item_and_Brand_Equity_add_once_and_final_replacements_recover()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         PanelDefaultsAssertNative(LevelPanelPublished(game));
         Assert.Equal(0, Program.CharacterPlayerStats(game.State).GetValueOrDefault(PanelDefaultsKey("skill_is_brand_skill")));
@@ -86,16 +84,14 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, "StormBrand")]
-    [InlineData(false, "ArmageddonBrand")]
-    [InlineData(true, "StormBrand")]
-    [InlineData(true, "ArmageddonBrand")]
+    [InlineData("StormBrand")]
+    [InlineData("ArmageddonBrand")]
     public void Panel_defaults_real_linked_Foulgrasp_adds_two_to_selected_Brand_and_removes_without_stale_values(
-        bool ruthless, string effect)
+        string effect)
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
-        var skills = ProgramValue<SkillCatalog>("SkillsFor", game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
+        var skills = Program.Skills;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         inventory.Add(5, 0, 0, LevelPanelCarrier(catalog, "Gold Amulet",
             PercentageAttributeMod(catalog, "additional_all_attributes", 200)));
@@ -126,7 +122,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
             PanelDefaultsAssertNative(LevelPanelPublished(game), actorLimit);
             var gems = ((IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)typeof(Program)
                 .GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic, binder: null,
-                    types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [game.State])!).ToArray();
+                    types: [typeof(string)], modifiers: null)!.Invoke(null, [game.Character])!).ToArray();
             var all = ProgramValue<IReadOnlyList<GrantedSkill>>("PlayerSkills", game.State);
             var selected = Assert.Single(all, s => s.Id == Assert.Single(gems, g => g.Effect == skills.EffectRow(effect)).Id);
             var other = Assert.Single(all, s => s.Id == Assert.Single(gems, g => g.Effect == skills.EffectRow("Fireball")).Id);
@@ -158,13 +154,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Check(3, 3, false);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Panel_defaults_real_mirror_modifiers_read_completed_unequal_maxima_and_clear_removed_sources(bool ruthless)
+    [Fact]
+    public void Panel_defaults_real_mirror_modifiers_read_completed_unequal_maxima_and_clear_removed_sources()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         // Actual native values, isolated from unique acquisition: base3 plus E1, F1+1 and P2+1 gives4/5/6.
         var maxima = inventory.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",

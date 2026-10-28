@@ -23,7 +23,7 @@ public sealed class MergedDefenceCompositionTests
         Assert.Equal(664u, pools.Mana);
         Assert.Equal(424, pools.Armour); // Body 120 * 1.2 * 2 + shield 80 * 1.7.
         Assert.Equal(300, pools.Evasion); // Base/body 100 * 1.25 + shield 100 * 1.75.
-        Assert.Equal(202u, pools.EnergyShield); // Body 40 * 1.87 + shield 60 * 2.12.
+        Assert.Equal(196u, pools.EnergyShield); // Int60 grants6%: body40*1.81 + shield60*2.06.
         Assert.True(pools.ArmourAppliesToChaosDamage);
         Assert.Equal(90, CharacterStats.SuppressionChance(pools, false, false, false));
         Assert.Equal(100, CharacterStats.SuppressionChance(pools, false, false, false, true));

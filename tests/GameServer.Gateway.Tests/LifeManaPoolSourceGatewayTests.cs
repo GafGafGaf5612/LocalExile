@@ -56,15 +56,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 10)]
-    [InlineData(false, 100)]
-    [InlineData(true, 10)]
-    [InlineData(true, 100)]
+    [InlineData(10)]
+    [InlineData(100)]
     public async Task Life_mana_pool_real_per_level_items_add_both_mana_sources_and_follow_actual_level_and_removal(
-        bool ruthless, int level)
+        int level)
     {
-        using var game = LevelPanelCharacter(ruthless, level);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(level);
+        var catalog = Program.Items;
         var items = LifeManaPoolInventory(game);
         uint BaseLife(int current) => (uint)(45 + 12 * current); // Witch: base38 + floor(Strength14/2).
         uint BaseMana(int current) => (uint)(50 + 6 * current); // Base34 + floor(Intelligence32/2).
@@ -96,19 +94,15 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 9, 6, 1501, 638)]
-    [InlineData(true, 9, 6, 1501, 638)]
-    [InlineData(false, 10, 11, 1507, 639)]
-    [InlineData(true, 10, 11, 1507, 639)]
-    [InlineData(false, 19, 17, 1514, 643)]
-    [InlineData(true, 19, 17, 1514, 643)]
-    [InlineData(false, 20, 23, 1521, 644)]
-    [InlineData(true, 20, 23, 1521, 644)]
+    [InlineData(9, 6, 1501, 638)]
+    [InlineData(10, 11, 1507, 639)]
+    [InlineData(19, 17, 1514, 643)]
+    [InlineData(20, 23, 1521, 644)]
     public void Life_mana_pool_attribute_groups_use_completed_final_attributes_before_native_life_increase(
-        bool ruthless, int attribute, int flatLife, int expectedLife, int expectedMana)
+        int attribute, int flatLife, int expectedLife, int expectedMana)
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         var items = LifeManaPoolInventory(game);
         // Native -100% plus two distinct native +10% inputs leaves 20%. Flat sources make each pre-percent
         // attribute exactly five times the desired boundary, so these controls do not depend on fractional rounding.
@@ -144,13 +138,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         LifeManaPoolAssert(game, 1494, (uint)expectedMana); // floor((38 + 1200 + 7) * 1.20).
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Life_mana_pool_item_sources_require_the_active_weapon_set_and_a_qualified_host(bool ruthless)
+    [Fact]
+    public void Life_mana_pool_item_sources_require_the_active_weapon_set_and_a_qualified_host()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items;
         var items = LifeManaPoolInventory(game);
         var mods = LifeManaPoolNative.Select(s => LifeManaPoolNativeMod(catalog, s)).ToArray();
         items.Add(PlayerInventories.Weapon2, 0, 0, LevelPanelCarrier(catalog, "Rusted Sword", mods));
@@ -172,31 +164,25 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 0)]
-    [InlineData(true, 0)]
-    [InlineData(false, 1)]
-    [InlineData(true, 1)]
-    [InlineData(false, 2)]
-    [InlineData(true, 2)]
-    [InlineData(false, 3)]
-    [InlineData(true, 3)]
-    [InlineData(false, 4)]
-    [InlineData(true, 4)]
-    [InlineData(false, 5)]
-    [InlineData(true, 5)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
     public async Task Life_mana_pool_actual_set_stat_zero_rebuilds_and_clamps_resources_with_reservation(
-        bool ruthless, int sourceIndex)
+        int sourceIndex)
     {
-        using var game = LevelPanelCharacter(ruthless);
+        using var game = LevelPanelCharacter();
         var source = LifeManaPoolNative[sourceIndex];
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         var items = LifeManaPoolInventory(game);
         bool manaSource = sourceIndex == 1;
         var mods = new List<ItemMod> { LifeManaPoolNativeMod(catalog, source) };
         if (manaSource) mods.Add(LifeManaPoolNativeMod(catalog, LifeManaPoolNative[6]));
         items.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring", mods.ToArray()));
         // Controlled active reservation state, as in StrengthManaTests; no aura activation/acquisition claim.
-        var skills = ProgramValue<SkillCatalog>("SkillsFor", game.State);
+        var skills = Program.Skills;
         game.State.Auras[0x103] = new(0x103, skills.EffectRow("Haste"), "Haste", "Haste",
             1, AuraCatalog.BuffRow("Haste"), 0, 5000);
         int Groups() => sourceIndex switch { 0 or 1 => 10, 2 => 1, 3 => 3, 4 => 3, 5 => 16, _ => 0 };

@@ -5,8 +5,8 @@ namespace GameServer.Gateway.Tests;
 public sealed partial class AscendancyGatewayIntegrationTests
 {
     static uint LevelPanelKey(string name) => Program.Stats.Key(name)!.Value;
-    static GatewayCharacter LevelPanelCharacter(bool ruthless, int level = 10) => new(level: level,
-        family: AscendancyFamily.Normal, choice: "Elementalist", classRow: SkillCatalog.WitchRow, baseClass: 3, ruthless: ruthless);
+    static GatewayCharacter LevelPanelCharacter(int level = 10) => new(level: level,
+        family: AscendancyFamily.Normal, choice: "Elementalist", classRow: SkillCatalog.WitchRow, baseClass: 3);
     // Actual catalog modifiers on isolated carriers. Cross-base combinations are not legal unique acquisition claims.
     static ItemMod LevelPanelMod(ItemCatalog catalog, string id, string stat, int value)
     {
@@ -30,13 +30,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         LevelPanelMod(catalog, "EnergyShieldGainedOnEnemyDeathPerLevelUniqueSceptre8", "energy_shield_gained_on_enemy_death_per_level", 1),
     ];
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Real_on_kill_modifiers_follow_actual_level_changes_raw_overrides_and_source_removal(bool ruthless)
+    [Fact]
+    public async Task Real_on_kill_modifiers_follow_actual_level_changes_raw_overrides_and_source_removal()
     {
-        using var game = LevelPanelCharacter(ruthless);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter();
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var mods = LevelPanelOnKillMods(catalog).Concat(new[]
         {
@@ -84,13 +82,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void On_kill_level_sources_require_active_equipment_and_qualified_items(bool ruthless)
+    [Fact]
+    public void On_kill_level_sources_require_active_equipment_and_qualified_items()
     {
-        using var game = LevelPanelCharacter(ruthless, 20);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(20);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         inventory.Add(14, 0, 0, LevelPanelCarrier(catalog, "Rusted Sword", LevelPanelOnKillMods(catalog)));
         var body = inventory.Add(PlayerInventories.BodyArmour, 0, 0,
@@ -113,16 +109,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 0, 72)]
-    [InlineData(false, 1, 82)]
-    [InlineData(false, 3, 102)]
-    [InlineData(true, 0, 72)]
-    [InlineData(true, 1, 82)]
-    [InlineData(true, 3, 102)]
-    public void Real_combined_and_block_only_modifiers_plus_expanded_frenzy_recovery_count_once(bool ruthless, int held, int expected)
+    [InlineData(0, 72)]
+    [InlineData(1, 82)]
+    [InlineData(3, 102)]
+    public void Real_combined_and_block_only_modifiers_plus_expanded_frenzy_recovery_count_once(int held, int expected)
     {
-        using var game = LevelPanelCharacter(ruthless);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter();
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var ring = inventory.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",
             LevelPanelMod(catalog, "StunRecovery1", "base_stun_recovery_+%", 12),
@@ -148,16 +141,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 10, 130)]
-    [InlineData(false, 20, 110)]
-    [InlineData(false, 100, -50)]
-    [InlineData(true, 10, 130)]
-    [InlineData(true, 20, 110)]
-    [InlineData(true, 100, -50)]
-    public void Real_Nevalius_duration_sources_use_character_level_and_remove_without_cached_aliases(bool ruthless, int level, int expected)
+    [InlineData(10, 130)]
+    [InlineData(20, 110)]
+    [InlineData(100, -50)]
+    public void Real_Nevalius_duration_sources_use_character_level_and_remove_without_cached_aliases(int level, int expected)
     {
-        using var game = LevelPanelCharacter(ruthless, level);
-        var catalog = Program.ItemsFor(game.State);
+        using var game = LevelPanelCharacter(level);
+        var catalog = Program.Items;
         var inventory = ProgramValue<PlayerInventories>("ItemsOf", game.State);
         var ordinary = LevelPanelMod(catalog, "BeltIncreasedFlaskDurationUnique__4", "flask_duration_+%", 150);
         var perLevel = LevelPanelMod(catalog, "FlaskDurationPerLevelUnique__1", "flask_duration_+%_per_level", -2);

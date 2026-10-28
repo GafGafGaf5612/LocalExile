@@ -11,8 +11,7 @@ public sealed class FlaskEffectScalingTests
         throw new DirectoryNotFoundException("data/tables");
     }
     static readonly Lazy<ItemCatalog> Normal = new(() => new ItemCatalog(Data()));
-    static readonly Lazy<ItemCatalog> Ruthless = new(() => new ItemCatalog(Data(), ruthless: true));
-    static ItemCatalog Catalog(bool ruthless) => ruthless ? Ruthless.Value : Normal.Value;
+    static ItemCatalog Catalog() => Normal.Value;
     static ItemMod Mod(ItemCatalog catalog, string id, int domain, params int[] values)
     {
         var mod = catalog.Mods.ById(id)!;
@@ -43,16 +42,13 @@ public sealed class FlaskEffectScalingTests
         { Quality = quality, Mods = mods, Rarity = mods.Length == 0 ? ItemRarity.Normal : ItemRarity.Magic };
 
     [Theory]
-    [InlineData(false, 10, -50, 35, 25, 750)]
-    [InlineData(false, 20, -40, 42, 30, 900)]
-    [InlineData(false, 100, 40, 98, 70, 2100)]
-    [InlineData(true, 10, -50, 35, 25, 750)]
-    [InlineData(true, 20, -40, 42, 30, 900)]
-    [InlineData(true, 100, 40, 98, 70, 2100)]
-    public void Native_flat_and_level_pair_scales_each_flask_category_once(bool ruthless, int level,
+    [InlineData(10, -50, 35, 25, 750)]
+    [InlineData(20, -40, 42, 30, 900)]
+    [InlineData(100, 40, 98, 70, 2100)]
+    public void Native_flat_and_level_pair_scales_each_flask_category_once(int level,
         int global, double life, double mana, int armour)
     {
-        var catalog = Catalog(ruthless); var raw = Pair(catalog); int Get(string name) => raw.GetValueOrDefault(name);
+        var catalog = Catalog(); var raw = Pair(catalog); int Get(string name) => raw.GetValueOrDefault(name);
         Assert.Equal(global, FlaskEffectScaling.GlobalIncrease(Get, level));
         var lifeType = catalog.FlaskOf(catalog.Find("Small Life Flask")!)!;
         var manaType = catalog.FlaskOf(catalog.Find("Small Mana Flask")!)!;
@@ -71,7 +67,7 @@ public sealed class FlaskEffectScalingTests
     public void Raw_flat_and_per_level_replacements_are_independent(int flat, int perLevel, int global,
         double life, int armour)
     {
-        var catalog = Catalog(false); var raw = Pair(catalog);
+        var catalog = Catalog(); var raw = Pair(catalog);
         raw["flask_effect_+%"] = flat; raw["flask_effect_+%_per_level"] = perLevel;
         int Get(string name) => raw.GetValueOrDefault(name);
         Assert.Equal(global, FlaskEffectScaling.GlobalIncrease(Get, 100));
@@ -107,11 +103,10 @@ public sealed class FlaskEffectScalingTests
     }
 
     [Theory]
-    [InlineData(false, 4.824)]
-    [InlineData(true, 3.216)]
-    public void Native_local_prefix_and_magic_only_source_join_effect_while_quality_and_duration_stay_separate(bool ruthless, double seconds)
+    [InlineData(4.824)]
+    public void Native_local_prefix_and_magic_only_source_join_effect_while_quality_and_duration_stay_separate(double seconds)
     {
-        var catalog = Catalog(ruthless); var raw = Pair(catalog, magic: true); int Get(string name) => raw.GetValueOrDefault(name);
+        var catalog = Catalog(); var raw = Pair(catalog, magic: true); int Get(string name) => raw.GetValueOrDefault(name);
         // Native Alchemist's1: -33 local duration, +25 local effect. Do not invent a standalone +30 recipe.
         var item = Flask(catalog, "Granite Flask", 20, Mod(catalog, "FlaskEffectReducedDuration1", 2, -33, 25));
         var use = UtilityFlasks.For(catalog.UtilityFlaskOf(catalog.Find("Granite Flask")!)!, item, ItemModStats.Local(item, catalog.Mods), Get, 100);
@@ -122,12 +117,10 @@ public sealed class FlaskEffectScalingTests
         Assert.Equal(2100, Assert.Single(normal.Stats).Value); // Magic-only20 does not apply to normal utility.
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Real_instant_recipe_keeps_quality_and_instant_duration_rules_and_ignores_magic_utility_effect(bool ruthless)
+    [Fact]
+    public void Real_instant_recipe_keeps_quality_and_instant_duration_rules_and_ignores_magic_utility_effect()
     {
-        var catalog = Catalog(ruthless); var raw = Pair(catalog, duration: true, magic: true); int Get(string name) => raw.GetValueOrDefault(name);
+        var catalog = Catalog(); var raw = Pair(catalog, duration: true, magic: true); int Get(string name) => raw.GetValueOrDefault(name);
         var item = Flask(catalog, "Small Life Flask", 20, Mod(catalog, "FlaskFullInstantRecovery1", 2, 1, -66));
         var use = FlaskRecovery.For(catalog.FlaskOf(catalog.Find("Small Life Flask")!)!, item, ItemModStats.Local(item, catalog.Mods), Get, 100, 1000, 100);
         Assert.Equal(39.984, use.InstantLife, 8);
@@ -137,7 +130,7 @@ public sealed class FlaskEffectScalingTests
     [Fact]
     public void Native_partial_instant_recipe_preserves_the_independent_duration_and_rate_factors()
     {
-        var catalog = Catalog(false); var raw = Pair(catalog, duration: true); int Get(string name) => raw.GetValueOrDefault(name);
+        var catalog = Catalog(); var raw = Pair(catalog, duration: true); int Get(string name) => raw.GetValueOrDefault(name);
         var item = Flask(catalog, "Small Life Flask", 0, Mod(catalog, "FlaskPartialInstantRecovery1", 2, 50, -52, 135));
         var use = FlaskRecovery.For(catalog.FlaskOf(catalog.Find("Small Life Flask")!)!, item, ItemModStats.Local(item, catalog.Mods), Get, 100, 1000, 20);
         Assert.Equal(10.08, use.InstantLife, 8); Assert.Equal(21.168, use.Life, 8);
@@ -147,19 +140,17 @@ public sealed class FlaskEffectScalingTests
     [Fact]
     public void Native_low_life_more_recovery_is_not_multiplied_by_the_new_global_effect()
     {
-        var catalog = Catalog(false); var raw = Pair(catalog); int Get(string name) => raw.GetValueOrDefault(name);
+        var catalog = Catalog(); var raw = Pair(catalog); int Get(string name) => raw.GetValueOrDefault(name);
         var item = Flask(catalog, "Small Life Flask", 0, Mod(catalog, "FlaskIncreasedRecoveryOnLowLife1", 2, 101));
         var local = ItemModStats.Local(item, catalog.Mods); var type = catalog.FlaskOf(catalog.Find("Small Life Flask")!)!;
         Assert.Equal(168.7, FlaskRecovery.For(type, item, local, Get, 100, 1000, 100).Life, 8);
         Assert.Equal(98, FlaskRecovery.For(type, item, local, Get, 900, 1000, 100).Life, 8);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Level_scaled_effect_leaves_flags_and_independent_Onslaught_values_unscaled(bool ruthless)
+    [Fact]
+    public void Level_scaled_effect_leaves_flags_and_independent_Onslaught_values_unscaled()
     {
-        var catalog = Catalog(ruthless); var raw = Pair(catalog); raw["flask_effect_+%_per_level"] = 0;
+        var catalog = Catalog(); var raw = Pair(catalog); raw["flask_effect_+%_per_level"] = 0;
         int Get(string name) => raw.GetValueOrDefault(name); // Controlled raw-coefficient replacement at actual100.
         var quartz = UtilityFlasks.For(catalog.UtilityFlaskOf(catalog.Find("Quartz Flask")!)!, Flask(catalog, "Quartz Flask"), new Dictionary<string, int>(), Get, 100);
         Assert.Contains(quartz.Stats, s => s.Stat == "phase_through_objects" && s.Value == 1);
@@ -167,6 +158,6 @@ public sealed class FlaskEffectScalingTests
         var silver = UtilityFlasks.For(catalog.UtilityFlaskOf(catalog.Find("Silver Flask")!)!, Flask(catalog, "Silver Flask"), new Dictionary<string, int>(), Get, 100);
         Assert.Contains(silver.Stats, s => s.Stat == "attack_speed_+%" && s.Value == 20);
         Assert.Contains(silver.Stats, s => s.Stat == "base_cast_speed_+%" && s.Value == 20);
-        Assert.Contains(silver.Stats, s => s.Stat == "base_movement_velocity_+%" && s.Value == (ruthless ? 0 : 20));
+        Assert.Contains(silver.Stats, s => s.Stat == "base_movement_velocity_+%" && s.Value == (20));
     }
 }

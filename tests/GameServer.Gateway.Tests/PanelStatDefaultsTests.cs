@@ -43,12 +43,10 @@ public sealed class PanelStatDefaultsTests
         Assert.Equal(int.MaxValue, PanelStatDefaults.Compute(_ => int.MaxValue)[0].Value);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Brand_gate_comes_from_native_type_and_compatible_Foulgrasp_owns_two_once(bool ruthless)
+    [Fact]
+    public void Brand_gate_comes_from_native_type_and_compatible_Foulgrasp_owns_two_once()
     {
-        var skills = new SkillCatalog(Data(), ruthless);
+        var skills = new SkillCatalog(Data());
         var stats = new StatCatalog(Data());
         uint flag = stats.Key("skill_is_brand_skill")!.Value, limit = stats.Key("base_total_number_of_sigils_allowed")!.Value;
         using var types = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(Data(), "tables", "ActiveSkillType.json")));

@@ -69,7 +69,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
     static void InherentGatewayFoundation(GatewayCharacter game)
     {
-        var catalog = Program.ItemsFor(game.State);
+        var catalog = Program.Items;
         AttributeDefenceFoundation(game); // Complete native +100 all attributes and independent100 flat ES.
         InherentGatewayItems(game).Add(7, 0, 0,
             LevelPanelCarrier(catalog, "Iron Ring", AttributeDefencePair(catalog)) with { ItemLevel = 100 });
@@ -140,7 +140,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     static void InherentGatewayReservation(GatewayCharacter game)
     {
         // A controlled active aura, as in the existing pool tests; no gem activation/acquisition claim.
-        var skills = ProgramValue<SkillCatalog>("SkillsFor", game.State);
+        var skills = Program.Skills;
         game.State.Auras[0x103] = new(0x103, skills.EffectRow("Haste"), "Haste", "Haste",
             1, AuraCatalog.BuffRow("Haste"), 0, 5000);
     }
@@ -153,17 +153,17 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, 0)] [InlineData(true, 0)]
-    [InlineData(false, 1)] [InlineData(true, 1)]
-    [InlineData(false, 2)] [InlineData(true, 2)]
-    [InlineData(false, 3)] [InlineData(true, 3)]
-    [InlineData(false, 4)] [InlineData(true, 4)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
     public async Task InherentAttribute_native_full_sources_and_actual_flag_commands_preserve_attributes_and_other_terms(
-        bool ruthless, int sourceIndex)
+        int sourceIndex)
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
+        using var game = LevelPanelCharacter(100);
         var source = InherentGatewaySources[sourceIndex];
-        var catalog = Program.ItemsFor(game.State); var items = InherentGatewayItems(game);
+        var catalog = Program.Items; var items = InherentGatewayItems(game);
         InherentGatewayFoundation(game);
         var carrier = items.Add(6, 0, 0, LevelPanelCarrier(catalog, "Iron Ring",
             InherentGatewayNative(catalog, sourceIndex)) with { ItemLevel = 100 });
@@ -235,13 +235,13 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Theory]
-    [InlineData(false, false)] [InlineData(true, false)]
-    [InlineData(false, true)] [InlineData(true, true)]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task InherentAttribute_duplicate_and_overlapping_native_flags_are_whole_sources_not_double_subtractions(
-        bool ruthless, bool mana)
+        bool mana)
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State); var items = InherentGatewayItems(game);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items; var items = InherentGatewayItems(game);
         int narrowIndex = mana ? 1 : 0, broadIndex = mana ? 4 : 2;
         var narrow = InherentGatewaySources[narrowIndex]; var broad = InherentGatewaySources[broadIndex];
         InherentGatewayFoundation(game);
@@ -299,12 +299,11 @@ public sealed partial class AscendancyGatewayIntegrationTests
         InherentGatewayRaw(game, broad.Key, 0);
     }
 
-    [Theory]
-    [InlineData(false)] [InlineData(true)]
-    public void InherentAttribute_full_Dexterity_and_Intelligence_vectors_only_affect_the_active_qualified_weapon_set(bool ruthless)
+    [Fact]
+    public void InherentAttribute_full_Dexterity_and_Intelligence_vectors_only_affect_the_active_qualified_weapon_set()
     {
-        using var game = LevelPanelCharacter(ruthless, 100);
-        var catalog = Program.ItemsFor(game.State); var items = InherentGatewayItems(game);
+        using var game = LevelPanelCharacter(100);
+        var catalog = Program.Items; var items = InherentGatewayItems(game);
         InherentGatewayFoundation(game);
         var weapon = items.Add(PlayerInventories.Weapon2, 0, 0,
             LevelPanelCarrier(catalog, "Rusted Sword", InherentGatewayNative(catalog, 3), InherentGatewayNative(catalog, 4))
