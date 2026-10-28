@@ -7,7 +7,7 @@ using GameServer.Core.World;
 
 namespace GameServer.Gateway.Tests;
 
-public class SpellNoDamageTests
+public partial class SpellNoDamageTests
 {
     const string Flag = "spell_skills_deal_no_damage";
     static MethodInfo Method(string name) =>

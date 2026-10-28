@@ -105,14 +105,20 @@ partial class Program
     static GameServer.Core.World.DamagePacket SupportedHit(ClientState conn, ushort skillId)
         => SupportedHitFor(conn, skillId, suppress: true);
 
-    static GameServer.Core.World.DamagePacket SupportedHitFor(ClientState conn, ushort skillId, bool suppress)
+    internal static GameServer.Core.World.DamagePacket SupportedProjectileHit(ClientState conn, ushort skillId, bool area)
+        => SupportedHitFor(conn, skillId, suppress: false, area);
+
+    static GameServer.Core.World.DamagePacket SupportedHitFor(ClientState conn, ushort skillId, bool suppress, bool? area = null)
     {
         var gem = SupportedSkill(conn, skillId);
         var caster = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
         var stats = MergeSkillStats(caster, gem.Stats);
-        int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        int Get(string name) => name == "is_area_damage" && area is bool isArea ? isArea ? 1 : 0
+            : Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         bool attack = Skills.IsAttack(gem.Effect);
         var types = Supports.Of(gem.Effect)?.Types.ToHashSet() ?? [];
+        if (area is true) types.Add(7);
+        else if (area is false) types.Remove(7);
         var plan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!plan.CanHit) return GameServer.Core.World.DamagePacket.Empty;
         var hit = attack

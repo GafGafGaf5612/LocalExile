@@ -207,15 +207,16 @@ partial class Program
             }
             if (MonsterBlocks(target, random, shot.Spell)) return ProjectileHitResult.Blocked;
             double more = contact.Multiplier * (contact.Phase > 0 ? shot.ReturnMultiplier : 1);
+            var baseHit = contact.IsArea ? shot.AreaHit ?? shot.Hit : shot.Hit;
             var packet = new SkillDamageContext(shot.Spell ? SkillHitKind.Spell : SkillHitKind.Attack,
-                CharacterPlayerStats(Conn)).Hit(shot.Hit).Scale(more);
+                CharacterPlayerStats(Conn)).Hit(baseHit).Scale(more);
             if (!shot.Spell)
             {
                 double stored = target.Impale.Bonus;
                 target.Impale.AfterHit();
                 if (stored > 0) packet = packet.Add(DamageType.Physical, new DamageRange(stored, stored));
                 if (shot.ImpaleChance > 0 && random.Next(100) < shot.ImpaleChance)
-                    target.Impale.Apply(shot.Hit[DamageType.Physical].Max * more);
+                    target.Impale.Apply(baseHit[DamageType.Physical].Max * more);
             }
             var rolled = packet.Roll(random);
             int chance = contact.Projectile.Form > 0 ? shot.SecondFormCriticalChance ?? shot.CriticalChance : shot.CriticalChance;

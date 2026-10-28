@@ -24,12 +24,12 @@ sealed class ProjectileRuntimeFixture : IAsyncDisposable
     public ProjectileRuntimeFixture(ClientState? conn = null)
     {
         TestSaves.Ensure();
-        Conn = conn ?? new(new AreaLayout(1, "projectile-migration", 300, 300, 10, 10, null, []), 1, 1)
+        Conn = conn ?? new(new AreaLayout(1, "projectile-fixture", 300, 300, 10, 10, null, []), 1, 1)
             { PlayerLife = 100, ActionCount = 7 };
         listener.Start(); var accept = listener.AcceptTcpClientAsync();
         writer.Connect(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port);
         reader = accept.GetAwaiter().GetResult();
-        Session = new("runtime-migration", Stream, Ciphers, Conn);
+        Session = new("runtime-fixture", Stream, Ciphers, Conn);
         Conn.ProjectileRuntime = Session;
     }
     public static SpawnedMonster Monster(int x, int y, double speed = 10) =>
@@ -40,7 +40,7 @@ sealed class ProjectileRuntimeFixture : IAsyncDisposable
             new(Program.PlayerId, Conn.ProjectileEpoch), new(Program.PlayerId, Conn.ProjectileEpoch), 1,
             origin ?? new(10, 10), aim ?? new(110, 10))
         { Payload = offense ?? new ProjectileOffense(DamagePacket.Of(DamageType.Physical, 10, 10), true,
-            int.MaxValue, 0, 150, "migration") };
+            int.MaxValue, 0, 150, "fixture") };
     public void Release(ProjectileUse? shot = null)
     { Session.Schedule(Session.Runtime.Now, () => true, () => shot ?? Shot()); Session.AdvanceTo(Session.Runtime.Now); }
     public void Advance(double seconds) => Session.AdvanceTo(ProjectileRuntime.Time(seconds));
@@ -50,7 +50,7 @@ sealed class ProjectileRuntimeFixture : IAsyncDisposable
         Session.Enqueue(() => { drained.SetResult(); return Task.CompletedTask; });
         await drained.Task.WaitAsync(TimeSpan.FromSeconds(5));
         byte[] sentinel = new LoginWriter().U16(0x7ffe).U32(0x12345678).ToArray();
-        await Program.Send("runtime-migration", Stream, Ciphers, sentinel.ToArray(), null);
+        await Program.Send("runtime-fixture", Stream, Ciphers, sentinel.ToArray(), null);
         var result = new List<byte>(); var buffer = new byte[4096];
         while (true)
         {

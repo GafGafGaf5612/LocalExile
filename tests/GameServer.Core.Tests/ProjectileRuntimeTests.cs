@@ -29,7 +29,7 @@ public class ProjectileRuntimeTests
         int team = 1) => new(profile, new(1), new(1), team, from ?? new(0, 0), aim ?? new(100, 0));
 
     [Fact]
-    public void Per_bottle_payloads_preserve_shared_hit_admission_and_continuation_inheritance()
+    public void Per_initial_projectile_payloads_preserve_shared_hit_admission_and_continuation_inheritance()
     {
         var world = new Arena(); world.Target(10, 30, 0); world.Target(20, 70, 0);
         var runtime = new ProjectileRuntime(world);
@@ -48,7 +48,7 @@ public class ProjectileRuntimeTests
     [Theory]
     [InlineData(1)]
     [InlineData(3)]
-    public void Per_bottle_payload_count_must_match_the_initial_projectile_count(int count)
+    public void Per_initial_projectile_payload_count_must_match_the_initial_projectile_count(int count)
     {
         var runtime = new ProjectileRuntime(new Arena());
         var use = Use(Arrow with { Count = 2 });
@@ -178,20 +178,20 @@ public class ProjectileRuntimeTests
     }
 
     [Fact]
-    public void Fireball_terminal_blast_is_one_hit_on_contact_victim_and_can_overlap_from_a_neighbor()
+    public void Terminal_blast_is_one_hit_on_contact_victim_and_can_overlap_from_a_neighbor()
     {
         var world = new Arena(); world.Target(10, 30, 0); world.Target(20, 30, 10);
         var runtime = new ProjectileRuntime(world);
-        var fireball = Arrow with { EndArea = new("blast", 15) };
-        runtime.Release(Use(fireball));
-        runtime.Release(Use(fireball, new(0, 10), new(100, 10)));
+        var exploding = Arrow with { EndArea = new("blast", 15) };
+        runtime.Release(Use(exploding));
+        runtime.Release(Use(exploding, new(0, 10), new(100, 10)));
         runtime.AdvanceTo(4000);
         Assert.Equal(2, world.Hits.Count(h => h.Target.Id == 10));
         Assert.All(world.Hits, h => Assert.Equal("blast", h.Stage));
     }
 
     [Fact]
-    public void A_piercing_fireball_has_direct_contact_then_only_one_terminal_blast()
+    public void A_piercing_projectile_has_direct_contact_then_only_one_terminal_blast()
     {
         var world = new Arena(); world.Target(10, 30, 0); world.Target(20, 70, 0);
         var runtime = new ProjectileRuntime(world);
@@ -201,7 +201,7 @@ public class ProjectileRuntimeTests
     }
 
     [Fact]
-    public void Simultaneous_fireballs_cannot_shotgun_their_shared_contact_victim()
+    public void Simultaneous_projectiles_cannot_shotgun_their_shared_contact_victim()
     {
         var world = new Arena(); world.Target(10, 30, 0);
         var runtime = new ProjectileRuntime(world);
@@ -215,10 +215,10 @@ public class ProjectileRuntimeTests
     {
         var world = new Arena(); world.Target(10, 30, 0);
         var runtime = new ProjectileRuntime(world);
-        runtime.Release(Use(Arrow with { Count = 2, SpreadRadians = 0, ContactArea = new("kb", 15) }));
+        runtime.Release(Use(Arrow with { Count = 2, SpreadRadians = 0, ContactArea = new("contact", 15) }));
         runtime.AdvanceTo(4000);
         Assert.Equal(1, world.Hits.Count(h => h.Stage == "direct"));
-        Assert.Equal(2, world.Hits.Count(h => h.Stage == "kb"));
+        Assert.Equal(2, world.Hits.Count(h => h.Stage == "contact"));
     }
 
     [Fact]
@@ -335,7 +335,7 @@ public class ProjectileRuntimeTests
     }
 
     [Fact]
-    public void Return_after_lifetime_expiry_receives_its_own_flight_budget()
+    public void Expiry_ends_the_original_flight_without_a_new_return_budget()
     {
         var world = new Arena(); world.Target(10, 15, 0);
         world.Targets.Add(new(new(1), 1, _ => new(0, 0), 0));
@@ -343,6 +343,8 @@ public class ProjectileRuntimeTests
         runtime.Release(Use(Arrow with { Speed = 100, Range = 200, Lifetime = 24000,
             Pierce = -1, Returns = true }) with { ReturnAnchor = new(1) });
         runtime.AdvanceTo(60000);
-        Assert.Equal(2, world.Hits.Count);
+        Assert.Single(world.Hits);
+        Assert.DoesNotContain(world.Events, e => e.Kind == ProjectileEventKind.Redirect);
+        Assert.Empty(runtime.Projectiles);
     }
 }

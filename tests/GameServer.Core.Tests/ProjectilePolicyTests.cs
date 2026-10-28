@@ -103,7 +103,7 @@ public class ProjectilePolicyTests
         {
             var world = new Arena(); var runtime = new ProjectileRuntime(world);
             var child = Basic with { Count = 3, ReturnChancePercent = 50 };
-            runtime.Release(Use(Basic with { Returns = true, DirectDamage = false, Range = 10,
+            runtime.Release(Use(Basic with { DirectDamage = false, Range = 10,
                 EndEmission = new(child), TravelEmission = new(child with { ReturnChancePercent = 100 }) }, seed));
             var parent = Assert.Single(runtime.Projectiles);
             bool expected = parent.Profile.EndEmission!.Child.Returns;

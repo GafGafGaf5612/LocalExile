@@ -305,8 +305,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 ## Partly working
 
 The generic [projectile framework](../docs/game/projectile-framework.md) owns production gem/bow routing and
-the sole 30 Hz runtime. Framework-only catalog recipes provide basic flight; coverage supplies special rules
-and may require explicit registrations. The old flight engine and its test-only helper path are removed.
+the sole 30 Hz runtime. Catalog fallback provides basic flight; registered skill definitions supply special rules
+and can require explicit recipes.
 
 
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
@@ -341,8 +341,11 @@ and may require explicit registrations. The old flight engine and its test-only 
   grants and independent prohibitions in the sole staged runtime. Ordinary bows and catalog-known projectile gems
   work without a skill provider. A basic recipe is straight flight, not complete special-skill behavior.
   Return opens another hit-admission phase and reads the shared returning-damage multiplier. Partial return chance,
-  return speed, contact budgets, overshoot and terrain behavior are configurable; named policies live in coverage.
-  Skill explosions, pulses, children, forms, native art and specialized resources belong to coverage registrations.
+  return speed, contact budgets, overshoot and terrain behavior are configurable through skill definitions.
+  Boolean fork sources grant one generation, and raw bow always-pierce sources bind to the same common profile.
+  Return retains remaining continuation counts and the original lifetime; return pierce-all requires its own stat.
+  Direct and area snapshots keep area increases/supports scoped to their damage stages.
+  Skill explosions, pulses, children, forms, native art and specialized resources belong to skill definitions.
   Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
   Code: Core `Projectiles/`, Gateway `Projectiles/`; see the [framework guide](../docs/game/projectile-framework.md).
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
@@ -525,9 +528,8 @@ and may require explicit registrations. The old flight engine and its test-only 
   It runs at 30 Hz boundaries with subtick contacts and commits damage/rewards before network output.
   Release captures position and offense; target movement, evasion, defenses and impales resolve on contact.
   Pause freezes the game horizon, transfer/retirement invalidates epochs, and released shots survive later actions.
-  Real-input held-output checks exercise the framework alone; legacy moving-target, wall, evasion, pierce, return,
-  pause, transfer, impale and actor-scale regressions now exercise this same runtime.
-  Earlier native bow/Fireball controls belong to the replaced flight path and need rechecking here.
+  Real-input held-output, moving-target, wall, evasion, pierce, return, pause, transfer, impale and actor-scale checks
+  exercise this same runtime. Native bow/skill controls and animation alignment still require client validation.
   Captured ground uses terrain plus torso height; missing captures use native terrain sampling without a torso offset.
   Platforms/doodads still need a surface model (#182). Integer walk estimates and shared radius remain approximations.
   Code: Core `Projectiles/`, Gateway `Projectiles/`, `Program.Bows.cs`, `Program.Combat.cs` and `ClientState.cs`.

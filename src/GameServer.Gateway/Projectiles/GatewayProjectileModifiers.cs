@@ -12,16 +12,20 @@ static class GatewayProjectileModifiers
             + get(attack ? "attacks_number_of_additional_projectiles" : "spells_number_of_additional_projectiles");
         int pierce = Math.Max(get("projectile_number_of_targets_to_pierce"), get("projectile_base_number_of_targets_to_pierce"));
         if (attack) pierce += Math.Max(get("arrow_number_of_targets_to_pierce"), get("arrow_base_number_of_targets_to_pierce"));
-        if (get("always_pierce") != 0 || get("virtual_always_pierce") != 0 || attack && get("arrows_always_pierce") != 0) pierce = -1;
+        if (get("always_pierce") != 0 || get("virtual_always_pierce") != 0
+            || attack && (get("arrows_always_pierce") != 0 || get("base_arrows_always_pierce") != 0)) pierce = -1;
         int chains = Math.Max(get("number_of_chains"), get("virtual_number_of_chains_for_projectiles"));
         if (chainInputConsumed) chains = 0;
+        bool forks = get("projectiles_fork") != 0 || get("virtual_projectiles_fork") != 0
+            || (attack ? get("attack_projectiles_fork") != 0 || get("arrows_fork") != 0
+                : get("projectiles_from_spells_fork") != 0);
+        int forkCount = Math.Max(get("virtual_number_of_forks_for_projectiles_final"),
+            (forks ? 1 : 0) + get("number_of_additional_forks_base")
+                + (attack ? get("attack_projectiles_fork_additional_times") : 0));
         var modifiers = new ProjectileModifiers
         {
             ExtraProjectiles = extra, Pierce = pierce,
-            Fork = Math.Max(get("projectiles_fork"), get("virtual_projectiles_fork"))
-                + get("number_of_additional_forks_base")
-                + (attack ? Math.Max(get("attack_projectiles_fork"), get("arrows_fork")) + get("attack_projectiles_fork_additional_times")
-                    : get("projectiles_from_spells_fork")), Chain = chains,
+            Fork = forkCount, Chain = chains,
             Split = Math.Max(splitTargets, get("intermediary_projectile_number_of_targets_to_split_to")),
             Returns = get("projectiles_return") != 0 || attack && get("attack_projectiles_return") != 0
                 || get("projectile_return_%_chance") >= 100,
@@ -44,12 +48,13 @@ static class GatewayProjectileModifiers
         if (get("projectile_distance_override") is > 0 and var distance)
         {
             if (p.EndEmission is not null || p.Lobbed)
-                throw new InvalidOperationException("Unadopted early end transition for " + p.Id + " (COMBO-01)");
+                throw new InvalidOperationException("Distance override needs an explicit early-end recipe for " + p.Id);
             p = p with { Range = distance };
         }
         ProjectileProfile ReturnControls(ProjectileProfile target) => target with
         {
             ReturnChancePercent = Math.Max(target.ReturnChancePercent, Math.Clamp(get("projectile_return_%_chance"), 0, 100)),
+            PierceAllOnReturn = target.PierceAllOnReturn || get("returning_projectiles_always_pierce") != 0,
             ReturnSpeedMultiplier = target.ReturnSpeedMultiplier * Math.Max(.01, 1 + get("returned_projectile_speed_+%") / 100d)
         };
         p = ReturnControls(ProjectileParameters.Resolve(p, modifiers));
