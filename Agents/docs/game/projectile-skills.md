@@ -83,8 +83,9 @@ Exact official random distribution, radial spiral and sequential timing remain u
 the selected native variation for 1.5 seconds on actual area events, including the final return event. These lifetimes
 are separate from the KB damage delays. Native height, art alignment and full visual equivalence remain pending
 user-operated client validation.
-Without a captured height grid, flight uses client terrain sampling, without the five-step torso offset.
-Effects also follow client terrain; this is not a forced absolute world height of zero, and platform/doodad height
+Flight uses fixed `(captured terrain height ?? 0) + Game_PROJECTILE_HEIGHT`, with a default offset of five steps.
+Missing captures therefore use a provisional absolute height, not client terrain plus an offset.
+Effects follow client terrain independently through `EffectObject`; platform/doodad height
 is still unresolved. A wall-contact regression verifies Fireball area damage and default/Stygian native packets;
 it does not certify that those effects are visible above every surface in the client.
 Water is not treated as a wall merely because it is unwalkable: the projectile mask admits values 1 through 5,
