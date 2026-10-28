@@ -325,6 +325,10 @@ the sole 30 Hz runtime. Catalog fallback provides basic flight; registered skill
 and can require explicit recipes.
 
 
+- Grace Period grants 60 seconds of entry protection outside towns and hideouts.
+  First movement, a skill, a flask or expiry ends it; incoming damage, hostile targeting and RF damage are suppressed.
+  The native buff uses floating-point seconds for its countdown; the icon was checked live, timer retest is pending.
+  See [11](../docs/protocol/11-skills.md), "Area-entry Grace Period".
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;

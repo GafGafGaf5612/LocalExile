@@ -154,6 +154,7 @@ partial class Program
                     foreach (var (id, m) in conn.Monsters)
                     {
                         if (m.Dead) continue;
+                        if (m.Hostile && InGracePeriod(conn)) continue;
                         var (mx, my) = m.Walk.Position(now);
                         double d = Math.Sqrt((double)(mx - px) * (mx - px) + (double)(my - py) * (my - py));
                         if (!m.Aggro && d <= m.AggroRange) { m.Aggro = true; m.LastTarget = null; }
@@ -235,13 +236,14 @@ partial class Program
     static async Task MonsterSwing(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
         SpawnedMonster m, (int X, int Y) from, (int X, int Y) player, int epoch)
     {
+        if (InGracePeriod(conn)) return;
         var a = m.Attack!;
         lock (conn.Monsters)
         {
             // AI work queued during a failed transfer must not become a new swing when admission resumes.
             if (conn.Closed || conn.LeavingArea || conn.PlayerLife == 0 || m.Dead || m.Life == 0 || !m.Hostile
                 || epoch != conn.IncomingHitEpoch
-                || !conn.Monsters.TryGetValue(id, out var current) || !ReferenceEquals(m, current)) return;
+                || !conn.Monsters.TryGetValue(id, out var current) || !ReferenceEquals(m, current) || InGracePeriod(conn)) return;
         }
         bool started = false;
         await Send(remote, stream, ciphers,
@@ -272,7 +274,7 @@ partial class Program
             {
                 if (m.Dead || m.Life == 0 || !m.Hostile || conn.PlayerLife == 0 || conn.Closed || conn.LeavingArea
                     || conn.RageRetired || epoch != conn.IncomingHitEpoch || !conn.Monsters.TryGetValue(id, out var current)
-                    || !ReferenceEquals(m, current)) return;
+                    || !ReferenceEquals(m, current) || InGracePeriod(conn)) return;
                 if (conn.Paused) continue;
                 double now = ProjectileWorldTime(conn);
                 int priorContacts = conn.RecentEnemyHits.Count(now);

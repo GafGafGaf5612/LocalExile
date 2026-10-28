@@ -101,6 +101,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 - **Done when:** the standard auras reserve correctly, their effects match PoB, and the character panel and HUD show
   the same reserved and unreserved values.
 
+### Area-entry protection verification
+
+- **Known:** Grace Period protection and the native timed buff are implemented outside towns and hideouts.
+- **Start:** verify the 60-second countdown, first-step removal and damage prevention in the real client.
+  The icon is visible; its corrected floating-point timer needs a live recheck after the upstream integration.
+- **Done when:** the timer counts down and protection ends on movement, actions or expiry.
+
 ### Damage model (foundation done, deeper defence next)
 
 - **Done:** hits are per-type `DamagePacket`s; conversion follows physical, lightning, cold, fire, chaos, including

@@ -75,12 +75,37 @@ partial class Program
         return restored;
     }
 
+    static bool InGracePeriod(ClientState conn)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        return conn.EntryProtection.Protects(now, conn.Walk.Position(now));
+    }
+
+    static async Task StartGracePeriod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        ushort buff;
+        lock (conn.Monsters) buff = conn.NextBuff++;
+        bool hideout = HideoutCatalog.ByArea(conn.Layout.Hash) is not null;
+        if (conn.EntryProtection.Start(now, conn.Walk.Position(now), buff, InTown(conn), hideout))
+            await Send(remote, stream, ciphers, GracePeriod.BeginPacket(PlayerId, buff), "Grace Period: 60 seconds of entry protection");
+    }
+
+    static async Task EndGracePeriod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool action = false)
+    {
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        if (conn.EntryProtection.End(now, conn.Walk.Position(now), action) is ushort buff)
+            await Send(remote, stream, ciphers, InstanceEntities.RemoveBuff(PlayerId, buff),
+                "Grace Period ends: movement, action or deadline");
+    }
+
     static bool InTown(ClientState conn) => WaypointCatalog.Areas.Find(conn.Layout.Hash) is { IsTown: true };
 
     static async Task EndAurasOnDeath(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         if (conn.PlayerLife != 0 || conn.AuraDeathHandled) return;
         conn.AuraDeathHandled = true;
+        await EndGracePeriod(remote, stream, ciphers, conn, action: true);
         CharacterSaves.ClearActiveAuras(CharacterName(conn));
         List<AuraCatalog.Aura> ended;
         lock (conn.Monsters)
@@ -347,7 +372,7 @@ partial class Program
                 if (rf is not null) await EndRighteousFire(remote, stream, ciphers, conn, "death");
                 continue;
             }
-            if (rf is not null) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
+            if (rf is not null && !InGracePeriod(conn)) await BurnAround(remote, stream, ciphers, conn, rf, seconds);
             // The character panel's Spell Suppression chance again (0x1b3 with only its stats) when a condition changed
             // it: full life lost or regained, a walk started or ended, an enemy hit 4 s ago.
             if (Suppression(conn).Chance is var chance && chance != suppression)
@@ -402,6 +427,7 @@ partial class Program
             double now = conn.Clock.Elapsed.TotalSeconds;
             double seconds = now - last;
             if (seconds <= 0) continue;
+            await EndGracePeriod(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             // Stat aggregation stays at the old 250 ms cadence, rather than rebuilding the panel 60 times/s.
             if (now - ratesAt >= PlayerTickMs / 1000.0 || rf != cachedRf)
@@ -434,7 +460,7 @@ partial class Program
                 }
                 else
                 {
-                    burnCarry += burnPerSecond * seconds;
+                    burnCarry += (InGracePeriod(conn) ? 0 : burnPerSecond) * seconds;
                     int burnWhole = (int)Math.Truncate(burnCarry); burnCarry -= burnWhole;
                     int lifeBurn = conn.EnergyShield.Damage(burnWhole, false, now);
                     conn.EnergyShield.Advance(recoveryFrom, now, RecoveryStat, true);
@@ -575,6 +601,7 @@ partial class Program
     // Damage immunities as the damage model sees them, from the same sources the panel's "Immune to X" rows use.
     static HashSet<DamageType> PlayerImmunities(ClientState conn)
     {
+        if (InGracePeriod(conn)) return [.. Enum.GetValues<DamageType>()];
         var baseStats = new Dictionary<uint, int>();
         foreach (var (key, value) in BaseStats(conn)) baseStats[key] = value;
         lock (conn.Monsters)

@@ -35,6 +35,8 @@ partial class Program
                 double at = conn.ClockAt(readAt);   // when the client applied the click, not when this handler runs
                 // A gem skill cast at the ground (Fireball) stops the player where it stands; anything else (Move) walks there.
                 if (InTown(conn) && Skills.ActionName(use.SkillId) != "Move") continue;
+                if (Skills.ActionName(use.SkillId) != "Move")
+                    await EndGracePeriod(remote, stream, ciphers, conn, action: true);
                 bool cast = Skills.IsGemSkill(use.SkillId);
                 var gem = cast ? GemSkillEffects(conn.Character).FirstOrDefault(g => g.Id == use.SkillId) : default;
                 if (cast && gem.Name is not null && !ProjectilePathAvailable(remote, conn, use.SkillId, gem.Effect)) continue;
@@ -522,6 +524,7 @@ partial class Program
                     RecordVisit(conn);
                     await SendPlayer(remote, stream, ciphers, conn);
                     conn.PlayerSent = true;
+                    await StartGracePeriod(remote, stream, ciphers, conn);
                     await SendWaypoints(remote, stream, ciphers, conn);
                     uint gold = PersonalStashOf(conn).Gold;
                     await Send(remote, stream, ciphers, InstanceEntities.Gold(gold), $"0x02a9 gold: {gold} (account, {conn.League ?? "Standard"})");
