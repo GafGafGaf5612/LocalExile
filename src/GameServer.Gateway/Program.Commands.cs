@@ -7,6 +7,20 @@ using DamageType = GameServer.Core.World.DamageType;
 
 partial class Program
 {
+    /// <summary>The most /item_tab adds of one item type at a time.</summary>
+    internal const int ItemTabMax = 1000;
+
+    /// <summary>The /item_tab tab: the one with that name (case ignored), else the only tab of a type whose name starts with
+    /// it (e.g. "divination" → DivinationStash); null when none or several match.</summary>
+    internal static int? ItemTabOf(AccountStash stash, string name)
+    {
+        var tabs = Enumerable.Range(0, stash.Count).ToList();
+        var named = tabs.Where(t => string.Equals(stash.NameOf(t), name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (named.Count > 0) return named[0];
+        var typed = tabs.Where(t => stash.TypeOf(t).StartsWith(name, StringComparison.OrdinalIgnoreCase)).ToList();
+        return typed.Count == 1 ? typed[0] : null;
+    }
+
     // The chat commands of one connection (ChatCommands.cs).
     static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
@@ -202,6 +216,49 @@ partial class Program
             if (added.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
                 items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
+        })
+        .Add("item_tab", $"/item_tab <stash tab name> <count> (dev: up to count, at most {ItemTabMax}, more of every item type that has its own slot on that tab, as far as each slot holds, e.g. /item_tab Currency 1000)", async args =>
+        {
+            if (args.Length < 2 || !int.TryParse(args[^1], out int requested) || requested < 1)
+                throw new ArgumentException("/item_tab <stash tab name> <count>, e.g. /item_tab Currency 1000");
+            if (Items.Error is { } error) { await conn.Commands!.Reply(error); return; }
+            int amount = Math.Min(requested, ItemTabMax);
+            string name = string.Join(' ', args[..^1]);
+            var stash = PersonalStashOf(conn);
+            if (ItemTabOf(stash, name) is not int tab)
+            {
+                await conn.Commands!.Reply($"No stash tab \"{name}\"; tabs: {string.Join(", ", Enumerable.Range(0, stash.Count).Select(stash.NameOf))}");
+                return;
+            }
+            if (stash.TabType(tab) == StashRules.Gem)
+            {
+                // The gem tab: one of every creatable gem variant (transfigured and Vaal too), red, green, blue then white,
+                // actives before supports; one already there is not added again.
+                var gems = new[] { 1, 2, 3, 4 }.SelectMany(colour => new[] { false, true }.SelectMany(support => Items.FullShopGems(colour, support)))
+                    .Select(g => ItemCatalog.Create(g.Type) with { GemVariant = g.Variant.Index });
+                var cells = stash.FillCells(tab, gems, i => $"{i.TypeHash:x8}:{i.GemVariant}", ShapeOf, out string gemWhy);
+                if (cells is null) { await conn.Commands!.Reply($"Tab \"{stash.NameOf(tab)}\": {gemWhy}"); return; }
+                if (cells.Added.Count > 0 && TabsSentOf(conn, stash).Contains(tab))
+                    await Send(remote, stream, ciphers, InstanceItems.InventoryChange(stash.InventoryOf(tab), stash.NextRevision(tab), [], cells.Added),
+                        $"0x00bf stash tab {tab}: /item_tab {stash.NameOf(tab)}, {cells.Added.Count} gem(s)");
+                await conn.Commands!.Reply($"Tab \"{stash.NameOf(tab)}\" (GemStash): {cells.Added.Count} gem(s) added, one of each variant" +
+                    (cells.Full > 0 ? $"; {cells.Full} already there" : "") + (cells.Skipped > 0 ? $"; {cells.Skipped} found no room" : ""));
+                return;
+            }
+            Item? Create(uint hash) => Items.ByHash(hash) is { Supported: true } type ? ItemCatalog.Create(type) : null;
+            if (stash.FillSlots(tab, amount, Create, ShapeOf, out string why) is not { } fill)
+            {
+                await conn.Commands!.Reply($"Tab \"{stash.NameOf(tab)}\": {why}");
+                return;
+            }
+            var now = fill.Changed.Concat(fill.Added).ToList();
+            if (now.Count > 0 && TabsSentOf(conn, stash).Contains(tab))
+                await Send(remote, stream, ciphers, InstanceItems.InventoryChange(stash.InventoryOf(tab), stash.NextRevision(tab),
+                    [.. fill.Changed.Select(i => i.Id)], now), $"0x00bf stash tab {tab}: /item_tab {stash.NameOf(tab)} {amount}, {now.Count} slot(s)");
+            await conn.Commands!.Reply($"Tab \"{stash.NameOf(tab)}\" ({stash.TypeOf(tab)}): up to {amount} more of {now.Count} item type(s)" +
+                (requested > amount ? $" (at most {ItemTabMax} at a time)" : "") +
+                (fill.Full > 0 ? $"; {fill.Full} slot(s) already full" : "") +
+                (fill.Skipped > 0 ? $"; {fill.Skipped} type(s) skipped (the server can't create them or has no cell for their slot)" : ""));
         })
         .Add("gem", "/gem <name> [level] [quality] (a gem into the inventory at that level and quality, e.g. /gem Fireball 20 20, /gem Ice Nova of Frostbolts, /gem Vaal Fireball 5)", async args =>
         {

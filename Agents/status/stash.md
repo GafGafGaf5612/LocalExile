@@ -34,6 +34,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   2), one per account until there are guilds (verified live).
   Code: `AccountStash.cs`, `StashCatalog.cs`, `InstanceStash.cs`, Gateway (`OpenStash`, `SendStashTab`).
   Docs: [18](../docs/protocol/18-stash.md).
+- **Dev tab fill (`/item_tab <tab name> <count>`).** On a currency, essence, fragment, delve, blight, delirium or divination tab it
+  adds up to `count` more, at most 1000 per command, of every item type that has its own slot, as far as each slot holds.
+  Divination cards are filled to complete sets, which is what that tab shows.
+  On a gem tab it adds one of every creatable gem variant not already there, as far as its 500 cells go.
+  Tabs without a slot per type are refused with the reason.
+  Blight, Delirium, Divination, Ultimatum and Breach tabs now publish their StashType sizes; the 12 × 12 default made the
+  oils draw over the blight tab.
+  Verified in the real client (2026-10-28): blight oils, all divination cards in both rows of the tab, and the gem tab's
+  colour sub-tabs. Automated tests cover caps, in-place growth, reloads, refused tabs, tab lookup, cell fill and every
+  real layout against its published size. Map and unique tabs remain open (roadmap).
 
 ## Partly working
 
