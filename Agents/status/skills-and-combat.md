@@ -816,7 +816,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
   A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
-  Focus skill and curse lifecycles and other enemy-state/more crit mechanics remain separate work.
+  Four unconditional MORE/LESS chance sources now run before final cap/rounding. Real Controlled Destruction
+  changes selected 10% to 2% for both attacks and spells; its link/requirement/removal lifecycle and actual parsed
+  critical draws agree. The real unique -40% source changes an ordinary weapon's 10% to 6%, with explicit zero
+  and item removal restoring 10%. Source cancellation, extreme bounds, independent factor composition and
+  half-up rounding have regressions; current native verification is pending.
+  Focus skill and curse lifecycles, guaranteed-critical effects, off-hand publication/execution and other
+  enemy-state/more crit mechanics remain separate work.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
 - **Overcapped-resistance modifiers.** While the flag stat is set, the uncapped resistance above its maximum is a
   generic increased modifier, exactly PoB's `ResistOverCap` (the maximum capped at 90): +1% increased evasion per 1%

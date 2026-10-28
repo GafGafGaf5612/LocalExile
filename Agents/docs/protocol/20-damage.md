@@ -549,6 +549,13 @@ the displayed APS/CPS boundary; remove the duplicate rounded-then-overwritten ca
 See [skills module, critical-weighted hit averages](11-skills.md) for the formula, primary evidence, regression
 controls and remaining accuracy/multi-hit/DoT/native work. This does not certify either DPS row as complete.
 
+The shared critical chance now also applies the four evidenced unconditional MORE/LESS sources before final
+rounding/capping, including actual Controlled Destruction support and the unique -40% chance modifier.
+Actor and selected-skill calculations consume raw sources once, so critical-weighted means inherit this
+correction without another multiplier. Decision: compute the full exact product instead of capping BASE/INC
+first; a pre-cap 200% with 80% less must become 40%, not 20%. Native and remaining conditional/hand/accuracy
+mechanics remain open; source IDs, support lifecycle and parsed contact tests are in [11](11-skills.md).
+
 - The default attack builds the active weapon's typed packet, or the class's Characters.dat unarmed packet, plus
   raw added damage. The shared player resolver traces conversion/gain before inherited increases/more; the caller
   applies attack Rage once, rolls each final type and retains the existing critical/mitigation stages.

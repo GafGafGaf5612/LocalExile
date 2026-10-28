@@ -470,7 +470,7 @@ No generator output changes are needed: the multiplier is already extracted.
    animated without damage.
 
 **Critical strikes.** The server rolls a hit's critical chance after the damage roll: `(intrinsic base + added base)
-× (1 + increased critical strike chance / 100)`, capped at 100%, then multiplies damage by the final multiplier
+× (1 + increased critical strike chance / 100) × applicable more/less factors`, capped at 100%, then multiplies damage by the final multiplier
 (150% plus
 `base_critical_strike_multiplier_+`), as PoB's `CalcOffence` does. PoB's `unarmedWeaponData[class].CritChance = 0`
 and `base_critical_strike_multiplier = 150` are the defaults used here. The base is the equipped main hand's
@@ -496,6 +496,30 @@ intrinsic base or its replacement, before increased chance. Actor and selected s
 published final chance is never an input. Weapon-local `local_critical_strike_chance` adds to the native weapon base
 before `local_critical_strike_chance_+%`; that rounded permyriad becomes the intrinsic weapon input.
 Signed BASE and increased sums remain wide through the completed expression, then round halfway up and cap.
+`CriticalChanceFinal` now handles four unconditional native MORE/LESS inputs: Controlled Destruction's
+`support_controlled_destruction_critical_strike_chance_+%_final`,
+`support_multiple_projectiles_critical_strike_chance_+%_final`, `unique_critical_strike_chance_+%_final` and
+`active_skill_critical_strike_chance_+%_final`. Player and own contributions to one raw stat sum before its factor;
+different factors multiply after BASE/INC and before the final cap. Nonpositive base/INC/factors produce zero
+instead of allowing two negative terms to create a positive chance. Final display aliases are not read back.
+Exact rational intermediates avoid overflow and preserve the existing half-up permyriad boundary even when
+large developer values and opposing sources compose. `/set_stat` recognizes each input for pool refresh.
+
+Real level-one Controlled Destruction supplies -80: a skill at 10% becomes 2%, while the unrelated/default
+skills retain their own chance. It affects supported attacks as well as spells, although its more-damage benefit
+is spell-only. The actual `LessCriticalStrikeChanceAmulet17` modifier supplies -40, turning the ordinary test
+weapon's 10% into 6%; a source override of zero and item removal restore 10%. Source, qualification and link
+changes agree with selected publication and actual critical draws in parsed melee/bow/projectile/area contacts.
+
+Evidence: local reference library `pob/skills/SupportControlledDestruction`, pinned PoB
+`16de4b82d57f1c0de6eb40f37143c32d4da36a02`, maps the -80 source to `CritChance MORE` with no attack/spell
+restriction. `CalcOffence.lua` lines 3102–3111 multiply BASE, INC and MORE before rounding/capping. The native
+stat descriptions identify the other three inputs as more/less critical chance. This is a labelled 3.29.x fallback,
+with current native verification pending. Decision: use an explicit evidenced source list and one exact final
+projection; applying LESS after an already capped chance would incorrectly turn a pre-cap 200% × 20% into
+20% instead of 40%. The alternative of treating every matching stat name as unconditional would incorrectly
+enable target/owner conditions. Conditional more chance, guaranteed-critical effects, off-hand critical chance
+publication/execution and attack critical confirmation remain separate implementation work.
 Linked Increased Critical Strikes contributes its own BASE and increased chance once through the shared calculation.
 Real native item modifiers, mode-specific Ascendant Assassin sources, local ordering, source removal, explicit zero
 and selected supports have automated coverage; combined results are in §14.

@@ -12,9 +12,7 @@ static class AddedBaseCriticalStrike
         string typed = spell ? Spell : Attack;
         long basis = (long)intrinsic + player(Generic) + player(typed)
             + (skill?.Invoke(Generic) ?? 0) + (skill?.Invoke(typed) ?? 0);
-        // DamageModel's half-up permyriad projection, with BASE kept wide through the completed expression too.
-        return (int)decimal.Round(Math.Clamp(basis / 100m * (100m + increasedPct), 0m, 10_000m),
-            0, MidpointRounding.AwayFromZero);
+        return CriticalChanceFinal.Project(basis, increasedPct, player, skill);
     }
 
     /// <summary>PoB Item.lua2325: native weapon base plus local BASE, then local INC, rounded to permyriad.

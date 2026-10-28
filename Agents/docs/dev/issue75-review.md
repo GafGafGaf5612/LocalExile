@@ -161,6 +161,34 @@ rounded displayed rate. These choices, primary GGG evidence and limitations are 
 Accuracy and attack crit confirmation, conditional more crit, off-hand/multi-hit averaging, cooldowns, integer-roll
 expectation and DoT/native validation remain open. Neither average/DPS row is marked complete yet.
 
+## More/less critical chance correction
+
+The real Controlled Destruction support supplied -80% less chance, but neither selected spell nor attack
+calculations read it. Two real-support before-controls show expected 200 permyriad / actual 1000 in
+`critical-support-reproduced.trx`. Two expression controls in `critical-finals-reproduced.trx` show expected
+4800 / actual 10000 when BASE/INC and three independent factors compose.
+
+The common BASE calculation now passes through `CriticalChanceFinal`, applying the four evidenced
+unconditional native factors before one half-up round and cap. Exact rational arithmetic preserves signed
+cancellation and prevents intermediate overflow. Nonpositive individual stages cannot revive chance through
+another negative factor. Each raw input is registered for command-triggered pool refresh. The projection
+explicitly excludes final aliases and unresolved target/owner conditions.
+
+Twenty-three new tests cover four factors, exact rounding/extreme inputs, prohibition, real support qualification,
+unlink/removal and unrelated skills, parsed Cyclone/Caustic Arrow/Fireball/Ice Nova critical outcomes, and ordinary
+melee/bow with the actual unique -40% modifier, an explicit zero override and item removal. The expanded focused
+receipt passes 72 (`critical-finals-expanded.trx`); solution build passes without warnings/errors. Core 555,
+Data 18 and Gateway 4,214 pass without skips, for 4,787 total. Receipts are `core-critical-finals.trx`,
+`data-critical-finals.trx` and `gateway-critical-finals.trx`.
+
+Decision: multiply the evidenced source factors before capping, instead of applying LESS to an already capped
+chance or assuming every similarly named conditional stat is active. The [skills module](../protocol/11-skills.md)
+and [damage module](../protocol/20-damage.md) record this choice, alternatives and pinned source evidence.
+The review also confirmed that off-hand range/timing publication currently supplies no off-hand critical chance
+or multiplier. That needs the correct hand-specific source/execution work; it is not certified by the existing
+main-hand/spell checks. Guaranteed critical effects and attack accuracy/confirmation remain open too.
+The parent Gateway/Auth/Patch processes were rechecked alive and left alone; no native session was started.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

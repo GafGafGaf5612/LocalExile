@@ -93,5 +93,5 @@ static class AttackBaseCriticalStrike
         or AddedBaseCriticalStrike.Generic or AddedBaseCriticalStrike.Attack or AddedBaseCriticalStrike.Spell
         or "global_cannot_crit" or "virtual_global_cannot_crit" or "cannot_critical_strike_with_attacks"
         or "spell_critical_strike_chance_+%" // Also refresh the pooled spell reference used by /crit.
-        || Increases.Any(input => input.Stat == name);
+        || CriticalChanceFinal.IsInput(name) || Increases.Any(input => input.Stat == name);
 }

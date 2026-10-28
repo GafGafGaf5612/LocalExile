@@ -322,7 +322,11 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   These controls do not establish rendered zero or certify a complete issue75 row.
   Isolated modifiers do not prove acquisition; the local-flat fixture does not certify its no-extra-critical-damage
   consumer, and exact official rounding is unproved.
-  Other conditional/more crit remains separate work.
+  Four unconditional MORE/LESS critical sources are now implemented with final cap/rounding and actual support/
+  item lifecycle/contact tests. Recheck Controlled Destruction and the unique -40% source in the native client.
+  Other conditional more chance, guaranteed-critical effects, off-hand chance/multiplier publication and execution,
+  and the attack critical confirmation remain separate work. The off-hand range/timing publication currently
+  has no corresponding critical fields; do not infer completion from its other weapon fields.
   Add support effects through `DamagePacket.Add`, `Scale`, `Convert` and `AddGain`.
   When owned-actor execution is implemented, supply actual-caster stats to `SkillDamageContext` explicitly.
   Do not inherit an owner's spell-damage restriction onto independent minions or daemons without a skill rule.
