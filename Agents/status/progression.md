@@ -55,7 +55,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Gambler has consumers for every node in its actual graph, including both Block Luck choices and negative effects.
   Legal eight-point builds, exclusive choices, paid refunds, failed-save rollback and reload have Gateway coverage.
   Incoming ordinary monster ailments give Risk Aversion an actual avoidance consumer, alongside bounded stun recovery.
-  Native class acceptance and related-PR integration remain pending; no whole-class readiness is claimed yet.
+  Native checks cover legal builds, both choices, outgoing/incoming resistance outcomes, damage, real ignite avoidance,
+  lethal death-panel/checkpoint behavior, refunds, relog and restart. Related-PR integration remains pending;
+  the draft does not claim final merge readiness.
   Default Phrecia admission is gated; the explicit Gambler opt-in verifies installed graph bytes read-only.
   Docs: [Gambler checklist, scope and verification](../docs/game/gambler.md).
 - Phrecia identities, graph ownership and the point/save lifecycle have automated coverage.

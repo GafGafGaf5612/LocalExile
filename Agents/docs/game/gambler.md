@@ -3,7 +3,8 @@
 Gambler is the Duelist's Phrecia Gladiator identity for client 3.29.3b.
 All nodes offered by the pinned graph have runtime consumers, including their drawbacks.
 This is a bounded implementation of the server's existing combat, not every Path of Exile skill or ailment source.
-Native acceptance and composed-PR verification must be recorded before declaring the class ready.
+Native checks cover the supported class behavior below.
+Final related-PR composition remains a separate readiness condition.
 
 ## Node checklist
 
@@ -35,7 +36,7 @@ Two legal eight-point builds cover the entire class, swapping the free choice to
 
 ## Incoming elemental ailments
 
-Supported monster melee contacts now inflict ordinary ailments: any qualifying cold hit chills, and a critical
+Supported monster basic contacts now inflict ordinary ailments: any qualifying cold hit chills, and a critical
 elemental hit can ignite, freeze or shock with its corresponding component.
 Blocked and evaded hits do not apply ailments.
 Each eligible ailment independently checks final avoidance once; 65 succeeds and 66 fails against Risk Aversion's 66%.
@@ -97,3 +98,38 @@ Use native passive refunds or `/reset_ascendancy`; allocate/refund/save failure 
 `AscendancyGatewayIntegrationTests.Gambler`, `GamblerRuntimeTests`, `PlayerElementalAilmentsTests` and the existing
 critical/projectile/recovery suites cover node consumers, live removal, multiple choices and normal combat composition.
 Local full-suite and native evidence belongs under this worktree's ignored `logs/`; record exact revisions with results.
+
+## Verification evidence
+
+Production source `fb76fd7677ea4c0c17217f0bc6af3d2504facfd9` includes current main
+`6a5697ff2731d2e3fafa83b27fa5ff1e71290149`. The solution builds with zero warnings/errors;
+Core 640, Data 18 and Gateway 3603 tests pass. Gateway collections run serially because existing asynchronous
+combat tests have wall-clock deadlines. The encrypted resource-writer tests exercise lethal ignite cleanup,
+once-only publication, stale resurrection/transfer suppression and actual nonlethal RF casting.
+
+Earlier source `50afc54e` passed 13 class checks and seven real-monster ailment checks, including both legal builds,
+choice/refund rules, 70/210 outgoing damage, 10/125 incoming resistance outcomes, removal, relog and Gateway restart.
+The affected final-source native repeat used Gateway SHA-256
+`4899ee9422abe50aacfef9437050e6a1abb8840833c0cb979dd8e405b4321452` and the same single 3.29.3b client.
+It verified actual RF remains nonlethal, Reversed Odds produces 60/140 fire hits against +40% resistance,
+real monster ignite kills with Overly Confident allocated, ordinary 66% avoidance still allows both outcomes,
+checkpoint resurrection and ordinary Gladiator fallback.
+
+The client parsed the show message once (`0x55`, flags `0x04`: checkpoint, hide bit clear) and the hide message
+(`0x02`) after resurrection. An independent actual-window capture showed "You have died!" and
+"Resurrect at Checkpoint"; a subsequent capture showed the panel cleared and Life restored.
+The `0x140d86180` HUD hook counted zero and is not evidence of that visual result.
+The failed strict-hook attempt and diagnostic retry remain preserved, with an explicit acceptance correction.
+Evidence is local and ignored: `logs/native-gambler-reviewed-20261028-191355/` contains the final results,
+`native-HUD-acceptance.json`, `visible-death-panel.png` and `visible-after-resurrection.png`.
+The accepted root Gateway was restored at 16:15:58 UTC, PID 32652, normal save DB and no class opt-in flags;
+`logs/native-lease-fb76/restored.json` records the unchanged accepted DLL hash and runtime checks.
+No root source or build output was replaced. The first candidate-log copy used the wrong working directory and
+failed; the untouched candidate logs were then copied from this worktree without loss.
+
+Related-head verification must preserve the typed Ward/ES/physical Mana split, actual-cost-only Rage, Mana Recoup,
+strongest Blind, ailment movement, duration and Vaal behavior. A private merge must suppress pending Mana Recoup in
+the same tick that ignite becomes lethal, before normal death cleanup/publication. This is a required composition
+resolution with Whisperer, not a standalone failure of either class. Private combined test results do not establish
+that the published heads merge without that resolution. Final owner-accepted Whisperer input/native acceptance
+and exact-head composition remain required before this PR is ready.

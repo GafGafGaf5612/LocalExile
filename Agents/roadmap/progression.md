@@ -29,7 +29,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   See [Status](../status/progression.md) and the [model/evidence audit](../docs/game/antiquarian.md).
 - **Start:** quest passive/refund rewards and the native Labyrinth/Altar flow (#151).
   Gambler's full node consumers and ordinary incoming elemental ailment avoidance now have automated coverage.
-  Complete native acceptance and composed-head verification before marking its PR ready; see [Gambler](../docs/game/gambler.md).
+  Native acceptance now covers the supported class and lethal ignite boundary. Finish owner-accepted exact-head
+  composition, including Whisperer Recoup suppression on lethal ignite, before marking its PR ready.
+  See [Gambler](../docs/game/gambler.md).
   Phrecia play stays gated by default; Gambler's explicit opt-in verifies the separately installed graph read-only.
   Other Phrecia classes retain their default gate; Antiquarian requires its exact verified installed graph opt-in.
   Do not add automatic archive writes or require the alternate graph for ordinary characters.
