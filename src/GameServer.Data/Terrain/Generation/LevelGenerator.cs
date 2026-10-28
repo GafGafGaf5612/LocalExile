@@ -582,12 +582,32 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             _view.X1 - r.X, _view.Y1 - r.Y, _store, _fills, notes).Run();
     }
 
+    /// <summary>The Explore room's type of the Sanctum floor whose rooms lie beside <paramref name="masterPath"/>
+    /// (Data/SanctumRooms: Id +0, ArmFile +8, RoomType +0x10, row 0 = Explore), null for any other master.</summary>
+    string? SanctumRoomType(string masterPath)
+    {
+        if (files.Raw("Data/SanctumRooms.datc64") is not { } data) return null;
+        var rooms = new RawDat(data);
+        string folder = masterPath[..(masterPath.LastIndexOf('/') + 1)];
+        int row = rooms.Find(r => rooms.Ref(r, 0x10) == 0 && rooms.String(r, 8).StartsWith(folder, StringComparison.OrdinalIgnoreCase));
+        if (row < 0) return null;
+        string id = rooms.String(row, 0);
+        return id[(id.IndexOf('_') + 1)..].ToLowerInvariant();
+    }
+
     /// <summary><c>0x14203c900</c> for a graph of several nodes: the exist rolls (as for tile graphs), then the rooms
     /// on a grid of the graph's size in room units (<c>0x1421038d0</c>).</summary>
     DungeonMap Layout(string graphPath, int graphOrientation, string masterPath, Dictionary<string, string> master, int unit, bool primary,
         bool share = true)
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
+        // A Sanctum floor's .dgr is one node tagged "land": the client places the floor's room there under its type
+        // (SanctumRooms Id without the floor, "Cellar_Explore_1_1" → "explore_1_1"). The room comes from the server;
+        // without one the client takes the floor's room of type 0 (Explore) and fails as the port then does (seed 1:
+        // "No suitable room found for room at (4, 2) with type "explore_1_1"", the Crypt's "No possible rooms found").
+        // No client code names "land"; where the room is read was not found.
+        if (graph.Nodes.Any(n => n.Tag == "land") && SanctumRoomType(masterPath) is { } land)
+            foreach (var n in graph.Nodes.Where(n => n.Tag == "land")) n.Tag = land;
         // 0x142031d10: the Vaal side area pick, as on tile graphs; the first graph that keeps an entrance clears it.
         if (TileGraphGenerator.Prepare(graph, rng, VaalSideArea, Hideout, primary, pool, Labyrinth)) VaalSideArea = false;
         // Then a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows, the side area's included.
@@ -1558,7 +1578,7 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         if (!master.TryGetValue("FillTiles", out var gft)) return [];
         var (vx, vy, vx1, vy1) = _view;
         var fill = new Fill(files, rng, _grid, vx, vy, vx1 - vx, vy1 - vy, _store,
-            files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes) { TilePlaced = Listen };
+            files.FillTiles(TerrainText.Resolve(masterPath, gft)), _fillRooms, notes) { TilePlaced = Listen, PoolHasTiles = () => pool.HasTiles };
         UniqueRooms(master, masterPath, fill, primary);
         Shrines(master, masterPath, fill);
         if (_edgeRecords.Count != 0)

@@ -757,7 +757,8 @@ sealed class EdgeTiling(TileGraph graph, TileGrid grid, int offsetX, int offsetY
             else key.PointA[sNext] = key.PointA[sPrev] = (byte)(3 * s / 2);
             Grounds(key, sPrev, sNext, r.Edge, r.End != 0);
             var list = store.Candidates("", key);
-            if (list.Count == 0) throw new InvalidOperationException($"Failed to tilise edge: Could not find matching tile at ({cell.X}, {cell.Y}) for edge type {r.Edge.Type}: {key}");
+            // The client names the cell in map coordinates (2_6_12 seed 1: view (16, 51), outer buffer 6, "(22, 57)").
+            if (list.Count == 0) throw new InvalidOperationException($"Failed to tilise edge: Could not find matching tile at ({cell.X + offsetX}, {cell.Y + offsetY}) for edge type {r.Edge.Type}: {key}");
             int pick = (int)rng.Next((uint)list.Sum(c => c.Weight));
             var chosen = list[^1];
             foreach (var c in list)

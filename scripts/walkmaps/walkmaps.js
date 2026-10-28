@@ -47,8 +47,61 @@ if (!exe) {
     hookDoodads(exe);
     hookGeneration(exe);
     hookRooms(exe);
+    hookOverlayProbe(exe);
     send({ type: 'ready', module: exe.name });
   }
+}
+
+// Overlay fit probe (Agents/docs/re/011-level-generation.md §8, 2_8_7_1_): every 0x141ffef60(ctx, group, view x | y << 32,
+// flags) whose map position falls in a box of PROBES is reported with its result, the exclusion bytes under the key
+// (ctx +0x20 width, +0x30 bytes), and the tiles-inside check 0x141d850b0 as it made it
+// (the key match 0x141ffa7b0 takes more arguments than its first four and is not called).
+// ctx +0 → view: +8 / +0xc offset; group +0x20 / +0x21 key size.
+const PROBES = [{ area: '2_8_7_1_', x0: 84, y0: 26, x1: 94, y1: 34 }];
+function hookOverlayProbe(exe) {
+  const at = va => exe.base.add(ptr(va).sub(IMAGE_BASE));
+  const fitsAt = at('0x141ffef60'), insideAt = at('0x141d850b0');
+  const areaOf = () => {
+    try {
+      const row = currentGen.add(0x38).readPointer().add(0xb0).readPointer();
+      return row.isNull() ? '' : row.readPointer().readUtf16String();
+    } catch (e) { return ''; }
+  };
+  // Called from the probe for its spots only: hooking them would run on every in-game call too (0x141d850b0 is a
+  // generic tile-grid helper) and slow the client's frames.
+  const inside = new NativeFunction(insideAt, 'uint8', ['pointer', 'pointer']);
+  Interceptor.attach(fitsAt, {
+    onEnter(a) {
+      this.on = false;
+      if (currentGen === null) return;
+      const area = areaOf();
+      const view = a[0].readPointer();
+      const vx = a[2].and(0xffffffff).toInt32(), vy = a[2].shr(32).and(0xffffffff).toInt32();
+      const x = vx + view.add(8).readS32(), y = vy + view.add(0xc).readS32();
+      if (!PROBES.some(p => p.area === area && x >= p.x0 && x < p.x1 && y >= p.y0 && y < p.y1)) return;
+      const w = a[1].add(0x20).readU8(), h = a[1].add(0x21).readU8();
+      const ew = a[0].add(0x20).readU64().toNumber(), excl = a[0].add(0x30).readPointer();
+      const bytes = [];
+      try {
+        for (let v = 0; v < h; v++) for (let u = 0; u < w; u++) bytes.push(excl.add((vy + v) * ew + vx + u).readU8());
+      } catch (e) { bytes.push(String(e)); }
+      this.on = true;
+      this.info = { area, x, y, w, h, flags: a[3].toUInt32() & 0xff, excl: bytes, inside: null };
+      this.map = view.readPointer();
+    },
+    onLeave(r) {
+      if (!this.on) return;
+      this.info.result = r.toUInt32() & 0xff;
+      // As 0x141ffef60 calls it: the map and the key's map rectangle (x0, y0, x1, y1).
+      try {
+        const { x, y, w, h } = this.info;
+        const rect = Memory.alloc(16);
+        rect.writeS32(x); rect.add(4).writeS32(y); rect.add(8).writeS32(x + w); rect.add(12).writeS32(y + h);
+        this.info.inside = inside(this.map, rect);
+      } catch (e) { this.info.error = String(e); }
+      send(Object.assign({ type: 'probe', probe: 'overlay-fit' }, this.info));
+    },
+  });
 }
 
 // Placed .arm rooms, including named server-only spawn points absent from .tmd objects. The existing room-doodad
@@ -206,14 +259,17 @@ function hookGeneration(exe) {
   }
   const va = p => '0x' + p.sub(exe.base).add(IMAGE_BASE).toString(16);
   const inside = (p, start, size) => p.compare(at(start)) >= 0 && p.compare(at(start).add(size)) < 0;
-  let thread = null, draws = [];
+  let thread = null, draws = [], outerSp = ptr(0), currentSeed = 0;
   const wstring = s => s.add(0x18).readU64().compare(7) > 0 ? s.readPointer().readUtf16String() : s.readUtf16String();
 
   Interceptor.attach(at(hooks.generate[0]), {
     onEnter(a) {
       this.gen = a[0];
+      // A call on the traced thread no deeper than the traced one: that generation threw and never returned.
+      if (thread !== null && this.threadId === thread && this.context.sp.compare(outerSp) >= 0) thread = null;
       if (thread !== null) return;
       thread = this.threadId;
+      outerSp = this.context.sp;
       draws = [];
       graphStages = [];
       relaxRecords = [];
@@ -229,33 +285,56 @@ function hookGeneration(exe) {
       dungeonFills = [];
       heightStages = [];
       currentGen = a[0];
-      this.seed = a[0].add(0x30).readPointer().readU32();
+      this.seed = currentSeed = a[0].add(0x30).readPointer().readU32();
     },
     onLeave() {
       if (this.threadId !== thread) return;
       thread = null;
       try {
-        const gen = this.gen, world = gen.add(0x38).readPointer();
-        const row = world.add(0xb0).readPointer();
-        const area = row.isNull() ? '' : row.readPointer().readUtf16String();
-        const grid = gen.add(0x28).readPointer();
-        const w = grid.add(0x18).readU64().toNumber(), h = grid.add(0x20).readU64().toNumber();
-        const entries = grid.add(0x28).readPointer();
-        const tiles = [];
-        for (let y = 0; y < h; y++)
-          for (let x = 0; x < w; x++) {
-            const e = entries.add((y * w + x) * 0x38);
-            if (e.readPointer().isNull()) continue;
-            const def = e.add(8).readPointer();
-            tiles.push([x, y, def.isNull() ? null : wstring(def.add(8)), e.add(0x30).readS16(), e.add(0x36).readU8(),
-                        e.add(0x34).readU8(), e.add(0x35).readU8()]);
-          }
-        send({ type: 'generation', area, level: world.add(0xd4).readU8(), seed: this.seed, finalSeed: gen.add(0x30).readPointer().add(4).readU32(),
-               tileHash: world.add(0x114).readU32(), w, h, tiles, draws, graphs: graphStages, relaxRecords, fillVertices, paint, dungeon, dungeons, subgraphs, fills: dungeonFills, heights: heightStages });
+        const { area, grid, w, h } = sendTrace('generation', this.gen, this.seed);
         sendCellHeights(area, this.seed, grid, w * 23, h * 23);
       } catch (e) {
         send({ type: 'error', message: 'generation: ' + String(e) });
       }
+      reset();
+    },
+  });
+  // The trace as it stands: the placed tiles, every draw and the stage records. On a failed generation the client
+  // throws, 0x14204d820 never returns and the client hangs on its error: a generation that has drawn nothing for
+  // 8 s is sent as it stands as 'generation-failed' (walkmaps.py: <area>_seed<seed>.failtrace.json, kept apart from
+  // the .gen.json traces; a slow load that goes on later still writes its .gen.json). Hooking the throw helper
+  // 0x142cdd4c0 instead crashed the client once in game (2026-10-28).
+  function sendTrace(type, gen, seed) {
+    const world = gen.add(0x38).readPointer();
+    const row = world.add(0xb0).readPointer();
+    const area = row.isNull() ? '' : row.readPointer().readUtf16String();
+    const grid = gen.add(0x28).readPointer();
+    const w = grid.isNull() ? 0 : grid.add(0x18).readU64().toNumber(), h = grid.isNull() ? 0 : grid.add(0x20).readU64().toNumber();
+    const tiles = [];
+    if (!grid.isNull()) {
+      const entries = grid.add(0x28).readPointer();
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          const e = entries.add((y * w + x) * 0x38);
+          if (e.readPointer().isNull()) continue;
+          const def = e.add(8).readPointer();
+          tiles.push([x, y, def.isNull() ? null : wstring(def.add(8)), e.add(0x30).readS16(), e.add(0x36).readU8(),
+                      e.add(0x34).readU8(), e.add(0x35).readU8()]);
+        }
+    }
+    send({ type, area, level: world.add(0xd4).readU8(), seed, finalSeed: gen.add(0x30).readPointer().add(4).readU32(),
+           tileHash: world.add(0x114).readU32(), w, h, tiles, draws, graphs: graphStages, relaxRecords, fillVertices, paint, dungeon, dungeons, subgraphs, fills: dungeonFills, heights: heightStages });
+    return { area, grid, w, h };
+  }
+  let seen = -1, still = 0, sentFailed = null;
+  setInterval(() => {
+    if (thread === null || currentGen === null) { seen = -1; return; }
+    if (draws.length !== seen) { seen = draws.length; still = 0; return; }
+    if (++still < 4 || sentFailed === currentGen) return;
+    sentFailed = currentGen;
+    try { sendTrace('generation-failed', currentGen, currentSeed); } catch (e) { send({ type: 'error', message: 'failed generation: ' + String(e) }); }
+  }, 2000);
+  function reset() {
       draws = [];
       graphStages = [];
       relaxRecords = [];
@@ -271,8 +350,7 @@ function hookGeneration(exe) {
       dungeonFills = [];
       heightStages = [];
       currentGen = null;
-    },
-  });
+  }
   const traced = (kind, va0) => Interceptor.attach(at(va0), {
     onEnter(a) {
       this.on = this.threadId === thread;

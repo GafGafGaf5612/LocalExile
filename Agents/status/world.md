@@ -84,17 +84,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
   transitions and waypoints (`AreaObjects.cs`).
   1669 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
-  and 2883 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
-  loads the client itself failed to generate, the port fails 110 the same way. The 34 areas the client cannot
+  and 2884 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
+  loads the client itself failed to generate, the port fails 112 the same way. The 34 areas the client cannot
   generate at seed 1 (and that need no server data) were toured at random seeds the port generates: all 73 loads match.
   An unattended tour of every WorldAreas row with a topology (2026-10-27, `scripts/re/levelgen/tourloop.py`, which
   restarts and logs in the client by itself) left 234 of the 1932 rows with no client-side level to match: 17 without a
   topology, 202 that need data from the server (Incursion temples, Delve cells and biomes, Heist contracts, Synthesis
   memories, the Sanctum floors, the Deepwater biome grid), and 15 the client cannot generate at any seed tried (the
   list is written to data/areas-unavailable.txt). The port matches a load of every other row.
-  A tour of 3 random seeds per matching area: 518 of 519 match; one is open (re/011 §8).
+  A tour of 3 random seeds per matching area: all 519 match.
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
-  All 30 loads with a height capture match cell for cell; 185 of the 186 with a transitions capture match exactly
+  Every load with a height capture matches cell for cell; 185 of the 186 with a transitions capture match exactly
 (Act 5's crater effects, `GlowyFX` and `SlavePensIntroGround`, are placed but not sent yet).
   The Gateway generates the supported areas itself (`ServerLevels.cs`): those whose seed-1 trace passes every gate
   check (`gate-baseline.json`); their walk grid, cell heights, transitions and waypoint need no capture.

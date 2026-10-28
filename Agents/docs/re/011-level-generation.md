@@ -1429,6 +1429,11 @@ captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates th
   Traces of 2026-10-22: town 496 draws (30 × 18 tiles), Twilight Strand 30 586 (78 × 42), The Coast 46 706 (75 × 75),
   HideoutForest 2 818 (33 × 33). Since the second Strand trace of 2026-10-22 a trace also holds `graphs`: the tile
   graph (nodes, edges with points, virtual end points, end offsets, widths) at each layout stage boundary (§3f).
+  A generation that stops drawing for 8 s unfinished (the client hangs on its error) sends the trace so far
+  as `<area>_seed<seed>.failtrace.json` (not `.gen.json`, so the gate does not take it for a load); the next
+  generation on that thread starts a new trace. `PROBES` in walkmaps.js reports every overlay fit test
+  (`0x141ffef60`) in a box of an area to `data/walkability/probes.jsonl`: result, exclusion bytes, flags and the
+  tiles-inside check (`0x141d850b0`) (2026-10-28, for `2_8_7_1_`).
 - **Capture tour (traces without playing):** with `live.ps1 -Walkmaps` running and a character in game,
   `/tour data/tour.txt` sends the character through every "`<area id> <seed>`" line of the file, each in a new
   instance with that seed (the `transfer` control request's `Seed`, `InstanceRegistry.EnterNew`), waits until the
@@ -1480,9 +1485,11 @@ captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates th
   was sent anyway, 1_1_3 2042820024 and 1_3_9 603386005, failed in the client at the same place), then `/tour`. 518
   loads captured, 508 of the 519 new logged loads match by tile hash; 518 after the fixes of 2026-10-27 (the dungeon
   unique rooms, fill rooms in the seams' vertex set, the Vaal side area in a tile graph subgraph, the overlays keeping
-  off the pool's placed rooms, saved overlay entries mended column by column). Open: `2_8_7_1_` 29983204 at
-  `0x141fffc2c`: the client finds fewer overlay spots for the 3 × 1 and 1 × 3 door overlays, the ones the port has
-  extra all touching the shrine (`generic_01.arm`, 2 × 2 at (90, 29)) or (74, 38). The gate checks only the hash of these loads; their grids, doodads,
+  off the pool's placed rooms, saved overlay entries mended column by column). `2_8_7_1_` 29983204 matched last
+  (2026-10-28): its door overlays (`+OverlayFeatureTiles +OverlayFeatureRooms +OverlayExtraFeatures`) leave out every
+  spot on the shrine (`generic_01.arm` at (90, 29), the pool's placed room, exclusion 0x20), because the client's
+  flag parser (`0x141ffc8a0`) knows OverlayExtraFeatures but never sets or clears its bit 0x20 (the walkmaps.js
+  probe read flags 0x1e at `0x141ffef60`). The gate checks only the hash of these loads; their grids, doodads,
   heights and transitions are captured but not yet compared.
 - **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
   by tile.
@@ -1491,10 +1498,24 @@ captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates th
   `Shared.LoggedFailures`) at its level: it matches when the port fails with the same first three words and only
   cells the client names (`Shared.SameFailure`; the client words grounds and edges by name and adds a tile position).
   Of 115 logged failures 107 match (the Delve cells, AbyssLeague and BetrayalTest give up as the client does when no room
-  of a node's tag fits and the extra room pool is empty: "No possible rooms found for room at …"). Open: the Sanctum
-  floors (3; the client fails later, at an "explore_1_1" node), the Incursion temples (3; the server's room hash),
-  BetrayalMastermindFight (a mission tile) and `2_6_12` seed 1, which fails earlier in the port, at (16, 51), than in
-  the client, at (22, 57).
+  of a node's tag fits and the extra room pool is empty: "No possible rooms found for room at …").
+  BetrayalMastermindFight seed 1 fails as the client does in a fill room's tagged slot with no tile in the tile set
+  (`0x141fe89e0`: a "missiontile" slot then takes a mission tile, any other the second store at param_1[2] + 0x90,
+  the extra room pool's tile store that its rows' tiles go to, neither ported; with no pool row bringing tiles the
+  port fails as the client does, else it stops): "Could not find matching feature tile at (36, 8) with feature name
+  'round west'" (churchruin_4.arm). The Sanctum floors: each `.dgr` is one node tagged
+  "land", which no room has and no client code names. The client places the floor's room there under its type
+  (Data/SanctumRooms Id without the floor: "Crypt_Explore_1_1" → "explore_1_1", not the .arm's own tag, which is
+  "encounter_01" in the Crypt); the server chooses the room, and without one the client takes the floor's room of
+  type 0, Explore, on all four floors. The port does the same (`LevelGenerator.SanctumRoomType`), and SanctumCrypt
+  fails as the client does ("No possible rooms found for room at (0, 0) with type "explore_1_1"", its room set has no
+  Explore room). Open: the Cellar, Nave and Vaults, where the client reports the room at (4, 2) and finds no fit,
+  while the port puts node (11, 11) at cell (0, 0) (Width × 23 per graph cell) and places it; (4, 2) needs about 16
+  units per cell, so the room's position comes from data the port does not read. The Incursion temples (3; the server's room
+  hash). `2_6_12` seed 1 fails where the client does: its failed-load trace (`2_6_12_seed1.failtrace.json`) matches
+  all 7267 draws and every graph stage, and the client names the edge tile's cell in map coordinates (view
+  (16, 51) + the outer buffer's 6 = "(22, 57)"; the edge point match's "Could not connect edge tiles" stays in view
+  coordinates, as `0x141ffbf40` prints them).
 - **Oracle:** `… oracle [area regex]` runs every (area, seed) the client logged with its tile hash
   (`Client/logs/Client-*-archive.txt`, older log parts kept aside, then `Client/logs/Client.txt`) and reports match /
   mismatch / where the port stops, with a summary. **Only loads of the local client's version count** (since

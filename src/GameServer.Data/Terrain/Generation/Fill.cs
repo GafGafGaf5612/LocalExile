@@ -15,6 +15,10 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
     /// x, y).</summary>
     public Action<TileDef, int, int, int>? TilePlaced { get; init; }
 
+    /// <summary>Whether the extra room pool's tile store (the second store of a fill room's slot) holds tiles; null when
+    /// this fill has no pool.</summary>
+    public Func<bool>? PoolHasTiles { get; init; }
+
     TileEntry? Entry(int x, int y) => grid[x + offsetX, y + offsetY];
 
     public void Run()
@@ -312,6 +316,12 @@ sealed class Fill(TerrainCache files, LevelRandom rng, TileGrid grid, int offset
                     }
                 }
                 var list = store.Candidates(slot.Tag, key.Rotate(o));
+                // 0x141fe89e0: no tile in the tile set; a "missiontile" slot takes a mission tile (not ported), any
+                // other the second store (param_1[2] + 0x90: the extra room pool's tiles, not ported), and a tagged
+                // slot with neither fails (BetrayalMastermindFight seed 1's churchruin_4 'round west').
+                if (list.Count == 0 && slot.Tag is { Length: > 0 } and not "missiontile" && PoolHasTiles?.Invoke() == false)
+                    throw new InvalidOperationException($"Could not find matching feature tile at ({bx + offsetX}, {by + offsetY}) with feature name '{slot.Tag}', " +
+                        $"While placing fill room {room.Path} @ ({x + offsetX}, {y + offsetY})");
                 if (list.Count == 0)
                     throw new NotSupportedException($"{room.Path}: slot ({col}, {row}) tag '{slot.Tag}' has no tile in the tile set (mission tiles and the second store are not ported)");
                 if (Entry(bx, by) is not null) continue;

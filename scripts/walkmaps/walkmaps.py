@@ -102,6 +102,10 @@ def on_message(message, data, out):
         save_doodads(out, payload.get("doodads") or [])
     elif kind == "generation":
         save_generation(out, payload)
+    elif kind == "generation-failed":
+        save_failed_generation(out, payload)
+    elif kind == "probe":
+        save_probe(out, payload)
     elif kind == "cell-heights" and data is not None:
         save_cell_heights(out, payload, data)
     elif kind == "room":
@@ -246,6 +250,24 @@ def save_cell_heights(out, info, cells):
     os.replace(stem + ".heights.bin.tmp", stem + ".heights.bin")
     log(f"{os.path.basename(stem)}: cell heights {info.get('w')}x{info.get('h')}, map +0x104 {info.get('storey')}, "
         f"{info.get('rects')} height rectangles, {info.get('clipped')} clipped to i16")
+
+
+def save_failed_generation(out, gen):
+    """A generation that threw: the trace up to the throw, <area>_seed<seed>.failtrace.json (not .gen.json, so the gate
+    does not take it for a finished load); each later throw of the same load rewrites it."""
+    if not gen.get("area"):
+        return
+    stem = os.path.join(out, f"{gen['area']}_seed{gen['seed']}")
+    with open(stem + ".failtrace.json.tmp", "w", encoding="utf-8") as f:
+        json.dump(gen, f)
+    os.replace(stem + ".failtrace.json.tmp", stem + ".failtrace.json")
+    log(f"{os.path.basename(stem)}: failed generation trace, {len(gen.get('draws') or [])} draws, {len(gen.get('tiles') or [])} tiles")
+
+
+def save_probe(out, probe):
+    """One probe record (walkmaps.js PROBES), appended to probes.jsonl."""
+    with open(os.path.join(out, "probes.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(probe) + "\n")
 
 
 def save_generation(out, gen):

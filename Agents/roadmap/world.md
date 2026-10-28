@@ -32,6 +32,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   `/tour <file>` with `live.ps1 -Walkmaps` records new (area, seed) loads; `levelgen tourlist` writes the lists.
 - **Start:** record the areas never visited (`levelgen survey` lists them; `levelgen tourlist` and `/tour` record
   them) and fix what differs, so `ServerLevels` supports them; then use random seeds for supported areas.
+- **To be implemented (out of scope for now):** the 3.29 league's DeepwaterEncounter and DeepwaterEncounterVoyage,
+  the only seed-1 traces the port does not match: the client builds them from a biome grid the server sends, so they
+  come with that league's server side.
   For a daily labyrinth: port the rest of `0x1424e30f0` (connections, secrets) and send the layout message
   (`0x141ec7220`: seed, node, difficulty).
 - **Done when:** any seed gets its layout without a capture.

@@ -132,6 +132,14 @@ def start(account, password, character, tour_file, first):
         return False
     r = control(f"character:play:{character}", timeout=120)
     # With a saved tour the arrival sends the character on at once: the wait for it to stand in an area can time out.
+    # The area load can also stop frames for longer than client-control waits for one ("No client frame within 5
+    # seconds") although the character arrives: ask again for up to a minute.
+    deadline = time.monotonic() + 60
+    while not r.get("ok") and state() is None and time.monotonic() < deadline:
+        time.sleep(5)
+        status = control("game:status", timeout=60)
+        if status.get("screen") == "game":
+            r = {"ok": True}
     if not r.get("ok") and state() is None:
         log(f"play failed: {str(r.get('error'))[:200]}")
         return False

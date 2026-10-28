@@ -74,8 +74,13 @@ sealed class ExtraRoomPool
             if (count == 0) return;
         }
         for (int i = 0; i < count; i++) Rows.Add(row);
+        if (row.Tiles.Count != 0) HasTiles = true;
         if (row.Link >= 0) Add(Row(row.Link), count);
     }
+
+    /// <summary>A row added tiles to the pool's tile store (+0x90): the second store a fill room's tagged slot falls
+    /// back to (<c>0x141fe89e0</c>). The tiles stay when their row leaves.</summary>
+    public bool HasTiles { get; private set; }
 
     /// <summary><c>0x141d8bba0</c>: the subgraph's share of the rows by its weight (its master's +0x152): all of them
     /// when no weight is left to share by; else rows × weight / left, plus one when <c>Next(left)</c> falls below the

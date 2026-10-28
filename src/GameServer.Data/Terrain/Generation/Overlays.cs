@@ -175,11 +175,15 @@ sealed class Overlays
         return new OverlayPass(passes, order, groups);
     }
 
-    // 0x141ffc8a0.
+    // 0x141ffc8a0. OverlayExtraFeatures (0x20) is a known name that changes nothing: the client skips that bit for
+    // + and -, so the pool's placed rooms (exclusion 0x20) stay closed to every overlay (2_8_7_1_ 29983204's door
+    // overlays keep off its shrine; the probe of 2026-10-28 read flags 0x1e for "+OverlayFeatureTiles
+    // +OverlayFeatureRooms +OverlayExtraFeatures").
     static byte Flag(byte flags, string word)
     {
         int i = Array.IndexOf(FlagNames, word[1..]);
         if (i < 0) throw new InvalidOperationException($"Unknown OverlayFlag: \"{word}\"");
+        if (1 << i == 0x20) return flags;
         return (byte)(word[0] == '-' ? flags & ~(1 << i) : flags | (1 << i));
     }
 
