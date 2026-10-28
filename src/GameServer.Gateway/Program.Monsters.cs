@@ -178,8 +178,20 @@ partial class Program
                             swings.Add((id, m, (mx, my), conn.IncomingHitEpoch));
                             continue;
                         }
-                        // Chasing: it asks for a cell around the player below (MonsterSurround).
-                        if (LivingCollision.Blocks(m)) askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget), m, d));
+                        // Bodies take distinct surround slots. A negative footprint does not collide with living actors,
+                        // but still chases: retain its direct approach without reserving space in the surround.
+                        if (LivingCollision.Size(m) < 0)
+                        {
+                            if (d <= m.StopRange) continue;
+                            double f = (m.StopRange - 1) / d;
+                            (int X, int Y) to = ((int)Math.Round(px + (mx - px) * f), (int)Math.Round(py + (my - py) * f));
+                            if (!conn.Layout.WalkableFor(to.X, to.Y, 0) || conn.Barrier.Contains(to)) to = (px, py);
+                            if (m.LastTarget is { } last && Math.Abs(last.X - to.X) + Math.Abs(last.Y - to.Y) < 3) continue;
+                            m.LastTarget = to;
+                            orders.Add((id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
+                        }
+                        else if (LivingCollision.Blocks(m))
+                            askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget), m, d));
                     }
                     // Every other living body near the player keeps its place: the chasers' cells go around it.
                     var asking = askers.Select(a => a.Asker.Id).ToHashSet();

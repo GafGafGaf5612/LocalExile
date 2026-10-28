@@ -79,6 +79,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   A 50 ms correction loop sweeps monster movement and separates overlaps in the server's estimate only (no packets:
   the client paths around bodies itself); death releases the occupied space and the corpse stays in the area.
   Chasers spread around the player on rings (`MonsterSurround`); the AI decides every 100 ms.
+  Automated regressions cover direct chases for negative footprints and player-body clearance for new and reused slots.
+  These two crowd-movement corrections still need a real-client check.
   A player boxed in by estimated bodies follows the client through them instead of being pulled back.
   Native-client checks cover a normal zombie, unique Hillock and an injected remote player object.
   Two authenticated clients in the same instance still need an end-to-end check.

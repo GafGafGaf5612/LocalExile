@@ -207,10 +207,13 @@ and crawled (~1 cell per 1.5 s), so it is not sent for the local player (`Game_M
 
 `LivingCollision` uses `MonsterVarieties.ObjectSize - 1` as the positioned footprint, including unique bosses.
 Negative footprints do not block; zero is a valid small body.
+Monsters with a negative footprint still chase directly without reserving surround slots or avoiding living bodies.
 `AreaLayout.WalkableFor` retains the captured terrain clearance values instead of treating every actor as player-sized.
 Monster `WalkEstimator` orders use the bounded native pathfinder with the client's budget: 1000 expansions for a
 unique, 100 for any other monster (`0x141e4d890`).
 Their blockers include stationary objects, other living monsters, the local player and published instance players.
+Surround candidates, including retained slots, must clear the player's Chebyshev footprint.
+The circular ring alone is insufficient: its diagonal cells can lie inside the player's blocker for larger monsters.
 The 50 ms correction loop checks each traversed cell, stops movement through newly occupied cells and moves only the
 server's estimate (then paths it again to the same target, as the client does when a walk ends short). It used to send
 ActionEnded followed by Teleport: 1,608 corrections in one crowded session, each a visible stop and jump, although the

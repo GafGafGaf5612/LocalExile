@@ -14,8 +14,8 @@ static class MonsterSurround
     const int Rings = 6;
 
     /// <summary>
-    /// The innermost ring's radius for a body of this size: the closest its centre can stand to the player's (size 1)
-    /// without the bodies blocking each other (ClientPathfinder.ObjectBlocks: Chebyshev distance − size ≥ mover size + 1).
+    /// The innermost ring's nominal radius. Its rounded cells must also clear the player's square footprint:
+    /// ClientPathfinder.ObjectBlocks uses Chebyshev distance, so a circular ring alone cannot guarantee clearance.
     /// </summary>
     public static int ContactRadius(int size, int playerSize = LivingCollision.PlayerSize) => size + playerSize + 2;
 
@@ -29,7 +29,9 @@ static class MonsterSurround
         var result = new Dictionary<uint, (int X, int Y)>();
         foreach (var a in askers.OrderBy(a => Distance2(a.X - player.X, a.Y - player.Y)).ThenBy(a => a.Id))
         {
-            bool Free((int X, int Y) c) => walkable(c.X, c.Y, a.Size)
+            bool Free((int X, int Y) c) => Math.Max(Math.Abs(c.X - player.X), Math.Abs(c.Y - player.Y))
+                    >= a.Size + LivingCollision.PlayerSize + 1
+                && walkable(c.X, c.Y, a.Size)
                 && taken.All(t => Math.Max(Math.Abs(t.X - c.X), Math.Abs(t.Y - c.Y)) >= t.Size + a.Size + 2);
             // Keep the last slot while it is still free and still on the innermost ring around the player; a waiting slot
             // farther out is chosen again every time, so it moves in when a gap opens.

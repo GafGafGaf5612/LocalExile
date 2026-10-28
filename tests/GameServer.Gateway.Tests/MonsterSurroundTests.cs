@@ -1,3 +1,5 @@
+using GameServer.Core.World;
+
 namespace GameServer.Gateway.Tests;
 
 public class MonsterSurroundTests
@@ -43,5 +45,39 @@ public class MonsterSurroundTests
             (x, y, _) => y >= 100)[1];
         Assert.True(slot.Y >= 100);
         Assert.True(Math.Max(Math.Abs(slot.X - 104), Math.Abs(slot.Y - 100)) >= 4);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(8)]
+    public void Every_bearing_assigns_a_cell_the_monster_can_reach_past_the_players_body(int size)
+    {
+        (int X, int Y) player = (100, 100);
+        ClientPathfinder.Blocker[] body = [new(player.X, player.Y, LivingCollision.PlayerSize)];
+        foreach (var (dx, dy) in new[] { (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1) })
+        {
+            var start = (X: player.X + 30 * dx, Y: player.Y + 30 * dy);
+            var slot = MonsterSurround.Assign([new(1, start.X, start.Y, size, null)], player, [], Open)[1];
+            Assert.False(ClientPathfinder.ObjectBlocks(body, slot.X, slot.Y, size + 1, size + 4),
+                $"Size {size}, bearing ({dx},{dy}): the assigned cell {slot} overlaps the player.");
+            var walk = new WalkEstimator(start.X, start.Y, 30, width: 200, height: 200,
+                blockers: () => body, size: size, limit: ClientPathfinder.SearchLimit.Expansions1000);
+            walk.Order(slot.X, slot.Y, 0);
+            Assert.Equal(slot, walk.Position(walk.ArrivesAt + 1));
+            Assert.Equal(slot, MonsterSurround.Assign([new(1, slot.X, slot.Y, size, slot)], player, [], Open)[1]);
+        }
+    }
+
+    [Fact]
+    public void A_previous_diagonal_slot_inside_the_players_body_is_replaced()
+    {
+        var slot = MonsterSurround.Assign([new(1, 105, 104, 3, (104, 104))], (100, 100), [], Open)[1];
+        Assert.NotEqual((104, 104), slot);
+        Assert.False(ClientPathfinder.ObjectBlocks([new(100, 100, LivingCollision.PlayerSize)], slot.X, slot.Y, 4, 7));
     }
 }
