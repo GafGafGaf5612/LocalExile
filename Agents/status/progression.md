@@ -49,6 +49,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.
   The native Labyrinth/Altar flow is separate (#151); special class gameplay is outside this slice.
   Native ordinary command checks do not establish an expanded chooser or special class gameplay.
+  Antiquarian's Whaletooth Bangle now derives increased skill duration from complete groups of final Strength.
+  Automated checks cover its real node, allocation, paid refund, reload, additive sources and explicit overrides.
+  This supplies owner stats; executable lifetime consumers and Phrecia native admission remain separate.
   Docs: [scope and compatibility gate](../docs/game/ascendancies.md).
 
 ## Not working yet
