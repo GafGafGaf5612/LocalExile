@@ -78,6 +78,7 @@ public sealed partial class ProjectileRuntime
 
     void Area(ProjectileEntity p, ProjectileAreaRecipe recipe, ProjectileActorKey? victim = null)
     {
+        var context = recipe.Delay > 0 || recipe.Interval > 0 ? p.AreaSnapshot() : p;
         double sector = Math.Tau / Math.Max(1, recipe.Count);
         double rotation = recipe.SectorPlacement ? p.Random.NextDouble() * Math.Tau : 0;
         for (int i = 0; i < recipe.Count; i++)
@@ -96,18 +97,34 @@ public sealed partial class ProjectileRuntime
                 if (recipe.RespectTerrain && world.TraceTerrain(p.Position - p.Direction * .001, centre) is not null)
                     continue;
             }
-            world.Publish(new(ProjectileEventKind.Area, p, Now, centre, Radius: recipe.Radius, Stage: recipe.Stage));
-            foreach (var target in world.Actors(Now, Now).OrderBy(a => a.Key.Id).ThenBy(a => a.Key.Generation))
-                if (target.Team != p.Use.Team && target.Key != p.Use.Owner
-                    && (!recipe.ExcludeContactTarget || target.Key != victim)
-                    && (target.Position(Now) - centre).Length <= recipe.Radius + target.Radius)
-                    if (target.Key == victim)
-                        Damage(p, target, recipe.Stage, multiplier: recipe.Multiplier, admissionStage: "direct", isArea: true);
-                    else Damage(p, target, recipe.Stage,
-                        recipe.Scope == ProjectileHitScope.Emission ? p.EmissionId : areaId, new(), recipe.Multiplier,
-                        admissionStage: recipe.Scope == ProjectileHitScope.Emission
-                            ? recipe.Stage + ":" + p.GroundBounces : recipe.Stage, isArea: true);
+            long at = checked(Now + recipe.Delay + i * recipe.Interval);
+            if (at == Now) ResolveArea(context, recipe, centre, victim, areaId);
+            else
+            {
+                pendingAreas.Add(areaId, context);
+                Schedule(at, () =>
+                {
+                    try { ResolveArea(context, recipe, centre, victim, areaId); }
+                    finally { pendingAreas.Remove(areaId); }
+                });
+            }
         }
+    }
+
+    void ResolveArea(ProjectileEntity p, ProjectileAreaRecipe recipe, ProjectileVector centre,
+        ProjectileActorKey? victim, long areaId)
+    {
+        world.Publish(new(ProjectileEventKind.Area, p, Now, centre, Radius: recipe.Radius, Stage: recipe.Stage));
+        foreach (var target in world.Actors(Now, Now).OrderBy(a => a.Key.Id).ThenBy(a => a.Key.Generation))
+            if (target.Team != p.Use.Team && target.Key != p.Use.Owner
+                && (!recipe.ExcludeContactTarget || target.Key != victim)
+                && (target.Position(Now) - centre).Length <= recipe.Radius + target.Radius)
+                if (target.Key == victim)
+                    Damage(p, target, recipe.Stage, multiplier: recipe.Multiplier, admissionStage: "direct", isArea: true);
+                else Damage(p, target, recipe.Stage,
+                    recipe.Scope == ProjectileHitScope.Emission ? p.EmissionId : areaId, new(), recipe.Multiplier,
+                    admissionStage: recipe.Scope == ProjectileHitScope.Emission
+                        ? recipe.Stage + ":" + p.GroundBounces : recipe.Stage, isArea: true);
     }
 
     public bool TryConsume(long projectileId)
