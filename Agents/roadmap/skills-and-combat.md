@@ -202,25 +202,21 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 ### Skill projectiles
 
-- **Known:** Fireball and a bow's `DefaultArrow`/attack-gem projectiles are server-made objects
-  ([11](../docs/protocol/11-skills.md) §9–10); attack gems use the `attack1_bow` contact and the weapon's
-  damage; on natural ground the spawn height is the captured terrain height + 5 steps.
-  Ordinary player and skill projectile-speed bonuses affect flight and predicted arrival together; baseline/+100%/-50%
-  Fireball casts were checked live, while conditional/more/less speed and support application remain open.
-  Swept relative-motion checks run throughout flight to the first monster or wall contact, with pause, transfer
-  and disconnect handling through the game clock and flight lifetime. Ordinary ground/object bow arrows now
-  share delayed release and collision damage, with release snapshots and original-action guards through creation
-  (#203, automated and native ground/object, wall/interceptor, cancellation and pause checks pass).
-  The separate object-use melee contact hit is removed.
-  Accuracy misses continue past the evading object under a current-wiki-supported bounded policy; official-server
-  continuation and snapshot parity still need evidence. Combined-only Frostblink controls preserve a released
-  arrow and resample the origin after a framed pre-release blink; they do not add standalone Frostblink support.
-  Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
-  Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
-  bow packet/height update; ordinary bows were rechecked above, while attack-gem composition remains open.
-  Integer monster walk estimates,
-  a shared collision radius and straight movement between samples still limit accuracy.
-- **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
+- **Known:** the [framework](../docs/game/projectile-framework.md) owns production projectile routing and the
+  only Core simulator. Catalog-known gems and ordinary bows have basic straight flight and resolved modifiers;
+  [registered skills](../docs/game/projectile-skills.md) supply terminal Fireball blasts and separate KB clusters.
+  Clustering converts quantity to explosions and forbids Split; the internal AltY row is a compatibility alias.
+  Direct admission, independent explosion overlap and supported area scaling have automated runtime/input coverage.
+  Chronological contacts, hit quotas, pause/transfer, release snapshots and held-output independence have automated
+  production-input coverage, including raw item modifiers, scoped area damage and continuation/lifetime boundaries.
+  Basic catalog flight does not implement all special skill behavior; unknown metadata is refused before costs.
+  Earlier native packet/collision controls need retesting on the new path; actor positions still use integer walk
+  estimates and shared projectile radii; Gateway actor radii are zero, making area coverage center-based even
+  for large monsters. Calibrate combat body geometry against the available movement `ObjectSize` data.
+  Live hostile projectile adapters remain future work.
+- **Start:** user-run Fireball/KB checks from the skill guide, including return, terrain and overlapping explosions.
+  Calibrate cluster radial distribution, counter-clockwise sequence timing and native art against client evidence.
+  Build a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
   (or in the walk-map recorder), and collision with doodads and objects that have their own colliders.
 - **Done when:** Fireball and bow arrows look like the real ones in every area: at the caster's torso on terrain and
   platforms, stopping at walls and objects.

@@ -692,8 +692,15 @@ partial class Program
     // the stale gem), so the client's gem XP bar and tooltip follow; the next save keeps it.
     static async Task GainGemExperience(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint gain)
     {
+        var (packets, leveled) = CommitGemExperience(conn, gain);
+        foreach (var packet in packets) await Send(remote, stream, ciphers, packet, "gem experience");
+        if (leveled) await SendSkills(remote, stream, ciphers, conn);
+    }
+
+    static (List<byte[]> Packets, bool Leveled) CommitGemExperience(ClientState conn, uint gain)
+    {
         int share = (int)Math.Min(gain / 10, int.MaxValue);
-        if (share == 0) return;
+        if (share == 0) return ([], false);
         var items = ItemsOf(conn);
         var changed = items.ChangeSocketedGems((itemId, gem) =>
         {
@@ -710,18 +717,15 @@ partial class Program
             if (Items.GemLevel(after) > Items.GemLevel(before))
             {
                 leveled = true;
-                Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(after)} levels to {Items.GemLevel(after)}");
+                Console.WriteLine($"[gateway] {CharacterName(conn)}'s {Items.GemName(after)} levels to {Items.GemLevel(after)}");
             }
             else
-                Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}'s {Items.GemName(after)} gains experience " +
+                Console.WriteLine($"[gateway] {CharacterName(conn)}'s {Items.GemName(after)} gains experience " +
                     $"+{after.GemExperience - before.GemExperience} ({after.GemExperience}, level {Items.GemLevel(after)})");
         }
-        // One change per row, each item in it once with all its gems' experience.
-        foreach (var row in changed.GroupBy(c => c.Row))
-            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
-                [.. row.Select(c => c.Item.Id)], [.. row.Select(c => c.Item)]),
-                $"0x00bf inventory {row.Key}: gem experience +{share} ({string.Join(", ", row.Select(c => $"{c.Item.Id:x} {c.Gems.Count} gem(s)"))})");
-        // A gem's level's costs, damage and reservation live with the skills (the 0x20 Actor update), not the item.
-        if (leveled) await SendSkills(remote, stream, ciphers, conn);
+        var packets = changed.GroupBy(c => c.Row).Select(row =>
+            InstanceItems.InventoryChange(PlayerInventories.InventoryId(row.Key), items.NextRevision(row.Key),
+                [.. row.Select(c => c.Item.Id)], [.. row.Select(c => c.Item)])).ToList();
+        return (packets, leveled);
     }
 }

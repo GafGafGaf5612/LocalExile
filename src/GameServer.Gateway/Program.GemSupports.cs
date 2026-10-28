@@ -103,13 +103,22 @@ partial class Program
     }
 
     static GameServer.Core.World.DamagePacket SupportedHit(ClientState conn, ushort skillId)
+        => SupportedHitFor(conn, skillId, suppress: true);
+
+    internal static GameServer.Core.World.DamagePacket SupportedProjectileHit(ClientState conn, ushort skillId, bool area)
+        => SupportedHitFor(conn, skillId, suppress: false, area);
+
+    static GameServer.Core.World.DamagePacket SupportedHitFor(ClientState conn, ushort skillId, bool suppress, bool? area = null)
     {
         var gem = SupportedSkill(conn, skillId);
         var caster = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
         var stats = MergeSkillStats(caster, gem.Stats);
-        int Get(string name) => Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
+        int Get(string name) => name == "is_area_damage" && area is bool isArea ? isArea ? 1 : 0
+            : Stats.Key(name) is uint k ? stats.GetValueOrDefault(k) : 0;
         bool attack = Skills.IsAttack(gem.Effect);
         var types = Supports.Of(gem.Effect)?.Types.ToHashSet() ?? [];
+        if (area is true) types.Add(7);
+        else if (area is false) types.Remove(7);
         var plan = SkillHitPlan.ForSkill(Skills, gem.Effect, gem.Level, gem.Quality);
         if (!plan.CanHit) return GameServer.Core.World.DamagePacket.Empty;
         var hit = attack
@@ -120,17 +129,24 @@ partial class Program
         hit = hit.Convert(DamageStats.Conversion(stats, Stats, attack));
         hit = GemSupportDamage.Scale(hit, modifiers, types, afterConversion: true);
         if (attack) hit = RageStats.ApplyAttack(hit, Get);
-        return new SkillDamageContext(plan.Kind, caster).Hit(hit);
+        return suppress ? new SkillDamageContext(plan.Kind, caster).Hit(hit) : hit;
     }
 
-    static int SupportedCriticalChance(ClientState conn, ushort skillId)
+    static int SupportedCriticalChance(ClientState conn, ushort skillId) => SupportedCriticalChanceFor(conn, skillId, false);
+
+    // A release retains the unprohibited offensive chance; the hit evaluates current owner prohibitions separately.
+    static int SupportedReleaseCriticalChance(ClientState conn, ushort skillId) => SupportedCriticalChanceFor(conn, skillId, true);
+
+    static int SupportedCriticalChanceFor(ClientState conn, ushort skillId, bool release)
     {
         var gem = SupportedSkill(conn, skillId);
         var player = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
-        int Own(string name) => Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
+        int Own(string name) => release && IsCriticalProhibition(name) ? 0
+            : Stats.Key(name) is uint k ? gem.Stats.GetValueOrDefault(k) : 0;
+        int Player(string name) => release && IsCriticalProhibition(name) ? 0
+            : Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
         if (Skills.IsAttack(gem.Effect))
         {
-            int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
             if (new[] { "global_cannot_crit", "virtual_global_cannot_crit", "cannot_critical_strike_with_attacks" }
                 .Any(name => Player(name) != 0 || Own(name) != 0)) return 0;
             var weapon = WeaponProfileFor(conn, activeSet: true);
@@ -142,7 +158,7 @@ partial class Program
             return GameServer.Core.World.DamageModel.CriticalStrikeChancePerMyriad(totalBase, increased);
         }
         return SpellCriticalStrike.Chance((Skills.SpellCritChance(gem.Effect, gem.Level) ?? 0)
-            + Own("additional_base_critical_strike_chance"), Stats, player, gem.Stats, conn.Pools.SpellCriticalStrikeChancePct);
+            + Own("additional_base_critical_strike_chance"), Player, Own, conn.Pools.SpellCriticalStrikeChancePct);
     }
 
     static (int Flat, int Percent)? SupportedReservation(ClientState conn, ushort skillId)

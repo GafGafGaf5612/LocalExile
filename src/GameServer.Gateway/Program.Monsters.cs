@@ -69,7 +69,7 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
         if (log && mods.Affixes.Any()) Console.WriteLine($"[gateway] {remote} monster 0x{id:x} mods: {MonsterModRolls.Value.Describe(mods)}" +
             (mods.NameWords.Count > 0 ? $", named {MonsterModRolls.Value.NameOf(mods.NameWords)}" : ""));
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
             MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewMonsterWalk(id, x, y, mods.Effects.MovementSpeed(variety.MovementSpeed), bodySize, rarity == MonsterRarity.Unique),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
             {
@@ -141,10 +141,10 @@ partial class Program
                 var bossBars = new List<(uint Id, SpawnedMonster M)>();
                 double now;
                 int px, py;
-                lock (conn.Monsters)
+                using (ProjectileMutation(conn))
                 {
                     if (conn.Closed || conn.LeavingArea || conn.Paused) continue;
-                    now = conn.Clock.Elapsed.TotalSeconds;
+                    now = ProjectileWorldTime(conn);
                     (px, py) = conn.Walk.Position(now);
                     foreach (var (id, m) in conn.Monsters)
                     {
@@ -245,18 +245,19 @@ partial class Program
         uint life, mana, manaBefore;
         int rawDamage = 0, damage = 0, chaosDamage = 0;
         bool blocked, monsterCritical = false;
+        PlayerRecoveryIntent? recovery = null;
         RecentEnemyHits.Decision armour;
         // Recheck pause under the commit lock too: SetPaused can win after WhilePaused returns.
         while (true)
         {
             await WhilePaused(conn);
-            lock (conn.Monsters)
+            using (ProjectileMutation(conn))
             {
                 if (m.Dead || m.Life == 0 || !m.Hostile || conn.PlayerLife == 0 || conn.Closed || conn.LeavingArea
-                    || epoch != conn.IncomingHitEpoch || !conn.Monsters.TryGetValue(id, out var current)
+                    || conn.RageRetired || epoch != conn.IncomingHitEpoch || !conn.Monsters.TryGetValue(id, out var current)
                     || !ReferenceEquals(m, current)) return;
                 if (conn.Paused) continue;
-                double now = conn.Clock.Elapsed.TotalSeconds;
+                double now = ProjectileWorldTime(conn);
                 int priorContacts = conn.RecentEnemyHits.Count(now);
                 using var defenceTime = FortificationOf(conn).Capture(now);
                 // Resolve lazy final defences here, never at AI collection or before a queued echo/pause wait.
@@ -316,13 +317,15 @@ partial class Program
                 if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
                 life = conn.PlayerLife;
                 mana = conn.PlayerMana;
+                if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+                    recovery = CommitPlayerHitRecoveryLocked(conn, damage, now);
                 RageWhenHitLocked(conn);
                 break;
             }
+
         }
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
-        if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
-            await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
+        if (recovery is not null) await SendPlayerHitRecovery(remote, stream, ciphers, conn, recovery);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),

@@ -45,6 +45,9 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 
 ## How-to
+
+[Projectile framework](game/projectile-framework.md): sole production simulator and skill-provider boundary.
+[Projectile skills](game/projectile-skills.md): Fireball, Kinetic Blast, catalog policies, evidence and client checks.
 | Doc | Content |
 |---|---|
 | [../GettingStarted.md](../GettingStarted.md) | setup from a fresh clone, third-party tools, troubleshooting |
