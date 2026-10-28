@@ -7,6 +7,11 @@ using DamagePacket = GameServer.Core.World.DamagePacket;
 
 partial class Program
 {
+    // Monster basic Melee skills are weapon-polymorphic, just like the player's default attack.
+    internal static bool MonsterAttackIsRanged(MonsterCatalog.Variety variety) =>
+        variety.GrantedEffects is [int first, ..] && (Skills.IsRangedAttack(first)
+            || variety.RangedWeapon && Skills.IsAttack(first));
+
     // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
@@ -41,7 +46,7 @@ partial class Program
         var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
             mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)))
         {
-            Ranged = variety.GrantedEffects is [int first, ..] && Skills.IsRangedAttack(first)
+            Ranged = MonsterAttackIsRanged(variety)
         };
         var skill = variety.GrantedEffects is [int effect, ..]
             ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;

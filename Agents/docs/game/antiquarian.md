@@ -103,7 +103,8 @@ Only the active usable shield supplies the replacement base block; no shield giv
 Additional block modifiers and the normal cap remain in their existing stages.
 The ranged flat physical reduction follows per-type armour/reduction and precedes Fortification and Ward.
 It never affects elemental components, melee, spells or damage over time and cannot make damage negative.
-Monster attacks classify ranged eligibility from actual attack/projectile skill metadata.
+Monster attacks classify ranged eligibility from skill metadata and actual Bow/Wand item-visual class references.
+Generic monster Melee has both Projectile and Melee tags; Projectile alone must never make a melee weapon ranged.
 The existing monster contact engine is retained; this does not add global enemy projectile flight/parity.
 `/hit physical 150 ranged` exercises the same bounded incoming ranged classification for diagnostics.
 

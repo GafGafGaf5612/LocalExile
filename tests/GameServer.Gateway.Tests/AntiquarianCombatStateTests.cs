@@ -10,6 +10,9 @@ public class AntiquarianCombatStateTests
         Assert.True(Program.Skills.IsProjectile(melee));
         Assert.True(Program.Skills.IsMelee(melee));
         Assert.False(Program.Skills.IsRangedAttack(melee));
+        if (!File.Exists("data/tables/MonsterVarieties.json")) return;
+        Assert.False(Program.MonsterAttackIsRanged(Program.Monsters.Find("Metadata/Monsters/Zombies/ZombieBite")!));
+        Assert.True(Program.MonsterAttackIsRanged(Program.Monsters.Find("Metadata/Monsters/Skeletons/SkeletonBow")!));
     }
     [Fact]
     public void Adrenaline_has_one_deadline_and_source_death_and_transfer_are_explicit()
