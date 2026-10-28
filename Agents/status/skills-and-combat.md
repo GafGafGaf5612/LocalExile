@@ -336,6 +336,24 @@ and can require explicit recipes.
   First movement, a skill, a flask or expiry ends it; incoming damage, hostile targeting and RF damage are suppressed.
   The native buff uses floating-point seconds for its countdown; the icon was checked live, timer retest is pending.
   See [11](../docs/protocol/11-skills.md), "Area-entry Grace Period".
+- Vaal souls (#308): genuine owner kills collect into bounded shared ActiveSkills-row budgets.
+  Creation and skill updates publish the proved native Actor lists; automated wire/dispatcher checks pass.
+  Duplicates, source/cost changes, removal/readd, range, prevention, queued sends and transient lifecycle are covered.
+  Eligibility commits with lethal mutations before death notifications, including shared hits and Righteous Fire.
+  Vaal aura costs use per-instance Aura types and accepted supports, with explicit developer replacement precedence.
+  Player soul loss commits at zero Life; delayed death notices preserve actual resurrection earnings.
+  Vaal gem/support requirements use current equipment snapshots while gear notifications are held.
+  Source checks on base `939b44fe` preserve wide raw attributes, mana, pool flags and supported skill payment.
+  Skill-record bit1 (0x02) now retains native Vaal soul inputs using catalog raw stored uses in both lookup paths.
+  Parsed creation/update and real socketed tests cover zero cost/balance, ordinary partners and inactive hosts.
+  A pinned 3.29.3b session passes 42 collection/counter checks: real kills, cap, cost, zero capacity and prevention.
+  Native required-soul and manager consumers agree, including natural gem level-ups and unsupported-input refusal.
+  The build and all three suites pass; exact private composition with PR #294 also passes.
+  Distribution and capacity are documented LocalExile policies, not a claim of official algorithm parity.
+  Native duplicate/removal, death/relog/transfer, aura costs and held-notification composition remain unverified.
+  Unsupported Vaal casts are refused before action echoes or cooldown reservation, including effective zero cost.
+  No executor, Rage payment or SGP countdown is added.
+  See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md).
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;

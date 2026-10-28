@@ -24,6 +24,7 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 | [protocol/16-waypoints.md](protocol/16-waypoints.md) | waypoints: the object, activated waypoints (0x4c), the World panel (0x7b), travel (0x4d), quest flags in the Player component, what reveals pins |
 | [protocol/24-vendor-recipes.md](protocol/24-vendor-recipes.md) | vendor sale quotes, common recipes, priorities, atomic payment and remaining parity gaps |
 | [protocol/25-gem-supports.md](protocol/25-gem-supports.md) | linked supports, native badges, shared combat calculations and execution gaps |
+| [Vaal souls](protocol/27-vaal-souls.md) | Actor budgets, collection policy and pending native acceptance |
 | [protocol/28-player-trade.md](protocol/28-player-trade.md) | trade between players: requests (0xba, 0xb0), known players (0xa7), the window's 0xb8 flags and acceptance, party/friend requests read |
 | [protocol/17-npcs.md](protocol/17-npcs.md) | NPCs: the object, town placements, talking (0x24 → 0x84), dialogue closed (0x85) |
 | [protocol/21-hideouts.md](protocol/21-hideouts.md) | hideouts: unlock flags and league quest flags, the Hideouts keys, `.hideout` decorations, /hideout (0x16 command 45) and the Hideout button (0x17a), HideoutDoodad data, the map device and its window (0x7b kind 5) |

@@ -65,6 +65,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Normal startup does not install or recover a graph and ordinary/unascended play has no alternate-graph preflight.
   The native Labyrinth/Altar flow is separate (#151); other Phrecia class gameplay remains separate work.
   Native ordinary command checks do not establish an expanded chooser or special class gameplay.
+  Forest Tracking's attack-damage bonus from final evasion shares the existing Steel Willed calculation.
+  Automated checks cover actual node allocation/refund/reload, final defences, signed composition and attack consumers.
+  Seventeen native raw-input controls cover real damage, armour/evasion composition, added damage and relog.
+  Full Daughter of Oshabi gameplay remains separate.
   Herald, Architect of Chaos, Paladin and Puppeteer family gem levels reach actual skill records and calculations.
   Automated checks cover real connected allocation, paid refunds, reload, supported levels and intrinsic requirements.
   Twenty-eight native checks cover effective family levels, unrelated sources, removal, unchanged storage and relog.

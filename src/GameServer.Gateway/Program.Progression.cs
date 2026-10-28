@@ -78,7 +78,22 @@ partial class Program
     static (Dictionary<uint, int> Stats, AttributeModifiers Attributes) CharacterStatSources(ClientState conn,
         IEnumerable<ushort>? nodes = null, int? level = null)
     {
-        var items = ItemsOf(conn);
+        var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
+        var (sources, attributes, inactive, worn) = EquipmentStatSources(conn, ItemsOf(conn).EquipmentSnapshot(), nodes, level);
+        InactiveItems[CharacterName(conn)] = inactive;
+        if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
+            Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
+                string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
+                    $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+        return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, sources))), attributes);
+    }
+
+    // Shared equipment/passive resolver. The requirement snapshot uses this without publishing caches or pools.
+    static (Dictionary<uint, int> Sources, AttributeModifiers Attributes, HashSet<uint> Inactive,
+        List<ItemModStats.Worn> Worn) EquipmentStatSources(
+        ClientState conn, IReadOnlyList<(byte Row, InventoryItem Item)> equipment,
+        IEnumerable<ushort>? nodes = null, int? level = null)
+    {
         // A level change can trim the list while /set_stat builds pools outside the combat lock.
         // Mastery dictionaries are replaced as a whole, so retaining their current reference is safe.
         IReadOnlyDictionary<ushort, ushort> masteries;
@@ -90,13 +105,13 @@ partial class Program
         var c = Skills.ClassFor(conn.ClassRow);
         Dictionary<uint, int> dev;
         lock (conn.Monsters) dev = new(conn.PlayerStats);
-        var worn = ItemModStats.EquipmentRows.SelectMany(items.Items).ToArray();
+        var worn = equipment.Select(e => e.Item).ToArray();
         var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
         // The sum below is a pure function of these inputs (items are immutable records), and the combat paths ask for
         // it many times a second (every monster hit): reuse the last result while none of them changed.
         var sourcesKey = new StatSourcesKey([.. nodes], masteries, worn, dev, conn.ClassRow, conn.God, level ?? conn.Pools.Level, before);
         if (conn.StatSourcesCache is { } cached && cached.Key.Matches(sourcesKey))
-            return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, new(cached.Sources)))), cached.Attributes);
+            return (new(cached.Sources), cached.Attributes, new(cached.Inactive), cached.Worn);
         var passives = Passives.Stats(nodes, masteries);
         // Only attributes need a wide source view. Keep each raw key until overrides have replaced its entire total.
         var passiveAttributes = new Dictionary<string, long>();
@@ -126,23 +141,15 @@ partial class Program
         var (inactive, active) = ItemModStats.ResolveEquipment(wornItems, level ?? conn.Pools.Level,
             active => AttributeInputs(RawAttributes(active.Select(w => w.Item)), dev)
                 .Apply(c.Strength + god, c.Dexterity + god, c.Intelligence + god), before);
-        // Item activation depends on the item, not on socketed gems. Checking gems here used the previous
-        // connection's/initial pools and disabled the entire item's stats and unrelated gems before pools existed.
-        // Individual gem requirements are checked against the completed pools when socketing or casting.
-        InactiveItems[CharacterName(conn)] = inactive;
-        if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
-            Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
-                string.Join(", ", wornItems.Where(w => inactive.Contains(w.Id)).Select(w =>
-                    $"{w.Id} {Items.ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+        // Item activation depends on equipment requirements, never the gems inside it.
         var rawAttributes = RawAttributes(active);
         var sources = ItemModStats.Plus(passives, ItemModStats.Global(active, Items.Mods, Stats));
         // Clamp only this outgoing integer view; the authoritative attribute inputs remain wide beside it.
         foreach (var (name, value) in rawAttributes)
             if (Stats.Key(name) is uint key) sources[key] = AttributeModifiers.Signed(value);
         var attributes = AttributeInputs(rawAttributes, dev);
-        // Keyed by the inactive set this result produced: a later call sees it as `before` and must still match.
-        conn.StatSourcesCache = new(sourcesKey with { Before = inactive }, new(sources), attributes);
-        return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, sources))), attributes);
+        conn.StatSourcesCache = new(sourcesKey with { Before = inactive }, new(sources), attributes, inactive, wornItems);
+        return (sources, attributes, inactive, wornItems);
     }
 
     /// <summary>The inputs of CharacterStatSources' passive and equipment sum, compared by value (items by reference).</summary>
@@ -157,7 +164,8 @@ partial class Program
             && (Before ?? new HashSet<uint>()).SetEquals(o.Before ?? new HashSet<uint>());
     }
 
-    internal sealed record StatSourcesResult(StatSourcesKey Key, Dictionary<uint, int> Sources, AttributeModifiers Attributes);
+    internal sealed record StatSourcesResult(StatSourcesKey Key, Dictionary<uint, int> Sources, AttributeModifiers Attributes,
+        HashSet<uint> Inactive, List<ItemModStats.Worn> Worn);
 
     // Only raw attribute keys are inputs. A final pool/panel attribute must never feed the flat bucket on a rebuild.
     static AttributeModifiers AttributeInputs(IReadOnlyDictionary<string, long> raw, IReadOnlyDictionary<uint, int> dev) =>
@@ -715,10 +723,10 @@ partial class Program
 
     // A kill's experience goes to the gems too: every one socketed in an equipped item, in either weapon set, gains 10% of the
     // player's gain (support gems too, a gem in an inactive item, at its last level or over its cap nothing), up to the
-    // threshold of the first level whose requirement the character does not meet — the gem's level stalls there, as the
+    // threshold of the first level whose requirement the character does not meet â€” the gem's level stalls there, as the
     // game's does (the client would level the gem to whatever its experience says, so the experience stops just below that
     // threshold; a gem already past it, after /set_level down, keeps its level and experience and is disabled instead) and
-    // the last level's threshold. Written into the gem item inside the socket list — the equipped
+    // the last level's threshold. Written into the gem item inside the socket list â€” the equipped
     // item's own component has no skill gems. Sent as the socket's equipment row 0x00bf item change, the same item id removed
     // and added again (the replace idiom: an addition of a known id alone is dropped as a duplicate, so the client would keep
     // the stale gem), so the client's gem XP bar and tooltip follow; the next save keeps it.

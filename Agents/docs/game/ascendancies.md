@@ -106,6 +106,8 @@ Native selected Antiquarian with 272 final Strength recovers for 3.175 seconds r
 The paired paid-refund control and resource totals are recorded in [Antiquarian](antiquarian.md#native-evidence).
 It does not extend minions' own skills or buffs, charge duration or flask duration.
 Additional skill/summon lifetime engines need their own elapsed-time acceptance.
+A current-main ordinary-client regression also checks duration together with Ward publication, explicit zero
+replacement and clearing developer inputs on relog; this does not replace whole-class native acceptance.
 
 ### Family gem levels
 
@@ -141,6 +143,37 @@ The first observer attempt timed out before feature checks; the accepted run use
 The solution built without warnings; Core 638, Data 18 and Gateway 3507 tests passed with public extracted data.
 Family-specific Herald, Link, minion and Vaal execution engines remain separate, as does Phrecia client admission.
 This slice does not implement global active-gem levels/quality, additional support-level bonuses or item-local gem levels.
+
+### Forest Tracking attack damage
+
+Daughter of Oshabi node 6281, Forest Tracking, grants `attack_damage_+%_per_450_evasion` = 3 (client key 2434).
+The common final-stat calculation adds three increased attack-damage points for each complete 450 final evasion.
+449 gives zero, 450/899 gives three, and 900 gives six.
+The source value is a signed coefficient, not a boolean.
+It uses the resolved rating after defence modifiers, Iron Reflexes and explicit final-rating replacements.
+An Iron Reflexes character with zero final evasion receives no Forest Tracking contribution.
+
+`ArmourAttackDamage.Total` preserves the existing Steel Willed entry point and adds optional evasion inputs.
+Both defence contributions and raw increased attack damage sum in wide arithmetic before one final clamp.
+This preserves signed cancellation and avoids turning the new bonus into a final damage multiplier.
+It applies once to weapon and added attack damage through the existing ordinary/supported/attack-gem paths.
+Spells receive no attack-only increase; conversion, support effectiveness and final Rage scaling keep their order.
+Repeated builds and source removal operate on fresh raw inputs without cached increases.
+As with Steel Willed, an explicit attack-damage input remains additive with the derived contribution.
+
+Automated checks cover the real node, complete-group boundaries, signed overflow/cancellation, final defence conversion,
+ordinary and supported damage, spell isolation, allocation, paid refund, reload and reallocation.
+The lifecycle fixture does not open a Phrecia connection.
+Source `018ef238` over main `0805c0ca` passed 17 native controls on a new ordinary unascended Witch.
+Fixed chaos attacks dealt 100 at 449 evasion, 103 at 450/899 and 106 at 900; panel and native monster Life agreed.
+Generic/raw attack increases stayed additive; simultaneous armour/evasion inputs produced 110 damage.
+Removing either source retained the other; maximum-mana lightning and physical weapon panel controls also passed.
+Relog cleared transient derived stats, and cleanup returned the single client to login.
+Evidence: `logs/forest-tracking/native-20261028-124332/`, with Gateway command/hit logs in the source checkout.
+Clean source, embedded Gateway/Core/Host revisions and the live Gateway path/CWD were checked.
+Gateway SHA-256: `4ea9695a9d9e8b2fac257060b97fa5aae81b6a7674fafc7e266bc2362189c826`.
+The solution built without warnings; Core 638, Data 18 and Gateway 3500 tests passed with public extracted data.
+Full Daughter of Oshabi gameplay and Phrecia client admission remain separate work.
 
 ## Validation and limits
 

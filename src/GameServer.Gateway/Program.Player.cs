@@ -143,6 +143,7 @@ partial class Program
             ChargesOnDeath(conn);
             ClearAntiquarianOnDeath(conn);
         }
+        await SendVaalSouls(remote, stream, ciphers, conn);
         await SendRage(remote, stream, ciphers, conn);
         await EndAurasOnDeath(remote, stream, ciphers, conn);
         await Send(remote, stream, ciphers, [], label, atGate: () =>
@@ -563,7 +564,12 @@ partial class Program
                 if (damage == 0) continue;
                 (m.Life, bool stageStarts) = TakeDamageLocked(m, damage);
                 m.Aggro = m.Life > 0;
-                if (m.Life == 0) { m.Dead = true; if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b)); }
+                if (m.Life == 0)
+                {
+                    m.Dead = true;
+                    CollectVaalSoulAtDeathLocked(conn, m);
+                    if (rf.Auras.Remove(id, out ushort b)) left.Add((id, b));
+                }
                 hits.Add((id, m, m.Life, damage));
                 if (stageStarts) CommitBossStage(remote, stream, ciphers, conn, id, m, now);
             }
@@ -722,6 +728,7 @@ partial class Program
         var cls = Skills.ClassFor(classRow);
         // Keep the ticket's remaining Rage timers frozen while the destination loads (before 0x7d).
         RestoreRage(conn);
+        RestoreVaalSouls(conn);
         RestoreAntiquarian(conn);
         conn.Ward.SetMaximum(conn.Pools.Ward);
         pools = conn.Pools;
@@ -745,7 +752,11 @@ partial class Program
             Equipped: Looks(conn, PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, Items)),
             QuestFlags: PlayerQuestFlags(conn), Hideout: HomeHideout(conn)?.Hash16 ?? 0, LeagueQuestFlags: [.. Quests.League.Bits(conn.LeagueQuestFlags)],
             Portrait: WornPortrait(conn));
-        return player;
+        lock (conn.Monsters)
+        {
+            RefreshVaalSouls(conn);
+            return player with { Souls = conn.VaalSouls.Read() };
+        }
     }
 
     static async Task SendPlayer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
@@ -821,8 +832,11 @@ partial class Program
                         var player = PlayerForCreation(conn);
                         conn.PeerTemplate = player;
                         conn.ClientSkillIds = [.. player.Skills!.Select(s => s.Id)];
-                        conn.PresentedAuras.Clear(); // A new object has no installed buff instances.
-                        conn.AuraStatsDirty = false; // Initial pools and stats already include reconciliation.
+                        conn.SentVaalSouls.Clear();
+                        foreach (var budget in player.Souls ?? [])
+                            conn.SentVaalSouls.Add(budget.ActiveSkillsRow, budget);
+                        conn.PresentedAuras.Clear();
+                        conn.AuraStatsDirty = false;
                         conn.PlayerObjectCreated = true;
                         return InstanceEntities.CreateObject(PlayerId, conn.PeerType, player.Blob());
                     }
