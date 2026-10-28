@@ -505,7 +505,8 @@ public partial class SpellNoDamageTests
     {
         using var f = new Fixture("Fireball", targetX: 100);
         f.Set(Flag, releaseFlag);
-        var launch = f.Invoke("LaunchProjectile", f.Skill, (32, 32), (100, 32), 42u, (ushort)7, null, null);
+        var launch = f.Invoke("LaunchProjectile", f.Skill, (32, 32), (100, 32), f.Conn.HitRecovery.Generation,
+            42u, (ushort)7, null, null);
         await Until(() => f.Conn.ProjectileRuntime?.Runtime.Projectiles.Count > 0);
         using (Program.ProjectileMutation(f.Conn, advance: false))
         {
