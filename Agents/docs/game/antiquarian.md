@@ -47,10 +47,12 @@ Production mutation tests cover allocation, paid full refund costing 40 points, 
 
 ## Ward and Adrenaline
 
-Body conversion uses the active item's rolled local defences after local modifiers and multiplicative quality.
+Body conversion uses the existing minimum-base local defence model, including local modifiers and quality.
 Keep half points until the final global rating; conversion does not consume helmet, gloves, boots or shield defences.
 Remaining Armour/Evasion use their ordinary increases; converted Ward uses Ward/global-defence increases once.
 Ward item bases/local modifiers and the existing Iron Flask Ward bonuses feed the same authoritative pool.
+Successful paid flask use also consumes the actual `local_flask_restore_ward` flag for immediate restoration.
+Stat refreshes and refused uses never restore Ward, and restoration never grants Adrenaline by itself.
 
 After block and mitigation, one hit consumes up to the available Ward before Energy Shield.
 Any positive absorption breaks ordinary Ward, even if it absorbs the whole hit.

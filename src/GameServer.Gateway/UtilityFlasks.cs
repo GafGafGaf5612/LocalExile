@@ -369,10 +369,19 @@ static class UtilityFlasks
     /// (which objects the client's phasing filter lets through is not traced).</summary>
     public static bool Phasing(IEnumerable<(string Stat, int Value)> stats) => stats.Any(s => s.Stat == "phase_through_objects" && s.Value > 0);
 
-    /// <summary>The Ward the running flasks grant (Iron Flask: base_ward; the Ward suffix: ward_+%): the one place to
-    /// connect them to Ward once PR #206 brings it (its Bonus.Ward / WardPct). Until then nothing applies them.</summary>
+    /// <summary>Ward bonuses use the authoritative Ward pool (base_ward and ward_+%).</summary>
     public static (int Flat, int Increased) Ward(IEnumerable<(string Stat, int Value)> stats) =>
         (stats.Where(s => s.Stat == "base_ward").Sum(s => s.Value), stats.Where(s => s.Stat == "ward_+%").Sum(s => s.Value));
+
+    // Call only after the normal flask-use admission/payment and effect start, never from a stat projection.
+    public static bool RestoreWardAfterPaidUse(WardState ward, Func<string, int> local, double now)
+    {
+        if (local("local_flask_restore_ward") <= 0) return false;
+        ward.Advance(now);
+        bool wasBroken = ward.Broken;
+        ward.Restore();
+        return wasBroken;
+    }
 
     /// <summary>Adds the running flasks' <see cref="RawStats"/> to the character's stats (Program.CharacterPlayerStats).</summary>
     public static void AddRawStats(Dictionary<uint, int> stats, IEnumerable<(string Stat, int Value)> running, StatCatalog catalog)

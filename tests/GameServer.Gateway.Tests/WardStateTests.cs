@@ -43,4 +43,15 @@ public class WardStateTests
         ward.Damage(1, .2, None); Assert.True(ward.Broken);
         ward.SetMaximum(0); Assert.False(ward.Broken); Assert.Equal(50, ward.Damage(50, .3, None));
     }
+
+    [Fact]
+    public void Paid_flask_restore_requires_the_actual_item_flag_and_cancels_the_remaining_delay()
+    {
+        var ward = new WardState(); ward.SetMaximum(100); ward.Damage(1, 0, None);
+        Assert.False(UtilityFlasks.RestoreWardAfterPaidUse(ward, None, .1));
+        Assert.True(ward.Broken);
+        Assert.True(UtilityFlasks.RestoreWardAfterPaidUse(ward, name => name == "local_flask_restore_ward" ? 1 : 0, .2));
+        Assert.False(ward.Broken); Assert.Equal(100u, ward.Current);
+        Assert.Equal(double.PositiveInfinity, ward.RestoresAt);
+    }
 }
