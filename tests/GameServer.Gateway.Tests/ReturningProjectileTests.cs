@@ -39,7 +39,7 @@ public class ReturningProjectileTests
         var flight = Program.FlyProjectile("return-test", wire.Writer.GetStream(), wire.Ciphers, conn,
             ("Metadata/Projectiles/DefaultArrow", 50), (10, 10), (210, 10), damageTo: null, conn.ProjectileEpoch,
             log: false, impact: "none", returning: true,
-            returnDamageTo: _ => { hitAt = conn.Clock.Elapsed.TotalSeconds; return (10, false); });
+            returnDamageTo: (_, _) => { hitAt = conn.Clock.Elapsed.TotalSeconds; return (10, false); });
         await flight.WaitAsync(TimeSpan.FromSeconds(10));
         // Outbound ~2.36 s (118 cells) and 130 cells back to the target at 50 cells/s (~2.6 s): not before ~4.9 s.
         // Only the lower bound is asserted: the upper one depends on wall-clock scheduling under a parallel test run.

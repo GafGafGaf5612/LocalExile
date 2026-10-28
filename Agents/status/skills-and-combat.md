@@ -152,13 +152,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   (`TargetAccuracy`): 40% more accuracy against Unique enemies (`SpawnedMonster.Rarity`) and 50% more against enemies
   in the constant 20-unit close range (2 metres; 10 units per metre), multiplying when both hold and never folded into
   the panel's rating or `/accuracy`'s unconditional rating.
-  Ordinary and area gem attacks apply these target conditions; gem projectile accuracy remains open.
+  Ordinary, area and gem projectile attacks apply these target conditions.
   Ordinary melee/bow now share per-defender evasion entropy and a separate critical-confirmation draw.
   Bow contacts include target evasion modifiers/Blind and live target mastery conditions, retaining release-time
   owner inputs; an evaded arrow continues to later targets. Raw global/qualified local cannot-evade flags bypass
   both checks. Failed critical confirmation keeps a normal hit and normal impale storage. Rejected melee contacts
   do not consume entropy; ordinary bow block is checked after evasion. Deterministic parsed-contact, pass-through,
-  source-freeze/removal and target-condition tests pass. Current native validation, gem projectile accuracy/confirmation,
+  source-freeze/removal and target-condition tests pass. Current native validation,
   off-hand sources/execution and complete accuracy/always-hit/DPS publication remain open.
   Unconditional selected flat/increased accuracy now joins the original unrounded pool base before the final
   floor, updating main-hand rating and normal/evasive reference chances. Real Additional Accuracy at 0/20 quality
@@ -168,8 +168,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   consume the selected profile under admitted contact, including block and independent critical confirmation;
   misses/cancelled actions have no critical/impale/on-hit side effects. Fourteen added cases cover Cyclone,
   Heavy Strike, real support inputs, independent targets, bypass, spells and cancellation; 267 focused checks pass.
-  Gem projectile continuation, per-use critical-roll correlation, other conditional/more accuracy and native
-  checks remain open.
+  Gem projectile forward/piercing/return contacts now use the same profile and independent confirmation.
+  Misses pass through without spending pierce budget, triggering impacts/on-hit effects or reserving the
+  target for the volley. One shared forward exclusion prevents repeated simultaneous direct hits.
+  Twenty-four added cases cover actual gems/supports, return scaling, budgets, volley sharing and queued admission;
+  29 focused checks pass. Per-use critical-roll correlation, other conditional/more accuracy, remaining projectile
+  geometry/skill exceptions and native checks remain open.
   See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
   Ten native checks used connected ordinary paths and actual mastery selection requests.
   The panel stayed at 711 while target rolls used 995 against Unique, 1066 in close range and 1493 when both held.
@@ -615,7 +619,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   `Game_PROJECTILE_SPREAD=<degrees>` overrides the gap for debugging). The client creates none of them: every
   projectile is a server object, so before this only the centre one existed.
   Not modelled: skills' own `total_number_of_projectiles_to_fire`, Barrage-style sequential volleys,
-  `multiple_projectiles_projectile_spread_+%`, pierce/fork/chain and per-projectile accuracy.
+  `multiple_projectiles_projectile_spread_+%` and fork/chain. Per-projectile attack evasion and critical confirmation
+  now run at admitted contacts, with shared per-volley direct-hit exclusions (see Accuracy above). Pierce has
+  hit-budget handling below; terminal positioning and skill-specific exceptions remain experimental.
   Code: `ProjectileSpread.cs`, Gateway (`LaunchProjectile`).
   Docs: [11](../docs/protocol/11-skills.md) §10.
 - **Pierce (2026-10-26, awaiting live check).** Pierce Support's `projectile_base_number_of_targets_to_pierce` (2 at

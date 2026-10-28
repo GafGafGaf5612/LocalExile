@@ -36,8 +36,9 @@ Ordinary melee/bow now share defender evasion entropy and independent critical c
 evasion modifiers/Blind, target Masteries, qualified raw cannot-evade flags and evaded-arrow continuation.
 Selected flat/increased accuracy supports and raw actor overrides now compose before the final floor.
 Area attacks consume that profile inside admitted contact, with miss/critical-confirmation and callback controls.
-Complete gem projectile evasion/confirmation with correct forward/piercing/return collision behavior; implement
-per-use critical-roll correlation, remaining conditions, correct off-hand sources, and publish all matching chance,
+Gem projectile forward/piercing/return evasion and critical confirmation are implemented with missed-contact
+continuation, budget and volley-exclusion controls. Complete per-use critical-roll correlation, remaining
+conditions, correct off-hand sources, and publish all matching chance,
 always-hit and accuracy-weighted average/DPS rows. Validate these paths natively when shared resources are free.
 See [damage §2g](../docs/protocol/20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation).
 
@@ -78,7 +79,7 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
 - **Spell hit panel (#188):** selected-spell ranges now share combat's converted packet and hitless spells clear
   inherited weapon hit damage. Automated checks pass; verify selection, equipment updates and relog in the client.
   DPS now includes the current critical chance/multiplier and signed luck, with exact action duration and
-  bounded native integers. Reference accuracy/confirmation weighting, gem attack accuracy, integer-roll expectation,
+  bounded native integers. Reference accuracy/confirmation weighting, integer-roll expectation,
   cooldowns and DoT/beam displays remain separate work. Quality conversion and existing modifier precedence
   are unchanged. Selected attack-gem main-hand ranges and critical-weighted averages share the combat packet.
   Native selection, added-damage refresh/clearing, server hit and relog checks pass alongside automated tests.
@@ -374,7 +375,10 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   arrow and resample the origin after a framed pre-release blink; they do not add standalone Frostblink support.
   Automated checks pass, including nearer interceptors, dead targets and lifetime invalidation.
   Live moving-away misses, later-entry hits, wall impact, native glide stop and pause/resume passed before the
-  bow packet/height update; ordinary bows were rechecked above, while attack-gem composition remains open.
+  bow packet/height update; ordinary bows were rechecked above. Attack-gem evasion/confirmation, continuation,
+  pierce budget and shared-volley exclusion now have automated controls; native composition remains open.
+  Complete pierce-budget terminal positioning, return-from-target exclusion, return terrain/endpoint sampling,
+  secondary explosion rules and sequential/skill-specific projectile exceptions before treating flight as complete.
   Integer monster walk estimates,
   a shared collision radius and straight movement between samples still limit accuracy.
 - **Start:** a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas

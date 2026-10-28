@@ -361,7 +361,7 @@ Fire's 18 = 1.8 m), so a target whose centre is within 20 cells of the player is
 The target's rarity (`SpawnedMonster.Rarity`) and its tracked position at the hit's resolution time decide both; the two
 "more" effects multiply (unique and close: × 2.1) and the product floors to a whole rating.
 The default attack samples both actors' current tracked positions after its contact delay.
-Ordinary and area attack contacts use these conditions; gem projectile accuracy remains separate work.
+Ordinary, area and gem projectile attack contacts use these conditions.
 Ten native checks allocated connected ordinary paths and selected both effects through real C→S 0x35 requests.
 The unconditional native panel stayed at 711; logged rolls used 995 against Unique and 1066 against a close normal.
 A close Unique used 1493, while a Unique outside close range used 995.
@@ -399,8 +399,8 @@ Automated source/command/Precision restoration, real support lifecycle, flooring
 Area gem attacks now consume this profile for evasion and independent critical confirmation at admitted contact.
 Misses do not consume impales, roll critical chance or trigger on-hit effects. Spells bypass attack accuracy.
 Fourteen additional cases cover Cyclone/Heavy Strike, a real Additional Accuracy support, independent targets,
-cannot-evade, spells, cancelled actions and rejected-contact side effects. Projectile gem contacts still need
-the same profile with forward/piercing/return continuation. Off-hand scope/execution, conditional/more
+cannot-evade, spells, cancelled actions and rejected-contact side effects. Gem projectiles now consume the same
+profile with forward/piercing/return continuation (see §10). Off-hand scope/execution, conditional/more
 accuracy, complete always-hit publication and accuracy-weighted averages/DPS/native checks remain open.
 
 Armour and evasion are summed from the passive tree and the **base types** of the equipped body armour, helmet, gloves
@@ -1280,7 +1280,7 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   unlimited. The return leg uses the same budget; Returning Projectiles Support's `returning_projectiles_always_pierce`
   hits all targets. Contacts are observed during the flight, not selected along the launch line: a target that
   leaves the line before contact is missed, one that walks into it is hit, and the budget is spent only at real
-  contacts. The return leg is swept the same way as the projectile flies back.
+  non-evaded contacts; blocked contacts still spend budget. The return leg is swept the same way as the projectile flies back.
 - **Returning projectiles.** A projectile whose stats allow it (`projectiles_return`, `attack_projectiles_return`,
   `projectile_return_%_chance`; `skill_projectiles_cannot_return` forbids; `Game_PROJECTILE_RETURN` forces) returns
   from a target/terrain collision or from maximum distance (Freezing Pulse only from a collision), flies back to the
@@ -1292,6 +1292,29 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   of them (otherwise the first only). A simultaneous volley is shotgun-limited to one hit per target, out and back.
   The return's hits land as the returning projectile reaches each cell, not when the turn happens; ailments and
   pierce/fork/chain priority are not modelled.
+- **Attack evasion (issue #75 review).** Gem projectile contacts now use `SupportedAccuracy` for the first
+  evasion check and independent critical confirmation, including real Additional Accuracy support inputs,
+  target modifiers/Blind/Masteries and raw cannot-evade flags. Spells bypass attack accuracy. A missed target
+  does not stop the flight, spend a pierce allowance, trigger an impact/impale/on-hit callback, or enter the
+  volley-wide exclusion. It is checked once per straight leg; another projectile or return leg may check it
+  again using the defender's existing entropy. The same hit chance confirms critical results before return
+  damage scaling. Piercing/returning critical hits now reach the critical flask callback too.
+  Forward first-contact, piercing and returning sweeps admit state changes under the send gate and monster
+  lock. Queued pause/transfer/dead-target checks precede random draws and mutations. Each simultaneous ordinary
+  gem volley shares its forward exclusion; the old allocation inside the angle loop gave each projectile an
+  independent set and could damage a target multiple times. Return exclusion remains separate. Kinetic Blast's
+  existing special handling is retained, and its secondary-explosion/skill-specific rules still need review.
+  [Official 2.0.0 notes](https://www.pathofexile.com/forum/view-thread/1304441) establish the general rule against
+  multiple simultaneous direct projectile hits; they do not certify every modern skill exception.
+  Decision: preserve gem inputs sampled at contact and ordinary bow inputs frozen at release. Uniformly freezing
+  all gem sources would change their established lifecycle without snapshot evidence. Preserve the existing
+  miss-continuation policy rather than consuming a collision as a zero-damage hit, which would stop the flight
+  and trigger impacts. Do not mark remaining flight rules complete: pierce-budget terminal positioning,
+  return-from-target exclusion, return terrain/endpoint sampling, secondary explosions, sequential volleys,
+  per-use critical-roll correlation and native parity require further work.
+  Twenty-four added automated cases cover real Burning Arrow/Fireball/support contacts, returning damage,
+  simultaneous volley exclusion, missed/blocked budgets and delayed admission. The expanded focused run passes
+  29 cases. This is automated validation, not a fresh native flight capture.
 - **Flight.** S→C **0x1ba** to the target cell at the row's `ProjectileSpeed` (world units per second, 1040 → ~96
   cells per second at 250/23 world units per cell). The u32 at +0x28 is a **height**, not padding: the handler
   (`0x141e30c90`) passes it to `0x141e34400`, which keeps the terrain height for 0x7fffffff and otherwise sets
@@ -2197,7 +2220,8 @@ hitless/support removal, fractional and overflow checks pass.
 
 Ordinary melee/bow combat now uses defender entropy followed by independent critical confirmation, with
 current target evasion/Blind and qualified cannot-evade flags. The averages above still need that probability
-weighting. Selected gem attacks also still need their own evasion/confirmation and accuracy-support composition.
+weighting. Selected gem attacks now consume their own accuracy/support profile for evasion and confirmation;
+per-use critical-roll correlation and remaining source conditions still require review.
 [Damage §2g](20-damage.md#2g-ordinary-attack-evasion-and-critical-confirmation) records the source evidence,
 snapshot/admission decisions, alternatives, parsed-contact controls and remaining native work.
 

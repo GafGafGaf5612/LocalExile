@@ -271,6 +271,40 @@ Gem projectile continuation, per-use critical-roll correlation, other conditiona
 execution and full chance/always-hit/DPS publication remain open. No live session was launched; native validation
 waits for shared resources. This correction does not establish completion of all 357 virtual stats.
 
+## Gem projectile accuracy, continuation and volley exclusions
+
+Gem projectile hits previously skipped evasion and critical confirmation. Forward, piercing and returning
+contacts now use `SupportedAccuracy`; the same contact chance confirms critical results before return damage
+scaling. An evaded target does not stop flight, spend pierce budget, trigger impact/impale/on-hit callbacks or
+reserve the target in the volley-wide exclusion. A blocked contact still collides. All three sweeps check their
+current lifetime/pause state under the send gate and target lock before consuming RNG or mutating state.
+Piercing/returning critical hits now reach the critical flask callback, matching first-contact projectiles.
+
+The review also found the forward exclusion dictionary was allocated inside the angle loop, giving each
+projectile a private set despite the intended shared-volley rule. It is now allocated once outside that loop;
+the return set stays separate. A three-projectile Burning Arrow control proves one direct hit. The
+[official 2.0.0 notes](https://www.pathofexile.com/forum/view-thread/1304441) establish the general simultaneous
+projectile restriction; this does not establish every modern skill exception. Kinetic Blast's prior special
+handling is retained for separate review.
+
+Twenty-four added cases cover actual Burning Arrow/Fireball, real 20-quality Additional Accuracy, independent
+critical confirmation, cannot-evade, passing a missed target, forward/return budgets, blocked contacts, repeat
+attempts after misses, volley sharing and queued pause/transfer/dead-target admission. The expanded focused run
+passes 29 cases, including five existing matches; the earlier broad existing-control run passed 262. The solution
+build has zero warnings/errors; Core 561, Data 18 and Gateway 4,283 pass without skips, 4,862 total. Receipts:
+`projectile-accuracy-expanded.trx`, `core-projectile-accuracy.trx`, `data-projectile-accuracy.trx` and
+`gateway-projectile-accuracy.trx`. The previous area correction is local commit `efd081b`.
+
+Decision: preserve gem inputs sampled at contact and ordinary bow inputs frozen at release; uniformly freezing
+gem inputs would change source lifecycles without snapshot evidence. Keep explicit miss continuation instead
+of accepting zero-damage collisions, which would stop flight and trigger impacts. These choices and alternatives
+are in [skills §10](../protocol/11-skills.md) and [damage §2g](../protocol/20-damage.md).
+Remaining work includes per-use critical-roll correlation, conditional/more accuracy, off-hand execution,
+complete chance/always-hit/DPS publication and native validation. Flight also retains pre-existing incomplete
+rules for pierce-budget terminal positioning, return-from-target exclusion, return terrain/endpoint sampling,
+secondary explosions and sequential/skill-specific exceptions. Do not treat this correction as completing them.
+Parent-checkout Patch/Gateway/Auth processes remain active; this task launched or stopped no live processes.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

@@ -489,8 +489,8 @@ existing relocation gate.
 
 Raw `global_always_hit` from the owner/default skill, or `local_always_hit` from the qualified attacking weapon,
 bypasses both accuracy checks. Inactive/off-hand weapon sources and final hand aliases cannot grant this flag.
-This establishes ordinary and area attack gameplay, not all source conditions or selected publication: gem
-projectiles still need first-hit evasion, critical confirmation and correct continuation; other cannot-evade conditions,
+This establishes ordinary, area and gem projectile accuracy, not all source conditions or selected publication:
+other cannot-evade conditions,
 off-hand execution, complete chance/always-hit aliases and accuracy-weighted averages/DPS
 remain open. Spell hits continue without attack accuracy. Native revalidation remains pending.
 
@@ -510,7 +510,17 @@ and independent targets; the expanded focused run passes 267. Native checks rema
 Decision: resolve contact rolls under the existing admission lock, rather than consuming random/target state
 before discovering that an action is cancelled. Preserve explicit rejection results instead of converting a
 miss/block into a zero-damage accepted hit, which would still trigger callbacks. Per-use critical-roll correlation,
-gem projectile continuation and broader scope/conditions remain open.
+broader scope/conditions and native parity remain open.
+
+Gem projectile forward/piercing/return contacts now consume the selected profile under admitted sweeps.
+Evaded targets continue the flight without spending pierce budget, triggering impact/impale/on-hit effects or
+reserving the target in the volley-wide exclusion. Blocked contacts still collide. Critical confirmation receives
+the very same contact chance before direct/return damage scaling. Gem owner inputs retain their existing
+contact-time sampling; ordinary bows retain release snapshots. Decision: preserve those distinct lifecycles
+instead of freezing gem inputs without snapshot evidence; retain explicit miss continuation instead of a
+zero-damage collision. The forward exclusion is now allocated once per volley, matching its intended scope.
+[Skills §10](11-skills.md) records primary volley evidence, 24 added tests, the 29-case focused run and unresolved
+projectile geometry/exception rules. Current build/tests do not certify those separate mechanics or native parity.
 
 [Mark_GGG's entropy explanation](https://www.pathofexile.com/forum/view-thread/11707/filter-account-type/staff/page/10)
 establishes per-defender state, independent critical confirmation, inactivity resets and separate block checks.

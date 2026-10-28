@@ -699,7 +699,7 @@ partial class Program
         // direct target already took the projectile hit, so it is excluded from the explosion (no double hit), and the
         // explosion only bursts on contact (not at maximum range), as the skill does.
         bool fireball = projectile.Id.Contains("Fireball");
-        (int Damage, bool Critical) DamageTo(SpawnedMonster m, double hitMore)
+        (int Damage, bool Critical) DamageTo(SpawnedMonster m, double hitMore, int hitChance)
         {
             // The player's stats (passives, items, auras) under the skill's own, as GemSkills sends them. Keep the hit's
             // types separate so conversion and per-type mitigation apply. An attack gem (Burning Arrow, Caustic Arrow …) has
@@ -720,7 +720,8 @@ partial class Program
             }
             var hit = SupportedHit(conn, skillId);
             var rolled = hit.Roll(Random.Shared);
-            bool critical = RollCriticalStrike(conn, chance, own, attack: !spell);
+            bool critical = RollCriticalStrike(conn, chance, own, attack: !spell)
+                && (!attack || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
             var impaleSources = ImpaleStats.From(stats, Stats, attack, own, weaponLocal, critical);
             int sourceCriticalMultiplier = SupportedCriticalMultiplier(conn, skillId);
             var (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, resistanceMods, pen);
@@ -733,7 +734,7 @@ partial class Program
             if (resistance is not null) Console.WriteLine($"[gateway] {remote} {gem.Name} resistance: {resistance}");
             return (damage, critical);
         }
-        Func<SpawnedMonster, (int Damage, bool Critical)> damageTo = m => DamageTo(m, 1);
+        Func<SpawnedMonster, int, (int Damage, bool Critical)> damageTo = (m, chance) => DamageTo(m, 1, chance);
         Func<(int X, int Y), uint, Task>? explosion = kineticBlast
             ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
                 immediate: true, melee: false, excludeMonster: exclude)
@@ -747,7 +748,7 @@ partial class Program
         // "While returning": Returning Projectiles Support's less Damage and the game's returning-projectile finals.
         double returnMore = ProjectileReturn.DamageMore(SumStat);
         bool returnPierce = SumStat("returning_projectiles_always_pierce") != 0;
-        Func<SpawnedMonster, (int Damage, bool Critical)> returnDamageTo = m => DamageTo(m, returnMore);
+        Func<SpawnedMonster, int, (int Damage, bool Critical)> returnDamageTo = (m, chance) => DamageTo(m, returnMore, chance);
         Func<(int X, int Y), uint, Task>? returnExplosion = kineticBlast ? (at, exclude) => AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
             immediate: true, melee: false, damageMore: returnMore, excludeMonster: exclude) : null;
         var returnShotgunned = new System.Collections.Concurrent.ConcurrentDictionary<uint, byte>();
@@ -787,6 +788,7 @@ partial class Program
         if (count > 1)
             Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {count} projectiles, {gap:0.#}° apart " +
                 $"({extra} additional)");
+        var shotgunned = kineticBlast ? null : new ConcurrentDictionary<uint, byte>();
         await Task.WhenAll(angles.Select(angle => FlyProjectile(remote, stream, ciphers, conn, (projectile.Id, speed), from,
             ProjectileSpread.Rotate(from, to, angle), impact: impact,
             actionToken: cooldownUse is null || cooldownUse.Instant ? null : action, damageTo: damageTo,
@@ -797,7 +799,7 @@ partial class Program
             returnSpeedPercent: SumStat("returned_projectile_speed_+%"),
             returnOnLanding: !ProjectileReturn.CannotReturnFromDistance(effectId),
             delayedImpact: delayedImpact,
-            shotgunned: kineticBlast ? null : new System.Collections.Concurrent.ConcurrentDictionary<uint, byte>(),
+            shotgunned: shotgunned, attackAccuracy: attack ? () => SupportedAccuracy(conn, skillId) : null,
             returnDamageTo: returnDamageTo, returnExplosion: returnExplosion, returnPierce: returnPierce,
             returnShotgunned: returnShotgunned, pierceHits: pierceHits)));
     }
@@ -937,15 +939,16 @@ partial class Program
     // A projectile's flight (LaunchProjectile): created just ahead of from, aimed at to, it flies on
     // to its range and stops at the first wall or monster on its path; a monster hit takes damage(monster).
     internal static async Task FlyProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
-        (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, (int Damage, bool Critical)>? damageTo,
+        (string Id, float CellsPerSecond) projectile, (int X, int Y) from, (int X, int Y) to, Func<SpawnedMonster, int, (int Damage, bool Critical)>? damageTo,
         int epoch, bool log = true, string? impact = null, int? actionToken = null, OrdinaryBowShot? ordinaryShot = null,
         Action<SpawnedMonster, bool>? acceptedHit = null,
         Func<(int X, int Y), uint, Task>? onImpact = null, string? impactObjectAo = null, bool keepThroughActions = false,
         bool returning = false, double impactObjectSeconds = 0.35, double returnSpeedPercent = 0, bool returnOnLanding = true,
         bool delayedImpact = false, bool impactOnLanding = true, ConcurrentDictionary<uint, byte>? shotgunned = null,
-        Func<SpawnedMonster, (int Damage, bool Critical)>? returnDamageTo = null,
+        Func<SpawnedMonster, int, (int Damage, bool Critical)>? returnDamageTo = null,
         Func<(int X, int Y), uint, Task>? returnExplosion = null, bool returnPierce = false,
-        ConcurrentDictionary<uint, byte>? returnShotgunned = null, int pierceHits = 1)
+        ConcurrentDictionary<uint, byte>? returnShotgunned = null, int pierceHits = 1,
+        Func<AttackAccuracyProfile>? attackAccuracy = null)
     {
         uint id;
         lock (conn.Monsters) id = conn.NextObjectId++;
@@ -1052,9 +1055,7 @@ partial class Program
                     }
                 });
             if (flight is null) return;
-            // Pierce: the flight does not stop at monsters (Targets is empty above); every monster along the line, up
-            // to the pierce budget, takes the hit as the projectile passes it. The client keeps gliding to the end,
-            // which is what a piercing projectile does.
+            // Pierce contacts are swept in order. Evaded targets neither spend budget nor trigger an impact.
             int lineHits = 0;
             async Task ImpactEffect((int X, int Y) at)
             {
@@ -1068,73 +1069,85 @@ partial class Program
                 if (!await WaitProjectileTime(conn, conn.Clock.Elapsed.TotalSeconds + impactObjectSeconds, epoch)) return;
                 await SendVisual(InstanceProtocol.RemoveObject(effect), $"0x02bb remove effect 0x{effect:x}");
             }
-            async Task ApplyDirect(uint mid, SpawnedMonster monster, string suffix)
+            bool AccuracyAccepts(uint mid, SpawnedMonster monster, double now, out int chance)
             {
-                if (damageTo is null) return;
-                int hitDamage = 0;
-                bool hitCritical = false;
-                MonsterHit? struck = null;
-                lock (conn.Monsters)
-                {
-                    if (monster.Dead || monster.Life == 0) return;
-                    (hitDamage, hitCritical) = damageTo(monster);
-                    struck = HitUnlessBlockedLocked(conn, monster, hitDamage);
-                    if (struck is not null) acceptedHit?.Invoke(monster, hitCritical);
-                    shotgunned?.TryAdd(mid, 0);
-                }
-                if (struck is { } applied)
-                    await NotifyMonsterHit(remote, stream, ciphers, conn, mid, monster, applied, hitDamage,
-                        $"{projectile.Id}{suffix}{(hitCritical ? " (critical)" : "")}", log);
+                var accuracy = ordinaryShot is not null
+                    ? ordinaryShot.AccuracyProfile ?? new(ordinaryShot.Accuracy) : attackAccuracy?.Invoke();
+                chance = accuracy is { } profile ? AttackHitChanceAt(conn, mid, monster, now, profile) : 100;
+                return accuracy is null || accuracy.Value.CannotBeEvaded
+                    || monster.AttackEvasion.Hits(chance, now, conn.AttackAccuracyRandom);
             }
-            async Task ApplyReturnDirect(uint mid, SpawnedMonster monster)
+
+            // The sweep and every admitted mutation share the send gate and monster lock. Notifications follow
+            // outside that lock. A miss is remembered only by this flight, never by the volley-wide hit exclusion.
+            List<(uint Id, SpawnedMonster Target, MonsterHit Hit, int Damage, bool Critical)> notifications = [];
+            bool ApplyPiercedLocked(uint mid, double now, bool onReturn)
             {
-                if (returnDamageTo is null) return;
-                int hitDamage = 0;
-                bool hitCritical = false;
-                MonsterHit? struck = null;
-                lock (conn.Monsters)
+                var excluded = onReturn ? returnShotgunned : shotgunned;
+                if (excluded?.ContainsKey(mid) == true || !conn.Monsters.TryGetValue(mid, out var monster)
+                    || monster.Dead || monster.Life == 0 || !AccuracyAccepts(mid, monster, now, out int chance))
+                    return false;
+                var deal = onReturn ? returnDamageTo : damageTo;
+                if (deal is not null)
                 {
-                    if (monster.Dead || monster.Life == 0) return;
-                    (hitDamage, hitCritical) = returnDamageTo(monster);
-                    struck = HitUnlessBlockedLocked(conn, monster, hitDamage);
-                    if (struck is not null) acceptedHit?.Invoke(monster, hitCritical);
-                    returnShotgunned?.TryAdd(mid, 0);
+                    var (hitDamage, hitCritical) = deal(monster, chance);
+                    if (HitUnlessBlockedLocked(conn, monster, hitDamage) is { } struck)
+                    {
+                        acceptedHit?.Invoke(monster, hitCritical);
+                        notifications.Add((mid, monster, struck, hitDamage, hitCritical));
+                    }
                 }
-                if (struck is { } applied)
-                    await NotifyMonsterHit(remote, stream, ciphers, conn, mid, monster, applied, hitDamage,
-                        $"{projectile.Id} (returning{(hitCritical ? ", critical" : "")})", log);
+                excluded?.TryAdd(mid, 0);
+                return true; // A blocked contact still collides and spends a pierce allowance.
+            }
+            async Task NotifyPierced(string suffix)
+            {
+                foreach (var entry in notifications)
+                {
+                    if (entry.Critical) _ = GainFlaskChargesOnCrit(remote, stream, ciphers, conn);
+                    await NotifyMonsterHit(remote, stream, ciphers, conn, entry.Id, entry.Target, entry.Hit, entry.Damage,
+                        $"{projectile.Id}{suffix}{(entry.Critical ? " (critical)" : "")}", log);
+                }
+                notifications.Clear();
             }
             ProjectileFlight.Step step = default;
             if (pierceHits > 1)
             {
-                // Pierce: the flight does not stop at monsters; every contact found by the live sweep (not a launch-time
-                // snapshot) spends one point of the budget. The client keeps gliding to the end, which is what a
-                // piercing projectile does.
+                // Each non-evaded contact spends a hit allowance. Rejected targets are remembered only for this leg.
                 HashSet<uint> pierced = [];
                 int budget = pierceHits;
                 while (true)
                 {
                     await Task.Delay(16);
-                    IReadOnlyList<ProjectileFlight.Pierced> contacts = [];
-                    lock (conn.Monsters)
+                    List<ProjectileFlight.Pierced> contacts = [];
+                    await Send(remote, stream, ciphers, [], null, atGate: () =>
                     {
-                        if (!Active()) return;
-                        if (conn.Paused) continue;
-                        double now = conn.Clock.Elapsed.TotalSeconds;
-                        if (budget > 0)
-                            (step, contacts) = flight.AdvancePiercing(now, Targets(now), pierced);
-                        else
-                            step = flight.Advance(now, []);
-                    }
+                        lock (conn.Monsters)
+                        {
+                            if (!Active() || conn.Paused) return null;
+                            double now = conn.Clock.Elapsed.TotalSeconds;
+                            if (budget > 0)
+                            {
+                                var sweep = flight.AdvancePiercing(now, Targets(now), pierced);
+                                step = sweep.Step;
+                                foreach (var entry in sweep.Contacts)
+                                {
+                                    if (budget <= 0) break;
+                                    pierced.Add(entry.Id);
+                                    if (!ApplyPiercedLocked(entry.Id, now, onReturn: false)) continue;
+                                    budget--;
+                                    contacts.Add(entry);
+                                }
+                            }
+                            else step = flight.Advance(now, []);
+                            return null;
+                        }
+                    });
+                    if (!Active()) return;
+                    await NotifyPierced(" (pierced)");
                     foreach (var entry in contacts)
                     {
-                        if (budget <= 0) break;
                         if (!Active()) return;
-                        if (!conn.Monsters.TryGetValue(entry.Id, out var monster) || monster.Dead || monster.Life == 0)
-                            continue;
-                        pierced.Add(entry.Id);
-                        budget--;
-                        await ApplyDirect(entry.Id, monster, " (pierced)");
                         if (onImpact is not null)
                         {
                             var at = ((int)Math.Round(entry.Position.X), (int)Math.Round(entry.Position.Y));
@@ -1153,35 +1166,32 @@ partial class Program
             MonsterHit? hit = null;
             int damage = 0;
             bool critical = false;
-            // Piercing flights are resolved by the live sweep above; this terminal sweep only handles the ordinary
+            // Piercing flights are resolved by the live sweep above; this terminal sweep only handles a
             // first-contact flight.
             while (pierceHits <= 1)
             {
                 await Task.Delay(16);
-                if (ordinaryShot is not null)
+                // Accuracy and the accepted contact's impale/life effects share the actual relocation gate.
+                // A queued sample invalidated by pause/transfer consumes no RNG or target state. A miss can
+                // accept a later contact in this same sweep, without an intermediate packet or melee hit.
+                await Send(remote, stream, ciphers, [], null, atGate: () =>
                 {
-                    // Accuracy and the accepted contact's impale/life effects share the actual relocation gate.
-                    // A queued sample invalidated by pause/transfer consumes no RNG or target state. A miss can
-                    // accept a later contact in this same sweep, without an intermediate packet or melee hit.
-                    await Send(remote, stream, ciphers, [], null, atGate: () =>
+                    lock (conn.Monsters)
                     {
-                        lock (conn.Monsters)
+                        if (!Active() || conn.Paused) return null;
+                        double now = conn.Clock.Elapsed.TotalSeconds;
+                        int hitChance = 100;
+                        bool Accept(uint targetId)
                         {
-                            if (!Active() || conn.Paused) return null;
-                            double now = conn.Clock.Elapsed.TotalSeconds;
-                            var accuracy = ordinaryShot.AccuracyProfile ?? new(ordinaryShot.Accuracy);
-                            int hitChance = 100;
-                            bool Accept(uint targetId)
-                            {
-                                if (!conn.Monsters.TryGetValue(targetId, out var monster) || monster.Dead || monster.Life == 0)
-                                    return false;
-                                hitChance = AttackHitChanceAt(conn, targetId, monster, now, accuracy);
-                                return accuracy.CannotBeEvaded || monster.AttackEvasion.Hits(hitChance, now, conn.AttackAccuracyRandom);
-                            }
-                            step = flight.Advance(now, Targets(now), Accept);
-                            if (!step.Finished || (step.TargetId == 0 && !step.Wall)) return null;
-                            if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0
-                                && !MonsterBlocks(target, Random.Shared, spell: false))
+                            if (!conn.Monsters.TryGetValue(targetId, out var monster) || monster.Dead || monster.Life == 0)
+                                return false;
+                            return AccuracyAccepts(targetId, monster, now, out hitChance);
+                        }
+                        step = flight.Advance(now, Targets(now), Accept);
+                        if (!step.Finished || (step.TargetId == 0 && !step.Wall)) return null;
+                        if (step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
+                        {
+                            if (ordinaryShot is not null && !MonsterBlocks(target, Random.Shared, spell: false))
                             {
                                 (damage, critical) = ordinaryShot.Roll(target.Impale, Random.Shared,
                                     (rolled, crit) => MonsterDamage(target, rolled, crit, attack: true,
@@ -1196,23 +1206,21 @@ partial class Program
                                 hit = ApplyMonsterHitLocked(conn, target, damage);
                                 if (hit is not null) RageOnHitLocked(conn, attack: true, melee: false, critical);
                             }
-                            committed = true;
-                            int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
-                            if (log) Console.WriteLine($"[gateway] {remote} => arrow 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})");
-                            return height.StopAt(id, x, y);
+                            else if (ordinaryShot is null && damageTo is not null)
+                            {
+                                (damage, critical) = damageTo(target, hitChance);
+                                hit = HitUnlessBlockedLocked(conn, target, damage);
+                                if (hit is not null) acceptedHit?.Invoke(target, critical);
+                            }
+                            shotgunned?.TryAdd(step.TargetId, 0);
                         }
-                    });
-                    if (!Active()) return;
-                    if (step.Finished) break;
-                    continue;
-                }
-                lock (conn.Monsters)
-                {
-                    if (!Active()) return;
-                    if (conn.Paused) continue;
-                    double now = conn.Clock.Elapsed.TotalSeconds;
-                    step = flight.Advance(now, Targets(now));
-                }
+                        committed = true;
+                        int x = (int)Math.Round(step.Position.X), y = (int)Math.Round(step.Position.Y);
+                        if (log) Console.WriteLine($"[gateway] {remote} => projectile 0x{id:x} impact at ({x}, {y}) on {(step.Wall ? "wall" : $"monster 0x{step.TargetId:x}")} (t={step.At:0.000})");
+                        return height.StopAt(id, x, y);
+                    }
+                });
+                if (!Active()) return;
                 if (step.Finished) break;
             }
             int hitX = (int)Math.Round(step.Position.X), hitY = (int)Math.Round(step.Position.Y);
@@ -1231,13 +1239,8 @@ partial class Program
                             lock (conn.Monsters)
                             {
                                 if (!Active() || conn.Paused) return false;
-                                if (damageTo is not null && step.TargetId != 0 && conn.Monsters.TryGetValue(step.TargetId, out target) && !target.Dead && target.Life > 0)
-                                {
-                                    (damage, critical) = damageTo(target);
-                                    hit = HitUnlessBlockedLocked(conn, target, damage);
-                                    if (hit is not null) acceptedHit?.Invoke(target, critical);
-                                    shotgunned?.TryAdd(step.TargetId, 0);
-                                }
+                                // First-contact damage already committed in the sweep. Only a piercing flight's
+                                // terminal wall relocation reaches this gate without a prior commit.
                                 committed = true;
                                 return true;
                             }
@@ -1305,8 +1308,8 @@ partial class Program
             }
             // A returning projectile flies back through the caster right after the impact, on the reverse line: it reaches
             // the player and continues for 15 m past them (the wiki's "typical projectiles"; 1 cell = 0.1 m, so 150 cells),
-            // then is removed. Its hits on the way back are not modelled yet (the skill's impact damage is already
-            // applied). Freezing Pulse only returns from a collision, not at maximum distance.
+            // then is removed. Return hits use a separate per-leg exclusion/budget and the return damage modifier.
+            // Freezing Pulse only returns from a collision, not at maximum distance.
             int returnX = hitX, returnY = hitY;
             if (returning && !projectileRemoved && Active() && (returnOnLanding || contact))
             {
@@ -1352,27 +1355,34 @@ partial class Program
                         if (now >= until) return true;
                         await Task.Delay(16);
                         if (!Active()) return false;
-                        IReadOnlyList<ProjectileFlight.Pierced> contacts = [];
-                        lock (conn.Monsters)
+                        List<ProjectileFlight.Pierced> contacts = [];
+                        await Send(remote, stream, ciphers, [], null, atGate: () =>
                         {
-                            if (!Active()) return false;
-                            if (conn.Paused) continue;
-                            now = conn.Clock.Elapsed.TotalSeconds;
-                            if (returnFlight is not null && returnBudget > 0)
-                                (_, contacts) = returnFlight.AdvancePiercing(now, ReturnTargets(now), returnHit);
-                            else
-                                returnFlight?.Advance(now, []);
-                        }
+                            lock (conn.Monsters)
+                            {
+                                if (!Active() || conn.Paused) return null;
+                                now = conn.Clock.Elapsed.TotalSeconds;
+                                if (returnFlight is not null && returnBudget > 0)
+                                {
+                                    var sweep = returnFlight.AdvancePiercing(now, ReturnTargets(now), returnHit);
+                                    foreach (var entry in sweep.Contacts)
+                                    {
+                                        if (returnBudget <= 0) break;
+                                        returnHit.Add(entry.Id);
+                                        if (!ApplyPiercedLocked(entry.Id, now, onReturn: true)) continue;
+                                        returnBudget--;
+                                        contacts.Add(entry);
+                                    }
+                                }
+                                else returnFlight?.Advance(now, []);
+                                return null;
+                            }
+                        });
+                        if (!Active()) return false;
+                        await NotifyPierced(" (returning)");
                         foreach (var entry in contacts)
                         {
-                            if (returnBudget <= 0) break;
                             if (!Active()) return false;
-                            if (returnShotgunned?.ContainsKey(entry.Id) == true || returnHit.Contains(entry.Id)) continue;
-                            if (!conn.Monsters.TryGetValue(entry.Id, out var monster) || monster.Dead || monster.Life == 0)
-                                continue;
-                            returnHit.Add(entry.Id);
-                            returnBudget--;
-                            await ApplyReturnDirect(entry.Id, monster);
                             if (returnExplosion is not null)
                                 await returnExplosion(
                                     ((int)Math.Round(entry.Position.X), (int)Math.Round(entry.Position.Y)), entry.Id);

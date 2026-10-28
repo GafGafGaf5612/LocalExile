@@ -29,7 +29,7 @@ public class PiercingProjectileTests
 
     static Task Flight(Wire wire, ClientState conn, Func<SpawnedMonster, (int Damage, bool Critical)> damage,
         int pierceHits = 2) => Program.FlyProjectile("pierce-test", wire.Writer.GetStream(), wire.Ciphers, conn,
-            ("Metadata/Projectiles/DefaultArrow", 50), (10, 10), (210, 10), damage, conn.ProjectileEpoch,
+            ("Metadata/Projectiles/DefaultArrow", 50), (10, 10), (210, 10), (m, _) => damage(m), conn.ProjectileEpoch,
             log: false, impact: "none", pierceHits: pierceHits);
 
     static SpawnedMonster Monster(int x, int y) =>

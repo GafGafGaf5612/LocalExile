@@ -127,6 +127,11 @@ public partial class ConditionalCriticalGatewayTests
                     false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u])!).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
+        public Task Launch((int X, int Y)? aim = null) => ((Task)Method("LaunchProjectile").Invoke(null,
+            ["accuracy-gem-projectile-test", writer.GetStream(), ciphers, Conn, Skill,
+                (32, 32), aim ?? Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds), 42u, (ushort)0, Conn.ActionCount, null])!)
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
         public async Task Refund(ushort node)
         {
             var bytes = new LoginWriter().U16(0x36).U32(node).U8(0).U8(0).ToArray();
