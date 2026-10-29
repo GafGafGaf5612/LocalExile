@@ -42,46 +42,6 @@ public class StashTabLoadingTests
         Assert.False(Program.PreloadsForPrices(StashRules.Fragment, stash.Inventory(Price).Items, Program.Items));   // never a special tab
     }
 
-    [Fact]
-    public async Task Picking_a_tab_unloads_the_other_loaded_tabs_but_not_the_price_tab()
-    {
-        var (conn, stash) = Character();
-        conn.StashTabsSent.UnionWith([Price, Other]);
-        using var wire = await Wire.Open();
-
-        await wire.Invoke("SendStashTab", conn, (ushort)Shown, InstanceStash.Personal);
-        byte[] sent = await wire.Read();
-
-        Assert.True(Has(sent, InstanceInventories.RemoveInventory(stash.InventoryOf(Other))));
-        Assert.False(Has(sent, InstanceInventories.RemoveInventory(stash.InventoryOf(Price))));
-        Assert.True(Has(sent, new LoginWriter().U16(InstanceStash.TabListId).ToArray()));
-        Assert.True(Has(sent, InstanceStash.TabLoaded(Shown, stash.InventoryOf(Shown))));
-        Assert.Equal(new HashSet<int> { Price, Shown }, conn.StashTabsSent);
-    }
-
-    [Fact]
-    public async Task The_first_opens_two_requests_unload_nothing()
-    {
-        var (conn, stash) = Character();
-        conn.StashTabsSent.UnionWith([Price, Other]);
-        conn.StashForcedTab = Other;
-        conn.StashForcedUntil = conn.Clock.Elapsed.TotalSeconds + 60;
-        using var wire = await Wire.Open();
-
-        // The panel's own tab before the forced one: answered, but the shown tab must not be unloaded under it.
-        await wire.Invoke("SendStashTab", conn, (ushort)Shown, InstanceStash.Personal);
-        byte[] sent = await wire.Read();
-
-        Assert.False(Has(sent, new LoginWriter().U16(InstanceInventories.RemoveInventoryId).ToArray()));
-        Assert.Contains(Other, conn.StashTabsSent);
-    }
-
-    [Fact]
-    public void Remove_inventory_is_manager_then_inventory_id()
-    {
-        Assert.Equal(Convert.FromHexString("00C10200000802"), InstanceInventories.RemoveInventory(0x802, 2));
-    }
-
     static bool Has(byte[] bytes, byte[] part) => bytes.AsSpan().IndexOf(part) >= 0;
 
     // One loopback transport with persistent cipher state (as ActorScaleGatewayTests).

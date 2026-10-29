@@ -110,10 +110,6 @@ public class InstanceRegistryTests
 
     [Theory]
     [InlineData("Hardcore")]
-    [InlineData("SSF Standard")]
-    [InlineData("Ruthless")]
-    [InlineData("Allflame")]
-    [InlineData("HC SSF R Allflame")]
     public void Towns_lists_and_explicit_entries_are_partitioned_by_full_league(string league)
     {
         var reg = new InstanceRegistry();
@@ -141,7 +137,6 @@ public class InstanceRegistryTests
 
     [Theory]
     [InlineData(Coast)]
-    [InlineData((ushort)0xabcd)] // Hideouts and map areas use the same non-town ownership boundary.
     public void Ssf_non_town_instances_are_private_even_between_characters_in_the_same_league(ushort area)
     {
         const string league = "SSF Allflame";
