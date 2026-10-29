@@ -28,6 +28,7 @@ only ERROR/Exception/SCRIPT lines (`GLINES=<n>` for more). Arguments go through 
 | `Syms.java` | `<out> <regex>` | symbols matching a regex |
 | `ComponentRegistry.java` | `<out.json>` | the component registry (section 7) |
 | `ReadSchema.java` | `<out.json> <components.json> [factory:a+b] [only:f+g] [withc]` | read-sequence summaries (section 7) |
+| `SendSites.java` | `<out.json> [send:0xaddr/REG+…]` | every call of a send function (default the instance send `0x14216e940`, message in RDX) resolved over the CFG to its (vtable, id) pairs, path by path (section 7) |
 
 ### Full decompilation dump (grep before you run Ghidra)
 
@@ -176,7 +177,8 @@ call. There is no `cdb`/WinDbg installed.
 | Component registry | `bash scripts/re/ghidra/g.sh ComponentRegistry.java 'C:\…\Agents\docs\re\components.json'` (40 s) | [components.json](components.json): every `0x140e33c20` registration → pool → users (factory) → every vtable they install, subclasses, slot 17/20, a `primary` flag (factory's own vtable and its subclasses) |
 | Registry doc + Frida tables | `python -I scripts/re/gen_components.py` | [components.md](components.md), the `VT`/`DESER` tables in `frida/check-components.js` |
 | Component order per type | `python -I scripts/re/ot_components.py --check --md Agents/docs/re/object-types.md` (any `Metadata/…` paths print their list; `--all --json <file>` does every type in the dat tables; `--items --json data/item-types.json` does every BaseItemTypes row from the `.it` files) | [object-types.md](object-types.md). `--check` compares with the two traced objects and exits 1 on a mismatch |
-| Read sequences | `bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\…\Tools\re\out\readschema.json' 'C:\…\Agents\docs\re\components.json'` (about 10 min), then `python -I scripts/re/schema_md.py` | [../protocol/schema.md](../protocol/schema.md): every primary deserializer and every message class of the instance and world factories, validated against the traced byte counts (exit 1 on a mismatch). The decompiled C stays in `Tools/re/out/readschema.json`; the script publishes only our notation and exits with an error if any C is left |
+| Read sequences | `bash scripts/re/ghidra/g.sh ReadSchema.java 'C:\…\Tools\re\out\readschema.json' 'C:\…\Agents\docs\re\components.json'` (about 10 min), then `python -I scripts/re/schema_md.py` | [../protocol/schema.md](../protocol/schema.md): every primary deserializer and every message class of the four S→C factories (instance, world, login, patch; each list equals its factory switch's explicit cases), validated against the traced byte counts (exit 1 on a mismatch). The decompiled C stays in `Tools/re/out/readschema.json`; the script publishes only our notation and exits with an error if any C is left |
+| C→S messages | `bash scripts/re/ghidra/g.sh SendSites.java 'C:\…\Tools\re\out\sendsites.json'` (15 s), then `python -I scripts/re/c2s_md.py` | [../protocol/c2s.md](../protocol/c2s.md): every client → server message of the instance, login and patch connections with its class, writer, length and senders. Senders outside `0x14216e940` are a hand table in the script. Exit 1 if an exact length disagrees with the Gateway's `KnownClientLength` |
 | Live check | `common.js` + `frida/check-components.js` (section 4) | bytes per component of every object the server sends |
 
 Rules the generators rely on (all from the code, see the script headers): the object-type constructor `0x141ec1360`

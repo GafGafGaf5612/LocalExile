@@ -55,6 +55,13 @@ our own tools in `Tools/`, and how to install the third-party ones in [GettingSt
 The full reverse-engineering setup has not yet been rebuilt from a fresh clone;
 if something is missing, fix the guide.
 
+Every network message of the client is listed, in both directions, generated from the binary.
+S→C: [schema.md](../docs/protocol/schema.md), the four factories (instance 272, world 63, login 27, patch 6 classes),
+each equal to its factory switch's explicit cases.
+C→S: [c2s.md](../docs/protocol/c2s.md), instance 352, login 28 and patch 4 ids, from every caller of the stream flush.
+Its exact lengths match all 61 comparable ids of the Gateway's `KnownClientLength`.
+Code: `scripts/re/ghidra/ReadSchema.java`, `SendSites.java`, `scripts/re/schema_md.py`, `c2s_md.py`.
+
 Optional [native client control](../docs/dev/client-control.md) provides CLI/JSON RPC for development without repeated
 UI input.
 It targets the copied standalone 3.29.3b client and local services only.
