@@ -1398,7 +1398,10 @@ stage (§6c). Port these only if the server ever needs clutter or critter positi
 
 `ServerLevels.cs` (Gateway) generates a supported area from its seed. It builds the walkability grid with the
 doodads' collision, the cell heights (§6b), and the area transitions and waypoint (`AreaObjects`, from the tiles'
-`.tmd` records). `AreaLayouts`, `AreaTransitionCatalog` and `WaypointCatalog` take these in place of the
+`.tmd` records). Where no tile places a waypoint, a placed room's server object line of type `Waypoint` does
+(`AreaObjects.RoomWaypoints`: The Ledge's `Act1/Area5/Rooms/waypoint.arm`, also Act 5 area 5, Act 8 area 2 level 2
+and Act 10 area 4). The doodad stage skips such a line (no client doodad) and the recorder does not capture it, so it
+is left out of the gate's transitions check. `AreaLayouts`, `AreaTransitionCatalog` and `WaypointCatalog` take these in place of the
 `data/walkability/<area>_seed<seed>.*` captures. A capture's transitions still win when there is one.
 
 The supported areas come from the committed gate baseline. An area counts when its `capture` entry matches in tile
@@ -1512,7 +1515,8 @@ the target open, so the recorder's write of the fourth object threw and left the
   one, 2_6_2 seed 1814151108, whose shrine took the level painter's ground (§3, the listener `0x141fef240`); fixed
   (every draw and all 246 doodads match), the full rerun not done yet.
   2026-10-29, 5 seeds per supported area (`lg.ps1 tourlist --random 5 --supported`, 7700 stops): the port stops on
-  202 of them (`tourcheck`); 39 are parts not ported, the rest generator errors. Two sent to the client:
+  202 of them (`tourcheck`); 39 are parts not ported, the rest generator errors. The Gateway plays a new instance at
+  such a seed at a replacement it can generate (`ServerLevels.PlayableSeed`). Two sent to the client:
   MapEndlessLedge46 1120685555 fails at the same edge in both ("Could not tilise edge"); MapAtlasDarkForest 1191983586
   ("Could not permute edges" in the port) ends the client (uncaught C++ exception 0xe06d7363, no failure logged).
   The tour was stopped after 475 stops (101 areas): 469 match in every layer and in the monster points; 4 do not

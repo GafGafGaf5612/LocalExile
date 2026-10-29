@@ -101,7 +101,8 @@ partial class Program
                     return;
                 }
                 ushort areaHash = resolved.Area;
-                uint seed = resolved.Seed;
+                // The client generates the area at the seed of 0x1d: one the Gateway can generate too.
+                uint seed = AreaLayouts.PlayableSeed(areaHash, resolved.Seed);
                 ulong instanceId = resolved.Instance;
                 var layout = AreaLayouts.For(areaHash, seed);
                 AreaLayouts.Announce(layout, seed);

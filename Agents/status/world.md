@@ -103,10 +103,14 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch use
   the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
 - **Area seeds.** A new instance of an area the Gateway generates itself gets a random seed (`Game_RANDOM_SEEDS=0`
-  pins it to 1); towns, hideouts and the areas still read from captures use seed 1.
+  pins it to 1); towns, hideouts and the areas still read from captures use seed 1. A seed the port cannot generate
+  (2 of 21 for The Coast, 5 of 21 for 1_2_12) is played at the first of 8 replacements derived from it that the port
+  generates (`ServerLevels.PlayableSeed`, sent in 0x1d): before, such a map had no walk grid, area transitions or
+  waypoint.
 - **Level generator port.** `GameServer.Data/Terrain/Generation` reproduces the client's level generator: the tile
   grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
-  transitions and waypoints (`AreaObjects.cs`).
+  transitions and waypoints (`AreaObjects.cs`: the tiles' objects, and a room's `Waypoint` line where no tile places
+  one, as The Ledge's `waypoint.arm`).
   1669 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
   and 2884 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
   loads the client itself failed to generate, the port fails 112 the same way (115 expected once the gate reruns:

@@ -29,4 +29,20 @@ public class ServerLevelsTests : IDisposable
     }
 
     [Fact] public void NoBaselineSupportsNothing() => Assert.Empty(ServerLevels.LoadSupported(_file + ".missing"));
+
+    // A seed the port cannot generate is replaced by the same seeds for everyone entering the instance: distinct, in
+    // Auth's range (2 … int.MaxValue), never the seed itself.
+    [Theory]
+    [InlineData(32124476u)]
+    public void ReplacementSeedsAreFixedPerSeed(uint seed)
+    {
+        var seeds = ServerLevels.Replacements(seed).ToList();
+        Assert.Equal(seeds, ServerLevels.Replacements(seed));
+        Assert.Equal(8, seeds.Distinct().Count());
+        Assert.All(seeds, s => Assert.InRange(s, 2u, (uint)int.MaxValue));
+        Assert.DoesNotContain(seed, seeds);
+    }
+
+    [Fact] public void AnAreaTheGatewayDoesNotGenerateKeepsItsSeed() =>
+        Assert.Equal(32124476u, ServerLevels.PlayableSeed("NoSuchArea", 32124476u));
 }
