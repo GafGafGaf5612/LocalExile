@@ -91,7 +91,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   An unattended tour of every WorldAreas row with a topology (2026-10-27, `scripts/re/levelgen/tourloop.py`, which
   restarts and logs in the client by itself) left 234 of the 1932 rows with no client-side level to match: 17 without a
   topology, 202 that need data from the server (Incursion temples, Delve cells and biomes, Heist contracts, Synthesis
-  memories, the Sanctum floors, the Deepwater biome grid), and 15 the client cannot generate at any seed tried (the
+  memories, the Sanctum floors, the Deepwater biome grid; they come with each league's server side, see the
+  [roadmap](../roadmap/world.md)), and 15 the client cannot generate at any seed tried (the
   list is written to data/areas-unavailable.txt). The port matches a load of every other row.
   A tour of 3 random seeds per matching area: all 519 match.
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.

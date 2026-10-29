@@ -30,12 +30,21 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** the port reproduces the client's generator for every recorded trace and logged load
   ([re/011](../docs/re/011-level-generation.md), [status/world.md](../status/world.md)).
   `/tour <file>` with `live.ps1 -Walkmaps` records new (area, seed) loads; `levelgen tourlist` writes the lists.
-- **Start:** record the areas never visited (`levelgen survey` lists them; `levelgen tourlist` and `/tour` record
-  them) and fix what differs, so `ServerLevels` supports them; then use random seeds for supported areas.
-- **To be implemented (out of scope for now):** the 3.29 league's DeepwaterEncounter and DeepwaterEncounterVoyage,
-  the only seed-1 traces the port does not match: the client builds them from a biome grid the server sends, so they
-  come with that league's server side.
-  For a daily labyrinth: port the rest of `0x1424e30f0` (connections, secrets) and send the layout message
+- **Start:** use random seeds for the supported areas (`Game_RANDOM_SEEDS=1`); every area the client can generate is
+  recorded and matched.
+- **To be implemented with their leagues (out of scope for now):** the 202 areas whose level the client builds from
+  data the server sends (`data/areas-unavailable.txt`). They come with each league's server side, not with the
+  generator:
+  - Delve (82): the mine cells and biomes (`Delve_*`); the client fails without the cell data.
+  - Heist (80): the contract and blueprint areas; the layout comes from the heist plan.
+  - Synthesis (24): the memories (`Synthesis_Main*`, `Synthesis_Single*`).
+  - Incursion (10): the temples (`Incursion_Temple*`); the client needs the room hash of the opened and upgraded
+    rooms ("Unknown Incursion Temple room hash").
+  - Sanctum (4): the floors (`SanctumCellar`, `SanctumCrypt`, `SanctumNave`, `SanctumVaults`); the client rebuilds
+    the floor graph from the rooms the server sends.
+  - Deepwater (2): the 3.29 league's DeepwaterEncounter and DeepwaterEncounterVoyage, built from a biome grid the
+    server sends; the only seed-1 traces the port does not match.
+- For a daily labyrinth: port the rest of `0x1424e30f0` (connections, secrets) and send the layout message
   (`0x141ec7220`: seed, node, difficulty).
 - **Done when:** any seed gets its layout without a capture.
 
