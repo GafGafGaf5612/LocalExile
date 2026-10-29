@@ -101,12 +101,12 @@ and automated checks. Wait for shared resources and stop only this task's own pr
 
 ## Exact target
 
-Current disposition: 67 partial, 290 pending, 0 complete. These are audit states, not implemented-stat counts.
+Current disposition: 184 partial, 173 pending, 0 complete. These are audit states, not implemented-stat counts.
 
 | Stat | Status | Review record / next audit |
 |---|---|---|
-| `armour_differs_against_hits` | pending | [pending audit](#pending-audit) |
-| `armour_differs_against_projectiles` | pending | [pending audit](#pending-audit) |
+| `armour_differs_against_hits` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `armour_differs_against_projectiles` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `arrow_number_of_targets_to_pierce` | pending | [pending audit](#pending-audit) |
 | `ascendance` | pending | [pending audit](#pending-audit) |
 | `attack_block_%` | pending | [pending audit](#pending-audit) |
@@ -118,14 +118,14 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `avoid_poison_%` | pending | [pending audit](#pending-audit) |
 | `avoid_shock_%` | pending | [pending audit](#pending-audit) |
 | `avoid_stun_%` | pending | [pending audit](#pending-audit) |
-| `brands_per_target_limit` | pending | [pending audit](#pending-audit) |
+| `brands_per_target_limit` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `cannot_be_chilled` | pending | [pending audit](#pending-audit) |
 | `cannot_be_frozen` | pending | [pending audit](#pending-audit) |
 | `cannot_be_ignited` | pending | [pending audit](#pending-audit) |
 | `cannot_be_shocked` | pending | [pending audit](#pending-audit) |
 | `cannot_be_stunned` | pending | [pending audit](#pending-audit) |
-| `cannot_be_stunned_by_attacks` | pending | [pending audit](#pending-audit) |
-| `cannot_be_stunned_by_spells` | pending | [pending audit](#pending-audit) |
+| `cannot_be_stunned_by_attacks` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `cannot_be_stunned_by_spells` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `cannot_gain_bleeding` | pending | [pending audit](#pending-audit) |
 | `cannot_leech_energy_shield` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `cannot_leech_life` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
@@ -133,7 +133,7 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `cast_speed_+%` | pending | [pending audit](#pending-audit) |
 | `cast_speed_+%_per_frenzy_charge` | pending | [pending audit](#pending-audit) |
 | `chance_to_dodge_spells_%` | pending | [pending audit](#pending-audit) |
-| `chance_to_evade_%` | pending | [pending audit](#pending-audit) |
+| `chance_to_evade_%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `chance_to_freeze_%` | pending | [pending audit](#pending-audit) |
 | `chance_to_shock_%` | pending | [pending audit](#pending-audit) |
 | `chaos_damage_immunity` | pending | [pending audit](#pending-audit) |
@@ -150,9 +150,9 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `deal_no_damage` | pending | [pending audit](#pending-audit) |
 | `dexterity` | pending | [pending audit](#pending-audit) |
 | `display_attack_block_chance` | pending | [pending audit](#pending-audit) |
-| `display_estimated_physical_damage_reduciton_%` | pending | [pending audit](#pending-audit) |
-| `display_estimated_physical_damage_reduciton_against_projectiles_%` | pending | [pending audit](#pending-audit) |
-| `display_estimated_physical_damage_reduction_against_hits_%` | pending | [pending audit](#pending-audit) |
+| `display_estimated_physical_damage_reduciton_%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `display_estimated_physical_damage_reduciton_against_projectiles_%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `display_estimated_physical_damage_reduction_against_hits_%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `display_hundred_times_damage_per_skill_use` | partial | [damage expectation](#damage-expectation) |
 | `display_skill_increased_item_quantity_+%` | pending | [pending audit](#pending-audit) |
 | `display_skill_increased_item_rarity_+%` | pending | [pending audit](#pending-audit) |
@@ -165,7 +165,7 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `fire_damage_immunity` | pending | [pending audit](#pending-audit) |
 | `fire_damage_resistance_%` | pending | [pending audit](#pending-audit) |
 | `global_chance_to_knockback_%` | pending | [pending audit](#pending-audit) |
-| `hundred_times_attacks_per_second` | pending | [pending audit](#pending-audit) |
+| `hundred_times_attacks_per_second` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `hundred_times_casts_per_second` | pending | [pending audit](#pending-audit) |
 | `hundred_times_damage_per_second` | partial | [damage expectation](#damage-expectation) |
 | `immune_to_chill` | pending | [pending audit](#pending-audit) |
@@ -224,108 +224,108 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `mana_leech_from_lightning_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `mana_leech_from_physical_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `mana_leech_from_spell_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
-| `mana_recharge_rate_per_minute` | pending | [pending audit](#pending-audit) |
-| `maximum_bleeding_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_bleeding_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_bleeding_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_bleeding_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
+| `mana_recharge_rate_per_minute` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_bleeding_damage_to_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_bleeding_damage_to_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_bleeding_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_bleeding_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `maximum_energy_shield` | pending | [pending audit](#pending-audit) |
 | `maximum_energy_shield_leech_amount_per_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
-| `maximum_ignite_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
+| `maximum_ignite_damage_to_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_ignite_damage_to_deal_per_minute_from_non_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `maximum_life` | pending | [pending audit](#pending-audit) |
 | `maximum_life_leech_amount_per_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `maximum_mana` | pending | [pending audit](#pending-audit) |
 | `maximum_mana_leech_amount_per_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `maximum_poison_damage_to_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_always_deal_per_minute_from_non_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_non_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `maximum_poison_damage_to_deal_per_minute_from_non_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `maximum_total_recovery_per_minute_from_energy_shield_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `maximum_total_recovery_per_minute_from_life_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `maximum_total_recovery_per_minute_from_mana_leech` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
-| `minimum_bleeding_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_bleeding_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_bleeding_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_bleeding_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_critical_spell_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_non_critical_secondary_damage` | pending | [pending audit](#pending-audit) |
-| `minimum_poison_damage_to_deal_per_minute_from_non_critical_spell_damage` | pending | [pending audit](#pending-audit) |
+| `minimum_bleeding_damage_to_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_bleeding_damage_to_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_bleeding_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_bleeding_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_ignite_damage_to_deal_per_minute_from_non_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_always_deal_per_minute_from_non_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_non_critical_main_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_non_critical_off_hand_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_non_critical_secondary_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `minimum_poison_damage_to_deal_per_minute_from_non_critical_spell_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `movement_velocity_+%` | pending | [pending audit](#pending-audit) |
-| `off_hand_accuracy_rating` | partial | [accuracy](#accuracy) |
+| `off_hand_accuracy_rating` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `off_hand_attack_damage_penetrates_chaos_resist_%` | partial | [penetration](#penetration) |
 | `off_hand_attack_damage_penetrates_cold_resist_%` | partial | [penetration](#penetration) |
 | `off_hand_attack_damage_penetrates_fire_resist_%` | partial | [penetration](#penetration) |
 | `off_hand_attack_damage_penetrates_lightning_resist_%` | partial | [penetration](#penetration) |
-| `off_hand_attack_speed_+%` | pending | [pending audit](#pending-audit) |
+| `off_hand_attack_speed_+%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `off_hand_chance_to_blind_on_hit_%` | pending | [pending audit](#pending-audit) |
-| `off_hand_chance_to_hit_%` | partial | [accuracy](#accuracy) |
-| `off_hand_chance_to_hit_evasive_monsters_%` | partial | [accuracy](#accuracy) |
+| `off_hand_chance_to_hit_%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_chance_to_hit_evasive_monsters_%` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `off_hand_chance_to_knockback_%` | pending | [pending audit](#pending-audit) |
-| `off_hand_critical_strike_chance` | partial | [critical](#critical) |
-| `off_hand_critical_strike_multiplier` | partial | [critical](#critical) |
+| `off_hand_critical_strike_chance` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_critical_strike_multiplier` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `off_hand_hit_causes_monster_flee_%` | pending | [pending audit](#pending-audit) |
 | `off_hand_knockback_on_crit` | pending | [pending audit](#pending-audit) |
 | `off_hand_life_leech_from_physical_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `off_hand_local_life_gain_per_target` | pending | [pending audit](#pending-audit) |
 | `off_hand_local_mana_gain_per_target` | pending | [pending audit](#pending-audit) |
 | `off_hand_mana_leech_from_physical_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
-| `off_hand_maximum_chaos_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_maximum_cold_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_maximum_fire_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_maximum_lightning_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_maximum_physical_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_maximum_total_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_minimum_chaos_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_minimum_cold_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_minimum_fire_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_minimum_lightning_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_minimum_physical_damage` | pending | [pending audit](#pending-audit) |
-| `off_hand_minimum_total_damage` | pending | [pending audit](#pending-audit) |
+| `off_hand_maximum_chaos_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_maximum_cold_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_maximum_fire_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_maximum_lightning_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_maximum_physical_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_maximum_total_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_minimum_chaos_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_minimum_cold_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_minimum_fire_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_minimum_lightning_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_minimum_physical_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `off_hand_minimum_total_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `off_hand_reduce_enemy_block_%` | pending | [pending audit](#pending-audit) |
 | `off_hand_stun_threshold_reduction_+%` | pending | [pending audit](#pending-audit) |
-| `omniscience_for_attribute_requirements` | pending | [pending audit](#pending-audit) |
+| `omniscience_for_attribute_requirements` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `physical_damage_reduction_rating` | pending | [pending audit](#pending-audit) |
-| `physical_damage_reduction_rating_against_projectiles` | pending | [pending audit](#pending-audit) |
+| `physical_damage_reduction_rating_against_projectiles` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `projectile_attack_block_%` | pending | [pending audit](#pending-audit) |
 | `projectile_number_of_targets_to_pierce` | pending | [pending audit](#pending-audit) |
 | `projectile_speed_+%` | pending | [pending audit](#pending-audit) |
@@ -333,20 +333,20 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `reduce_enemy_cold_resistance_%` | partial | [penetration](#penetration) |
 | `reduce_enemy_fire_resistance_%` | partial | [penetration](#penetration) |
 | `reduce_enemy_lightning_resistance_%` | partial | [penetration](#penetration) |
-| `secondary_critical_strike_chance` | pending | [pending audit](#pending-audit) |
-| `secondary_critical_strike_multiplier` | pending | [pending audit](#pending-audit) |
-| `secondary_maximum_chaos_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_maximum_cold_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_maximum_fire_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_maximum_lightning_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_maximum_physical_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_maximum_total_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_minimum_chaos_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_minimum_cold_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_minimum_fire_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_minimum_lightning_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_minimum_physical_damage` | pending | [pending audit](#pending-audit) |
-| `secondary_minimum_total_damage` | pending | [pending audit](#pending-audit) |
+| `secondary_critical_strike_chance` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_critical_strike_multiplier` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_maximum_chaos_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_maximum_cold_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_maximum_fire_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_maximum_lightning_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_maximum_physical_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_maximum_total_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_minimum_chaos_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_minimum_cold_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_minimum_fire_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_minimum_lightning_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_minimum_physical_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `secondary_minimum_total_damage` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `self_chill_duration_-%` | pending | [pending audit](#pending-audit) |
 | `self_freeze_duration_-%` | pending | [pending audit](#pending-audit) |
 | `self_ignite_duration_-%` | pending | [pending audit](#pending-audit) |
@@ -354,14 +354,14 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `show_blood_charge_info` | pending | [pending audit](#pending-audit) |
 | `skill_area_of_effect_+%` | pending | [pending audit](#pending-audit) |
 | `skill_is_instant` | pending | [pending audit](#pending-audit) |
-| `skill_show_average_damage_instead_of_dps` | pending | [pending audit](#pending-audit) |
+| `skill_show_average_damage_instead_of_dps` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `spell_block_%` | pending | [pending audit](#pending-audit) |
 | `spell_block_differs_against_projectiles` | pending | [pending audit](#pending-audit) |
 | `spell_critical_strike_chance` | partial | [critical](#critical) |
 | `spell_critical_strike_multiplier` | partial | [critical](#critical) |
 | `spell_damage_%_suppressed` | pending | [pending audit](#pending-audit) |
-| `spell_effective_total_chance_permyriad_for_hit_to_be_critical` | pending | [pending audit](#pending-audit) |
-| `spell_effective_total_chance_permyriad_for_hit_to_be_double_critical` | pending | [pending audit](#pending-audit) |
+| `spell_effective_total_chance_permyriad_for_hit_to_be_critical` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
+| `spell_effective_total_chance_permyriad_for_hit_to_be_double_critical` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `spell_maximum_chaos_damage` | pending | [pending audit](#pending-audit) |
 | `spell_maximum_cold_damage` | pending | [pending audit](#pending-audit) |
 | `spell_maximum_fire_damage` | pending | [pending audit](#pending-audit) |
@@ -433,12 +433,12 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `virtual_maximum_mana_leech_rate_permyriad_per_minute` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `virtual_maximum_power_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_siphoning_charges` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_spirit_charges` | pending | [pending audit](#pending-audit) |
+| `virtual_maximum_spirit_charges` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `virtual_mine_throwing_speed_+%` | pending | [pending audit](#pending-audit) |
 | `virtual_minion_damage_+%` | pending | [pending audit](#pending-audit) |
 | `virtual_never_freeze` | pending | [pending audit](#pending-audit) |
 | `virtual_never_ignite` | pending | [pending audit](#pending-audit) |
-| `virtual_physical_damage_taken_per_minute_per_siphoning_charge` | pending | [pending audit](#pending-audit) |
+| `virtual_physical_damage_taken_per_minute_per_siphoning_charge` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |
 | `virtual_power_charge_duration_+%` | pending | [pending audit](#pending-audit) |
 | `virtual_sap_duration_+%` | partial | [ailment coefficients](#ailment-coefficients) |
 | `virtual_sap_effect_+%` | partial | [ailment coefficients](#ailment-coefficients) |
@@ -461,4 +461,4 @@ Current disposition: 67 partial, 290 pending, 0 complete. These are audit states
 | `virtual_total_spell_impale_on_hit_%_chance` | partial | [impale](#impale) |
 | `virtual_trap_throwing_speed_+%` | pending | [pending audit](#pending-audit) |
 | `ward` | pending | [pending audit](#pending-audit) |
-| `ward_delay` | pending | [pending audit](#pending-audit) |
+| `ward_delay` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |

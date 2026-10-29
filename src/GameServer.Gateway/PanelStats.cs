@@ -138,6 +138,10 @@ static class PanelStats
             new($"maximum_{type}_damage_to_return_to_melee_attacker", [$"{type}_damage_to_return_to_melee_attacker"]),
         }),
         new("intermediary_combined_action_speed_+%", [new("action_speed_-%", Mul: -1)]),
+        // "Cannot be Stunned by Spells / Attacks": raw flags of their own (Stormshroud-style sources set them directly);
+        // the all-stun cannot_be_stunned row stays separate, as the panel reads both.
+        new("cannot_be_stunned_by_spells", [], Flag: true),
+        new("cannot_be_stunned_by_attacks", [], Flag: true),
         // Misc
         new("ascendance", ["base_ascendance"]),
         new("skill_area_of_effect_+%", ["base_skill_area_of_effect_+%"]),
@@ -160,12 +164,22 @@ static class PanelStats
         new("virtual_trap_throwing_speed_+%", ["trap_throwing_speed_+%", "trap_and_mine_throwing_speed_+%"]),
         new("virtual_mine_throwing_speed_+%", ["mine_laying_speed_+%", "trap_and_mine_throwing_speed_+%"]),
         new("virtual_cooldown_speed_+%", ["base_cooldown_speed_+%"]),
+        // "Attached Brand Limit per Target": the brand skill's own base (Storm Brand grants 1) plus "an additional brand
+        // attached to an enemy" sources; a selected brand sums both (Selected), the character alone shows its extras.
+        new("brands_per_target_limit", ["base_number_of_sigils_allowed_per_target"]),
         // Charges
         new("virtual_endurance_charge_duration_+%", ["endurance_charge_duration_+%", ChargeDuration, BaseChargeDuration]),
         new("virtual_frenzy_charge_duration_+%", ["base_frenzy_charge_duration_+%", ChargeDuration, BaseChargeDuration]),
         new("virtual_power_charge_duration_+%", ["power_charge_duration_+%", ChargeDuration, BaseChargeDuration]),
         new("attack_speed_+%_per_frenzy_charge", ["base_attack_speed_+%_per_frenzy_charge", "attack_and_cast_speed_+%_per_frenzy_charge"]),
         new("cast_speed_+%_per_frenzy_charge", ["base_cast_speed_+%_per_frenzy_charge", "attack_and_cast_speed_+%_per_frenzy_charge"]),
+        // Spirit and Siphoning Charges: the direct maximum sources. Their per-equipped-item sources (abyss jewels,
+        // Elder/Shaper items) count items the server does not model, so they contribute nothing yet; the siphoning
+        // damage-taken row shows its per-charge coefficient as the panel's "Physical Damage per Second per Siphoning
+        // Charge". The counts themselves (current_*) belong to charge mechanics that do not exist yet.
+        new("virtual_maximum_spirit_charges", ["maximum_spirit_charges"]),
+        new("virtual_physical_damage_taken_per_minute_per_siphoning_charge",
+            ["physical_damage_taken_per_minute_per_siphoning_charge_if_have_used_a_skill_recently"]),
     ];
 
     // A row for each hand: main_hand_… with the main hand weapon's local stats, off_hand_… with the off hand's.
@@ -236,7 +250,7 @@ static class PanelStats
         : (int)Math.Clamp(value, int.MinValue, int.MaxValue);
 
     static readonly Sum[] SelectedSums = [.. Sums.Where(s => s.Display is "skill_area_of_effect_+%"
-        or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%"
+        or "display_skill_increased_item_rarity_+%" or "virtual_minion_damage_+%" or "brands_per_target_limit"
         or "reduce_enemy_fire_resistance_%" or "reduce_enemy_cold_resistance_%"
         or "reduce_enemy_lightning_resistance_%"
         or "virtual_ignite_duration_+%" or "virtual_scorch_duration_+%" or "virtual_scorch_effect_+%"
@@ -331,6 +345,68 @@ static class PanelStats
             result.Add(("uncapped_chaos_damage_over_time_resistance_%", uncapped));
             result.Add(("chaos_damage_over_time_resistance_%", DamageModel.Capped(uncapped, pools.ChaosMaxResistance)));
         }
+        return result;
+    }
+
+    /// <summary>Path of Building's <c>EvadeChanceCap</c>: the 5% minimum hit chance leaves evasion at most 95%.</summary>
+    public const int EvadeChanceCap = 95;
+
+    /// <summary>
+    /// The Defence tab's estimate rows (issue #75), which the client derives from nothing: the server works them out
+    /// against the reference monster of the character's level (DefaultMonsterStats, as Path of Building's CalcDefence
+    /// does with its monster damage and accuracy tables).
+    /// <list type="bullet">
+    /// <item>Estimated Physical Damage reduction: armour against the reference hit (<see cref="DamageModel.ArmourReduction"/>,
+    /// armour / (armour + 5 × damage)) plus the additional physical reduction the charges and passives give
+    /// (<see cref="ChargeEffects.Reduction"/>), capped at 90%.</item>
+    /// <item>Armour against Projectiles and its estimate, when "increased Armour against Projectiles" applies: the
+    /// projectile increase joins the armour increases; <c>armour_differs_against_projectiles</c> makes the panel draw
+    /// the rows.</item>
+    /// <item>Estimated reduction against Hits, when "additional Physical Damage Reduction against Hits" applies
+    /// (<c>armour_differs_against_hits</c>).</item>
+    /// <item>Estimated chance to Evade Attacks: 100 − the reference monster's chance to hit this evasion
+    /// (<see cref="DamageModel.EvadeChance"/>) plus flat "chance to Evade Attacks" sources, capped at 95%.</item>
+    /// <item>Ward Restoration time (<c>ward_delay</c>, milliseconds) when the character has Ward.</item>
+    /// <item>Mana Recharge per second when Energy Shield Recharge applies to Mana: the recharge rate on maximum mana.
+    /// Nothing in 3.29 applies recharge to Life, so the Life row stays blank.</item>
+    /// <item>Omniscience for attribute requirements: Omniscience × "can be satisfied by % of Omniscience".</item>
+    /// </list>
+    /// <paramref name="referenceDamage"/> and <paramref name="referenceAccuracy"/> are the reference monster's values
+    /// (0 when the tables are missing: the estimates then show no reduction and full evasion of a 0-accuracy attacker).
+    /// </summary>
+    public static List<(string Stat, int Value)> Defence(Func<string, int> get, CharacterStats.Pools pools,
+        int referenceDamage, int referenceAccuracy)
+    {
+        var result = new List<(string, int)>();
+        int additional = ChargeEffects.Reduction(get).Physical;
+        static int Estimate(int armour, int damage, int extra) =>
+            Math.Clamp(DamageModel.ArmourReduction(armour, damage) + Math.Max(0, extra), 0, DamageModel.DamageReductionCap);
+        result.Add(("display_estimated_physical_damage_reduciton_%", Estimate(pools.Armour, referenceDamage, additional)));
+        if (get("physical_damage_reduction_rating_+%_against_projectiles") is int projectilePct and not 0)
+        {
+            // The projectile-only increase joins the ordinary increases; the pools hold their total, so scale by ratio.
+            long baseline = 100L + pools.ArmourPct;
+            int armour = baseline <= 0 ? pools.Armour
+                : (int)Math.Clamp((long)pools.Armour * Math.Max(0, baseline + projectilePct) / baseline, 0, int.MaxValue);
+            result.Add(("physical_damage_reduction_rating_against_projectiles", armour));
+            result.Add(("armour_differs_against_projectiles", 1));
+            result.Add(("display_estimated_physical_damage_reduciton_against_projectiles_%", Estimate(armour, referenceDamage, additional)));
+        }
+        if (get("additional_physical_damage_reduction_%_against_hits") is int againstHits and not 0)
+        {
+            result.Add(("armour_differs_against_hits", 1));
+            result.Add(("display_estimated_physical_damage_reduction_against_hits_%",
+                Estimate(pools.Armour, referenceDamage, additional + againstHits)));
+        }
+        result.Add(("chance_to_evade_%", Math.Clamp(DamageModel.EvadeChance(pools.Evasion, referenceAccuracy)
+            + get("chance_to_evade_attacks_%"), 0, EvadeChanceCap)));
+        if (pools.Ward > 0)
+            result.Add(("ward_delay", (int)Math.Clamp(Math.Round(WardState.Delay(get) * 1000), 0, int.MaxValue)));
+        if (get("energy_shield_recharge_apply_to_mana") != 0)
+            result.Add(("mana_recharge_rate_per_minute", RecoveryValue(EnergyShield.RechargePerMinute(pools.Mana, get))));
+        if (get("attribute_requirements_can_be_satisfied_by_%_of_ascendance") is int omniscience and not 0)
+            result.Add(("omniscience_for_attribute_requirements", (int)Math.Clamp(
+                ((long)get("ascendance") + get("base_ascendance")) * omniscience / 100, int.MinValue, int.MaxValue)));
         return result;
     }
 

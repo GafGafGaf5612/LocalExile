@@ -824,25 +824,67 @@ and continuing until an irreversible action is required. Publishing remains proh
   A subsequent check also found an active client under a Claude `custom-assets-spike` worktree; this task
   launched no servers/client and did not stop any of those processes.
 
+## Offence, Defence, Misc and Charges row batch
+
+This batch (2026-10-29) publishes the remaining virtual rows that had no server derivation at all, as display rows
+with automated composition checks; none of them is natively validated on this branch yet.
+
+- Defence estimates (`PanelStats.Defence`): estimated physical reduction (plain, against projectiles with
+  `physical_damage_reduction_rating_against_projectiles` and its `armour_differs_against_projectiles` flag, against hits
+  with `armour_differs_against_hits`), `chance_to_evade_%`, `ward_delay`, `mana_recharge_rate_per_minute` and
+  `omniscience_for_attribute_requirements`, against DefaultMonsterStats damage/accuracy at the character's level.
+  Formulas: `DamageModel.ArmourReduction` + `ChargeEffects.Reduction` capped 90; `DamageModel.EvadeChance` +
+  `chance_to_evade_attacks_%` capped 95 (PoB EvadeChanceCap); `WardState.Delay` in milliseconds;
+  `EnergyShield.RechargePerMinute` on maximum mana. The projectile armour scales the pools' final armour by
+  (100 + increased + projectile increase) / (100 + increased); shield-only and more operators are not re-applied.
+  `chance_to_dodge_spells_%` and `life_recharge_rate_per_minute` have no 3.29 source and stay blank.
+- Sums: `cannot_be_stunned_by_spells/attacks` flags, `brands_per_target_limit` (selected too),
+  `virtual_maximum_spirit_charges`, `virtual_physical_damage_taken_per_minute_per_siphoning_charge`. Abyss-jewel and
+  Elder/Shaper item counting is not modelled, so their per-item sources contribute nothing.
+- Spell effective critical chance (`CriticalStrikePolicy.EffectiveChance` / `DoubleCriticalChance`): the luck policy
+  then bifurcation (`spell_critical_strikes_bifurcate`, PoB BifurcateCrit: 1 − (1 − c)², c² for both rolls), zero
+  under prohibition; for the pools' spell chance and each selected spell. `skill_show_average_damage_instead_of_dps`
+  mirrors the selected skill's `base_` flag.
+- Off hand (`Program.OffHandPanel.cs`): `skill_uses_off_hand` and the hand's accuracy, chance to hit, attack speed,
+  critical chance/multiplier and twelve damage ranges for the default attack and attack gems, from the shared buckets
+  with the off-hand item's local modifiers (and the gem's own accuracy/critical increases and supported hit). Per use,
+  DPS and attacks per second average the two hands' own values (`DualWieldPanel`, PoB's AVERAGE combination); the
+  off hand's swing time is its own duration at the off-hand speed, with the gem's supports.
+- Secondary damage: a spell with `display_skill_deals_secondary_damage` (Vaal Detonate Dead) fills `secondary_*` damage
+  and critical rows from its supported hit; a flagged skill without spell base damage (Bear Trap, Herald of Ice's
+  shatter) gets `Program.SecondaryPanel.cs`: its `secondary_*_base_*_damage` through conversion with the generic, area
+  and projectile buckets only (`PlayerHitDamage.Resolve(secondary: true)`), the skill's base critical chance with the
+  generic increases, the generic multiplier, the critical-weighted Damage per Use and the secondary ailment rows.
+  These are display rows; the server does not execute those hits.
+- Damaging-ailment rows (`AilmentPanelStats`, [20-damage.md §3](../protocol/20-damage.md#3-damage-over-time-and-ailments)):
+  all 32 per-minute rows per hand / spell / secondary context from the same raw packet and conversion as the hit, with
+  the ailment buckets, DoT multipliers (critical rows add `critical_ailment_dot_multiplier_+`) and Frenzy more.
+  Conditional sources, stacking, support more multipliers and actual application remain open.
+
+Tests: `PanelStatsTests` (Defence, flags, brand), `CriticalStrikePolicyTests`, `SpellEffectiveCriticalPanelTests`,
+`OffHandPanelTests`, `AilmentPanelStatsTests`, `AilmentPanelGatewayTests` (real Rusted Sword / Glass Shank, Cyclone and
+Fireball fixtures). Native display checks of every row in this batch are pending.
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
 Prioritize the following confirmed partial systems, then reconcile every remaining inventory entry:
 
-1. Penetration native validation, off-hand attack selection and remaining target/conditional sources.
-   Unconditional raw composition and display prohibition now have automated coverage, not native certification.
+1. Penetration native validation and remaining target/conditional sources; the off-hand rows now publish, but
+   off-hand attack execution does not. Unconditional raw composition and display prohibition have automated
+   coverage, not native certification.
 2. Selected ailment chances, leech and other aliases whose raw support contributions are not recomputed.
    The twelve duration/effect coefficients are corrected; prove other omissions using real sources before expanding
    the selected alias set. `SupportImpale` chance and ordinary/gem impale contact behavior are now corrected as
    described above. Conditional impale sources, application/consumption overrides and native validation remain.
 3. Hit averages/DPS: ordinary/selected main-hand critical and reference accuracy/confirmation weighting now
-   follows the combat policy. Integer-roll expectation, remaining conditional critical sources, off-hand/multi-hit/
-   secondary averages, cooldown/downtime and DoT remain open.
-4. Damaging-ailment ranges and the corresponding application, duration, critical and stacking mechanics.
-   Protocol 20 section 3 documents helpers, but also the missing execution paths.
-5. Current-branch validation of the incoming Ward implementation, defence estimates, remaining regeneration/recharge
-   conversions, specialized leech, special charges,
-   minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap.
+   follows the combat policy; dual-wielded rows average both hands. Integer-roll expectation, remaining conditional
+   critical sources, multi-hit/secondary averages, cooldown/downtime and DoT remain open.
+4. Damaging-ailment application, duration, critical and stacking mechanics: the panel ranges are display rows
+   (batch above); Protocol 20 section 3 documents helpers, but also the missing execution paths.
+5. Current-branch validation of the incoming Ward implementation, the defence estimates (batch above), remaining
+   regeneration/recharge conversions, specialized leech, special charge counts and gains (Spirit, Siphoning, Blitz,
+   Challenger, Blood), minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap.
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 
 Do not turn historical client observations, hidden rows, sparse zero packets or source-name matches into completion.

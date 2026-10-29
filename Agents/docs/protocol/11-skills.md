@@ -2103,6 +2103,39 @@ it:
 | `virtual_total_main_hand/off_hand_impale_on_hit_%_chance` | general + attack-only + that hand's local chance, capped 0–100 |
 | `virtual_total_spell_impale_on_hit_%_chance` | general + spell-only chance, capped 0–100 |
 | `intermediary_combined_action_speed_+%` | − `action_speed_-%` |
+| `cannot_be_stunned_by_spells`, `cannot_be_stunned_by_attacks` | flags of their own (the all-stun flag stays its own row) |
+| `brands_per_target_limit` | `base_number_of_sigils_allowed_per_target` (the selected brand's own 1 plus "additional brand attached" sources) |
+| `virtual_maximum_spirit_charges` | `maximum_spirit_charges` (abyss-jewel counting is not modelled) |
+| `virtual_physical_damage_taken_per_minute_per_siphoning_charge` | the `..._if_have_used_a_skill_recently` coefficient |
+
+Beyond the sums, `PanelStats.Defence` works the Defence tab's estimate rows out against the reference monster of the
+character's level (DefaultMonsterStats `Damage` and `Accuracy`, as Path of Building's CalcDefence does):
+`display_estimated_physical_damage_reduciton_%` is `DamageModel.ArmourReduction` (armour / (armour + 5 × damage))
+plus the additional physical reduction (Endurance Charges, passives), capped at 90%; "increased Armour against
+Projectiles" adds `physical_damage_reduction_rating_against_projectiles`, `armour_differs_against_projectiles` and the
+projectile estimate; "additional Physical Damage Reduction against Hits" adds `armour_differs_against_hits` and the hits
+estimate; `chance_to_evade_%` is 100 − the reference monster's hit chance (`DamageModel.EvadeChance`) plus flat
+`chance_to_evade_attacks_%`, capped at 95%; `ward_delay` (milliseconds, `WardState.Delay`) shows with Ward;
+`mana_recharge_rate_per_minute` is the energy shield recharge rate on maximum mana when
+`energy_shield_recharge_apply_to_mana` is set (nothing in 3.29 applies recharge to Life, so that row stays blank);
+`omniscience_for_attribute_requirements` is Omniscience × `attribute_requirements_can_be_satisfied_by_%_of_ascendance`.
+
+The Offence tab's remaining rows: a dual-wielded attack (the default attack and attack gems) sets `skill_uses_off_hand`
+and publishes the off hand's own `off_hand_accuracy_rating`, chance to hit (plain and evasive), `off_hand_attack_speed_+%`,
+critical strike chance and multiplier and the twelve `off_hand_*_damage` ranges (`Program.OffHandPanel.cs`: the shared
+character buckets with the off-hand item's local accuracy, critical chance and attack speed in the main hand's place,
+and the gem's own flat/increased accuracy and critical increases; a gem's off-hand hit is the same supported hit swung
+with that weapon). While dual wielding, Damage per Use, Damage per Second and Attacks per Second average the two
+hands' own values (`DualWieldPanel`, as PoB's "AVERAGE" weapon-pass combination; the off hand swings its own
+duration at `off_hand_attack_speed_+%`). `spell_effective_total_chance_permyriad_for_hit_to_be_critical` / `_double_critical` apply the luck
+policy and the Assassin's `spell_critical_strikes_bifurcate` (`CriticalStrikePolicy.EffectiveChance`: 1 − (1 − c)²,
+and c² for both rolls). A spell flagged `display_skill_deals_secondary_damage` (Vaal Detonate Dead) also fills the
+`secondary_*` damage and critical rows; a flagged skill without spell base damage (Bear Trap, Herald of Ice) fills them
+from its own `secondary_*_base_*_damage` with the generic, area and projectile buckets only, the skill's base critical
+chance with generic increases and the critical-weighted Damage per Use (`Program.SecondaryPanel.cs`,
+`SkillCatalog.SecondaryHitDamage`). `skill_show_average_damage_instead_of_dps` follows the skill's `base_` flag
+(movement skills). The Bleeding / Ignite / Poison damage per second rows per hand, spell and secondary context are
+`AilmentPanelStats` ([20-damage.md §3](20-damage.md#3-damage-over-time-and-ailments)).
 
 `PanelStats.Compute` receives the actual character level from `Pools.Level`, clamped to 1–100, not a gem level or
 an arbitrary `level` stat. Per-level sources multiply before integer division using wide intermediates; only the final

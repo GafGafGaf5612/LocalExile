@@ -167,7 +167,13 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     /// The packet keeps the types separate so conversion and mitigation can be applied per type. Added damage and
     /// increased/more modifiers are applied by the caller; this is the skill's own base range.
     /// </summary>
-    public DamagePacket HitDamage(int effectRow, int level, int quality = 0)
+    public DamagePacket HitDamage(int effectRow, int level, int quality = 0) => HitDamageOf(effectRow, level, quality, "spell");
+
+    /// <summary>A secondary-damage skill's own base hit (Bear Trap's <c>secondary_minimum/maximum_base_physical_damage</c>,
+    /// Herald of Ice's shatter): neither an attack nor a spell, so no added attack/spell damage joins it.</summary>
+    public DamagePacket SecondaryHitDamage(int effectRow, int level, int quality = 0) => HitDamageOf(effectRow, level, quality, "secondary");
+
+    private DamagePacket HitDamageOf(int effectRow, int level, int quality, string prefix)
     {
         var stats = EffectStats(effectRow, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         var result = DamagePacket.Empty;
@@ -182,8 +188,10 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
                 DamageType.Chaos => "chaos",
                 _ => throw new ArgumentOutOfRangeException(),
             };
-            int min = Value(stats, $"spell_minimum_base_{slug}_damage", $"minimum_base_{slug}_damage");
-            int max = Value(stats, $"spell_maximum_base_{slug}_damage", $"maximum_base_{slug}_damage");
+            int min = prefix == "spell" ? Value(stats, $"spell_minimum_base_{slug}_damage", $"minimum_base_{slug}_damage")
+                : Value(stats, $"{prefix}_minimum_base_{slug}_damage");
+            int max = prefix == "spell" ? Value(stats, $"spell_maximum_base_{slug}_damage", $"maximum_base_{slug}_damage")
+                : Value(stats, $"{prefix}_maximum_base_{slug}_damage");
             if (min > 0 || max > 0) result = result.Add(type, new DamageRange(min, Math.Max(min, max)));
         }
         return result;

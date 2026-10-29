@@ -98,7 +98,14 @@ partial class Program
         return result;
     }
 
-    static double SupportedAttackSeconds(ClientState conn, ushort skillId)
+    static double SupportedAttackSeconds(ClientState conn, ushort skillId) => SupportedAttackSecondsFor(conn, skillId, null);
+
+    // The supported attack's swing time with the off-hand weapon of a dual-wielded pair: its own duration at the
+    // off-hand increased speed (the main weapon's local speed taken back out), with the same supports.
+    static double SupportedOffHandAttackSeconds(ClientState conn, ushort skillId, SkillCatalog.Unarmed offHand) =>
+        SupportedAttackSecondsFor(conn, skillId, offHand);
+
+    static double SupportedAttackSecondsFor(ClientState conn, ushort skillId, SkillCatalog.Unarmed? offHand)
     {
         var stats = SupportedStats(conn, skillId);
         int Get(string stat) => Stats.Key(stat) is uint k ? stats.GetValueOrDefault(k) : 0;
@@ -111,7 +118,10 @@ partial class Program
         }
         double more = Supports.AttackSpeedMultiplier(gem.Effect, gem.Level) * Math.Max(.01, 1 + Get("support_melee_physical_damage_attack_speed_+%_final") / 100.0)
             * Math.Max(.01, 1 + Get("support_multistrike_attack_speed_+%_final") / 100.0);
-        return Math.Max(TickSeconds, WeaponFor(conn).AttackSeconds(stats) / more / PlayerActionFactor(conn));
+        double seconds = offHand is null ? WeaponFor(conn).AttackSeconds(stats)
+            : DualWieldPanel.OffHandSeconds(offHand, SkillCatalog.Unarmed.OffHandAttackSpeedPct(
+                stats.GetValueOrDefault(StatKeys.MainHandAttackSpeedPct), WeaponProfileFor(conn, activeSet: true).LocalAttackSpeedPct));
+        return Math.Max(TickSeconds, seconds / more / PlayerActionFactor(conn));
     }
 
     static GameServer.Core.World.DamagePacket SupportedHit(ClientState conn, ushort skillId)
@@ -120,7 +130,18 @@ partial class Program
     internal static GameServer.Core.World.DamagePacket SupportedProjectileHit(ClientState conn, ushort skillId, bool area)
         => SupportedHitFor(conn, skillId, suppress: false, area);
 
-    static GameServer.Core.World.DamagePacket SupportedHitFor(ClientState conn, ushort skillId, bool suppress, bool? area = null)
+    // The same supported attack swung with the off-hand weapon of a dual-wielded attack (the Offence tab's Off Hand rows).
+    static GameServer.Core.World.DamagePacket SupportedOffHandHit(ClientState conn, ushort skillId, SkillCatalog.Unarmed offHand)
+        => SupportedHitFor(conn, skillId, suppress: true, weapon: offHand);
+
+    // A supported skill's hit inputs before conversion and modifiers, shared by the hit itself and the panel's ailment
+    // rows, which apply their own buckets to the same raw packet and conversion. Null when the skill cannot hit.
+    sealed record SupportedHitInputs(GameServer.Core.World.DamagePacket Raw, Func<string, int> Get,
+        GameServer.Core.World.DamageConversion Conversion, bool Attack, bool Melee, bool Area, bool Projectile,
+        List<(string Name, int Value)> Modifiers, HashSet<int> Types, SkillHitPlan Plan, Dictionary<uint, int> Caster);
+
+    static SupportedHitInputs? SupportedHitInputsFor(ClientState conn, ushort skillId, bool? area = null,
+        SkillCatalog.Unarmed? weapon = null)
     {
         var gem = SupportedSkill(conn, skillId);
         var caster = FinalPlayerStats(conn).ToDictionary(v => v.Item1, v => v.Item2);
@@ -132,17 +153,35 @@ partial class Program
         if (area is true) types.Add(7);
         else if (area is false) types.Remove(7);
         var plan = SkillHitPlan.ForSkill(SkillsFor(conn), gem.Effect, gem.Level, gem.Quality);
-        if (!plan.CanHit) return GameServer.Core.World.DamagePacket.Empty;
+        if (!plan.CanHit) return null;
         var raw = attack
-            ? SpellDamage.WithEffectiveness(SupportedAttackDamage.Raw(WeaponFor(conn), Get), SkillsFor(conn).DamageEffectiveness(gem.Effect, gem.Level))
+            ? SpellDamage.WithEffectiveness(SupportedAttackDamage.Raw(weapon ?? WeaponFor(conn), Get), SkillsFor(conn).DamageEffectiveness(gem.Effect, gem.Level))
             : DamageStats.RawAdded(plan.SpellBase, Get, spell: true, AddedEffectiveness(conn, gem.Effect, gem.Level));
         var modifiers = gem.Supports.SelectMany(s => s.Stats).Select(s => (Stats.Name(s.Key) ?? "", s.Value)).ToList();
-        var hit = PlayerHitDamage.Resolve(raw, Get, DamageStats.Conversion(stats, Stats, attack), spell: !attack,
-            melee: attack && types.Contains(19), area: attack ? types.Contains(7) : Get("is_area_damage") != 0,
-            projectile: attack ? types.Contains(2) : Get("base_is_projectile") != 0,
-            supportModifiers: modifiers, skillTypes: types);
-        if (attack) hit = RageStats.ApplyAttack(hit, Get);
-        return suppress ? new SkillDamageContext(plan.Kind, caster).Hit(hit) : hit;
+        return new(raw, Get, DamageStats.Conversion(stats, Stats, attack), attack,
+            Melee: attack && types.Contains(19), Area: attack ? types.Contains(7) : Get("is_area_damage") != 0,
+            Projectile: attack ? types.Contains(2) : Get("base_is_projectile") != 0, modifiers, types, plan, caster);
+    }
+
+    static GameServer.Core.World.DamagePacket SupportedHitFor(ClientState conn, ushort skillId, bool suppress, bool? area = null,
+        SkillCatalog.Unarmed? weapon = null)
+    {
+        if (SupportedHitInputsFor(conn, skillId, area, weapon) is not { } inputs) return GameServer.Core.World.DamagePacket.Empty;
+        var hit = PlayerHitDamage.Resolve(inputs.Raw, inputs.Get, inputs.Conversion, spell: !inputs.Attack,
+            melee: inputs.Melee, area: inputs.Area, projectile: inputs.Projectile,
+            supportModifiers: inputs.Modifiers, skillTypes: inputs.Types);
+        if (inputs.Attack) hit = RageStats.ApplyAttack(hit, inputs.Get);
+        return suppress ? new SkillDamageContext(inputs.Plan.Kind, inputs.Caster).Hit(hit) : hit;
+    }
+
+    // The damaging-ailment rows of a supported skill's hit in one context (AilmentPanelStats): the main or off hand of
+    // an attack with that hand's weapon, or a spell's / secondary-damage skill's hit.
+    static List<(string Stat, int Value)> SupportedAilmentRows(ClientState conn, ushort skillId, string hand,
+        SkillCatalog.Unarmed? weapon = null)
+    {
+        if (SupportedHitInputsFor(conn, skillId, weapon: weapon) is not { } inputs) return [];
+        var context = new AilmentPanelStats.Context(hand, Spell: !inputs.Attack, inputs.Melee, inputs.Area, inputs.Projectile);
+        return AilmentPanelStats.Compute(context, inputs.Raw, inputs.Conversion, inputs.Get);
     }
 
     static AttackAccuracyProfile SupportedAccuracy(ClientState conn, ushort skillId)

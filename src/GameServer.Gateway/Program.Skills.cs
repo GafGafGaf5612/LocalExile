@@ -85,8 +85,22 @@ partial class Program
             var offHit = AttackHitConverted(off, stats, MeleeAttack(conn), conversion);
             list.AddRange(off.OffStats(stats, offHit));
             AddHand(offHit, "off_hand");
+            // The hands alternate: the panel's per-use, per-second and attacks-per-second rows average both.
+            int offSpeed = list.First(s => s.Item1 == StatKeys.OffHandAttackSpeedPct).Item2;
+            var (perUse, perSecond, attacksPerSecond) = DualWieldPanel.Average(mainHit, weapon.AttackSeconds(stats),
+                offHit, DualWieldPanel.OffHandSeconds(off, offSpeed), damageFactor);
+            Put(StatKeys.DisplayHundredTimesDamagePerSkillUse, perUse);
+            Put(StatKeys.HundredTimesDamagePerSecond, perSecond);
+            Put(StatKeys.HundredTimesAttacksPerSecond, attacksPerSecond);
         }
         return list;
+
+        void Put(uint key, int value)
+        {
+            int index = list.FindIndex(s => s.Item1 == key);
+            if (index >= 0) list[index] = (key, value);
+            else list.Add((key, value));
+        }
 
         void AddHand(GameServer.Core.World.DamagePacket hit, string hand)
         {
@@ -183,6 +197,8 @@ partial class Program
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n),
             playerLevel: conn.Pools.Level)
             .Concat(PanelStats.FromPools(Get, conn.Pools))
+            .Concat(PanelStats.Defence(Get, conn.Pools, Monsters.BaseDamage(conn.Pools.Level) ?? 0,
+                Monsters.BaseAccuracy(conn.Pools.Level) ?? 0))
             .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
             .Concat(LeechLimits.Compute(Get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield,
                 name => Stats.Key(name) is uint key && rawOverrides.TryGetValue(key, out int value) ? value : null,
@@ -213,9 +229,18 @@ partial class Program
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
         if (Stats.Key("skill_uses_main_hand") is uint usesMainHand && !devSet.Contains(usesMainHand)) stats[usesMainHand] = 1;
-        var attack = AttackHitConverted(WeaponFor(conn), stats, MeleeAttack(conn),
-            DamageStats.Conversion(stats, Stats, attack: true));
+        var attackConversion = DamageStats.Conversion(stats, Stats, attack: true);
+        var attack = AttackHitConverted(WeaponFor(conn), stats, MeleeAttack(conn), attackConversion);
         foreach (var (stat, value) in PanelStats.HandDamage(attack, "main_hand"))
+            if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
+        // The default attack's damaging-ailment rows per hand (AilmentPanelStats), from the same raw packet and
+        // conversion as its hit; an off hand that is not swung keeps no stale rows.
+        var ailmentContext = new AilmentPanelStats.Context("main_hand", Spell: false, Melee: MeleeAttack(conn), Projectile: !MeleeAttack(conn));
+        var ailmentRows = AilmentPanelStats.Compute(ailmentContext, SupportedAttackDamage.Raw(WeaponFor(conn), Get), attackConversion, Get);
+        if (OffhandWeaponFor(conn) is { } offWeapon)
+            ailmentRows.AddRange(AilmentPanelStats.Compute(ailmentContext with { Hand = "off_hand" },
+                SupportedAttackDamage.Raw(offWeapon, Get), attackConversion, Get));
+        foreach (var (stat, value) in ailmentRows)
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         var ailments = conn.ElementalAilments.Snapshot(conn.Clock.Elapsed.TotalSeconds);
         foreach (var (name, value) in new[] { ("is_ignited", ailments.Ignite ? 1 : 0),
@@ -236,10 +261,18 @@ partial class Program
         })
             if (Stats.Key(name) is uint key && !devSet.Contains(key))
                 stats[key] = accuracy.Chance(evasion, false, false);
+        // The Off Hand rows of a dual-wielded default attack; the flag clears when nothing is swung with the off hand.
+        if (Stats.Key("skill_uses_off_hand") is uint usesOffHand && !devSet.Contains(usesOffHand)) stats[usesOffHand] = 0;
+        foreach (var (name, value) in OffHandPanelStats(conn, stats, mainLocal, offLocal, stats.GetValueOrDefault(StatKeys.MainHandAttackSpeedPct)) ?? [])
+            if (Stats.Key(name) is uint key && !devSet.Contains(key)) stats[key] = value;
         if (Stats.Key("virtual_on_low_life") is uint lowLife)
             stats[lowLife] = CriticalOnLowLife(conn, stats) ? 1 : 0;
         if (Stats.Key("virtual_extra_critical_rolls") is uint rolls)
             stats[rolls] = CriticalExtraRollsFor(conn, stats);
+        // The Offence tab's effective (and twice-) critical chance for spells: the pools' chance after the luck and
+        // bifurcation policies; a selected spell gets its own (GemSkills).
+        foreach (var (stat, value) in SpellEffectiveCritical(conn, stats, conn.Pools.SpellCriticalStrikeChance, own: null))
+            if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         stats[OwnAuraRestriction.Disabled] = OwnAuraRestrictionValue(conn);
         if (Get("global_always_hit") != 0)
             foreach (string name in new[] { "main_hand_chance_to_hit_%", "off_hand_chance_to_hit_%",
@@ -252,6 +285,23 @@ partial class Program
             if (Stats.Key("ward_broken") is uint broken) stats[broken] = conn.Ward.Broken ? 1 : 0;
         }
         return stats;
+    }
+
+    // spell_effective_total_chance_permyriad_for_hit_to_be_critical / _double_critical: the spell chance after the
+    // luck policy (CriticalExtraRollsFor) and the Assassin's bifurcation (spell_critical_strikes_bifurcate); zero when
+    // critical strikes are prohibited, as the chance row itself is.
+    static IEnumerable<(string Stat, int Value)> SpellEffectiveCritical(ClientState conn, IReadOnlyDictionary<uint, int> player,
+        int chance, IReadOnlyDictionary<uint, int>? own)
+    {
+        bool Flag(string name) => Stats.Key(name) is uint key
+            && (player.GetValueOrDefault(key) != 0 || (own?.GetValueOrDefault(key) ?? 0) != 0);
+        int allowed = CriticalProhibitedBy(player, attack: false, own) ? 0 : chance;
+        int extraRolls = CriticalExtraRollsFor(conn, player, own);
+        bool bifurcate = Flag("spell_critical_strikes_bifurcate");
+        yield return ("spell_effective_total_chance_permyriad_for_hit_to_be_critical",
+            CriticalStrikePolicy.EffectiveChance(allowed, extraRolls, bifurcate));
+        yield return ("spell_effective_total_chance_permyriad_for_hit_to_be_double_critical",
+            CriticalStrikePolicy.DoubleCriticalChance(allowed, extraRolls, bifurcate));
     }
 
     // The melee context of an attack's damage modifiers. An attack gem classifies
@@ -452,7 +502,17 @@ partial class Program
                 if (Stats.Key("skill_area_of_effect_+%") is uint areaKey) stats[areaKey] = increased;
                 Console.WriteLine($"[gateway] Cyclone area: base {baseRadius}, radius {radius}, increased area {increased}%, radius scale {radiusPercent}%");
             }
-            if (SkillsFor(conn).IsAttack(effect) || SkillsFor(conn).IsSpell(effect))
+            // A trap or herald that deals secondary damage (Bear Trap carries the Spell type but no spell base damage,
+            // Herald of Ice's shatter): its own secondary rows, before the attack/spell hit rows.
+            if (!SkillsFor(conn).IsAttack(effect) && Get("display_skill_deals_secondary_damage") != 0
+                && !SkillHitPlan.ForSkill(SkillsFor(conn), effect, supported.Level, supported.Quality).CanHit
+                && SkillsFor(conn).SecondaryHitDamage(effect, supported.Level, supported.Quality) is { IsZero: false } secondaryBase)
+            {
+                foreach (var (stat, value) in SecondaryPanelRows(conn, Get, playerStats, supported, secondaryBase))
+                    if (Stats.Key(stat) is uint key)
+                        stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
+            }
+            else if (SkillsFor(conn).IsAttack(effect) || SkillsFor(conn).IsSpell(effect))
             {
                 var supportedHit = SupportedHit(conn, id);
                 double seconds = SkillsFor(conn).IsAttack(effect) ? SupportedAttackSeconds(conn, id) : Math.Max(.001, (CastMs(conn, effect, id) ?? 0) / 1000.0);
@@ -482,12 +542,55 @@ partial class Program
                     })
                         if (Stats.Key(field) is uint key)
                             stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
+                    // A dual-wielded attack gem swings the off hand too: its own rows, with the same supports, and the
+                    // per-use / per-second / attacks-per-second rows average both hands.
+                    if (OffHandPanelStats(conn, playerStats, panelSources.MainHand, panelSources.OffHand,
+                            stats.GetValueOrDefault(StatKeys.MainHandAttackSpeedPct), own, effect) is { } offHand
+                        && OffhandWeaponFor(conn) is { } offWeapon)
+                    {
+                        var offHit = SupportedOffHandHit(conn, id, offWeapon);
+                        var (perUse, perSecond, attacksPerSecond) = DualWieldPanel.Average(supportedHit, seconds, offHit,
+                            SupportedOffHandAttackSeconds(conn, id, offWeapon), damageFactor);
+                        foreach (var (field, value) in offHand.Concat(OffHandDamageRows(offHit)))
+                            if (Stats.Key(field) is uint key)
+                                stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
+                        stats[StatKeys.DisplayHundredTimesDamagePerSkillUse] = perUse;
+                        stats[StatKeys.HundredTimesDamagePerSecond] = perSecond;
+                        stats[StatKeys.HundredTimesAttacksPerSecond] = attacksPerSecond;
+                    }
                 }
                 if (Stats.Key(SkillsFor(conn).IsAttack(effect) ? "main_hand_critical_strike_chance" : "spell_critical_strike_chance") is uint ck)
                     stats[ck] = criticalChance;
                 if (Stats.Key(SkillsFor(conn).IsAttack(effect) ? "main_hand_critical_strike_multiplier" : "spell_critical_strike_multiplier") is uint cm)
                     stats[cm] = criticalMultiplier;
+                if (!SkillsFor(conn).IsAttack(effect))
+                    foreach (var (stat, value) in SpellEffectiveCritical(conn, characterInputs, criticalChance, own))
+                        if (Stats.Key(stat) is uint key) stats[key] = value;
+                // A spell flagged as dealing secondary damage (Vaal Detonate Dead) fills the secondary rows with its
+                // hit and critical values; the panel then draws those instead of the spell rows.
+                bool secondary = !SkillsFor(conn).IsAttack(effect) && Get("display_skill_deals_secondary_damage") != 0;
+                if (secondary)
+                {
+                    foreach (var (stat, value) in PanelStats.HandDamage(supportedHit, "secondary"))
+                        if (Stats.Key(stat) is uint key) stats[key] = value;
+                    if (Stats.Key("secondary_critical_strike_chance") is uint sc) stats[sc] = criticalChance;
+                    if (Stats.Key("secondary_critical_strike_multiplier") is uint sm) stats[sm] = criticalMultiplier;
+                }
+                // The damaging-ailment rows of this skill's hit, per hand for a (dual-wielded) attack.
+                string ailmentHand = SkillsFor(conn).IsAttack(effect) ? "main_hand" : secondary ? "secondary" : "spell";
+                var ailmentRows = SupportedAilmentRows(conn, id, ailmentHand);
+                // A spell inherits the default attack's hand rows with the player's stats: clear them, as the hit rows are.
+                if (!SkillsFor(conn).IsAttack(effect))
+                    ailmentRows.InsertRange(0, AilmentPanelStats.Rows("main_hand").Concat(AilmentPanelStats.Rows("off_hand")).Select(n => (n, 0)));
+                if (SkillsFor(conn).IsAttack(effect) && OffhandWeaponFor(conn) is { } offHandWeapon)
+                    ailmentRows.AddRange(SupportedAilmentRows(conn, id, "off_hand", offHandWeapon));
+                foreach (var (stat, value) in ailmentRows)
+                    if (Stats.Key(stat) is uint key)
+                        stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
             }
+            // Movement and other skills whose base flag asks the panel for Damage per Use rather than per second.
+            if (Stats.Key("skill_show_average_damage_instead_of_dps") is uint showAverage)
+                stats[showAverage] = Get("base_skill_show_average_damage_instead_of_dps") != 0 ? 1 : 0;
             stats[OwnAuraRestriction.BaseAura] = own.GetValueOrDefault(OwnAuraRestriction.BaseAura);
             OwnAuraRestriction.PublishSkill(stats, OwnAuraRestrictionValue(conn));
             // These display aliases use the same raw snapshot as the character derivation. Apply them after

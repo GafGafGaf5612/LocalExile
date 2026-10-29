@@ -115,4 +115,20 @@ public class CriticalStrikePolicyTests
     public void Only_the_empty_active_hand_melee_attack_receives_the_fifty_point_multiplier(bool empty,
         bool melee, bool spell, int expected)
         => Assert.Equal(expected, CriticalStrikePolicy.Multiplier(150, 50, empty, melee, spell));
+
+    [Theory]
+    [InlineData(3000, 0, false, 3000, 0)]
+    [InlineData(3000, 1, false, 5100, 0)]
+    [InlineData(3000, -1, false, 900, 0)]
+    [InlineData(3000, 0, true, 5100, 900)]
+    [InlineData(3000, 1, true, 7599, 2601)]
+    [InlineData(0, 1, true, 0, 0)]
+    [InlineData(10000, -1, true, 10000, 10000)]
+    [InlineData(12000, 0, true, 10000, 10000)]
+    public void Effective_spell_critical_chance_applies_luck_then_bifurcation(int chance, int extra, bool bifurcate,
+        int effective, int twice)
+    {
+        Assert.Equal(effective, CriticalStrikePolicy.EffectiveChance(chance, extra, bifurcate));
+        Assert.Equal(twice, CriticalStrikePolicy.DoubleCriticalChance(chance, extra, bifurcate));
+    }
 }

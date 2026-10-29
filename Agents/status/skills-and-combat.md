@@ -434,8 +434,22 @@ Part of [Status](../Status.md); what to build next in this area is in
   revisions and one-integer Life boundary are documented in protocol 13 §8. These controls do not promote the old
   18 whole-zero cases or establish source-removal/zero next-use behavior, whole-unique acquisition/tooltip parity,
   new self-duration native coverage, or completion of an issue 75 row.
-  The rest of the 387 rows is tracked in issue #75.
-  Code: `PanelStats.cs`, `PanelStatDefaults.cs`, Gateway (`CharacterPlayerStats`, `HandLocalStats`).
+  The 2026-10-29 row batch publishes the rows that had no derivation: the Defence estimates (physical reduction plain /
+  against projectiles / against hits with their differs flags, chance to evade, ward delay, mana recharge, Omniscience
+  requirements) against DefaultMonsterStats at the character's level; the off hand's own accuracy, chance to hit,
+  attack speed, critical chance/multiplier and damage ranges with `skill_uses_off_hand` for dual-wielded default and
+  gem attacks, whose per-use / DPS / attacks-per-second rows average both hands (`DualWieldPanel`); the spell
+  effective / twice-critical chance (luck, then Assassin bifurcation); secondary-damage rows for
+  flagged spells and for Bear Trap / Herald of Ice from their own secondary base damage (generic buckets only,
+  `Program.SecondaryPanel.cs`); `skill_show_average_damage_instead_of_dps`; the 32 Bleeding / Ignite / Poison damage per second rows
+  per hand, spell and secondary context (`AilmentPanelStats`, from the hit's raw packet and conversion with the
+  ailment buckets and DoT multipliers); stun-by-kind flags, brand per-target limit, Spirit maximum and the Siphoning
+  damage-taken coefficient. 60 new automated cases pass with real sword/dagger, Cyclone and Fireball fixtures;
+  native display checks of this batch are pending, and actual ailment application, special charge counts and
+  Elder/Shaper and abyss-jewel item counting remain open
+  ([review](../docs/dev/issue75-review.md#offence-defence-misc-and-charges-row-batch)).
+  Code: `PanelStats.cs`, `PanelStatDefaults.cs`, `AilmentPanelStats.cs`, `Program.OffHandPanel.cs`, `DualWieldPanel.cs`,
+  Gateway (`CharacterPlayerStats`, `HandLocalStats`, `GemSkills`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
 - Character-panel leech limits: full maximum pools supply separate per-instance amounts and total recovery caps.
   The current issue #75 review also corrects 24 leech coefficient and three recovery-speed aliases: general,

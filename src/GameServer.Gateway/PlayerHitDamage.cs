@@ -9,9 +9,13 @@ static class PlayerHitDamage
 {
     public static DamagePacket Resolve(DamagePacket raw, Func<string, int> get, DamageConversion conversion,
         bool spell, bool melee = false, bool area = false, bool projectile = false,
-        IEnumerable<(string Name, int Value)>? supportModifiers = null, IReadOnlySet<int>? skillTypes = null)
+        IEnumerable<(string Name, int Value)>? supportModifiers = null, IReadOnlySet<int>? skillTypes = null,
+        bool secondary = false)
     {
-        melee = !spell && melee;
+        // Secondary damage (Bear Trap, Herald of Ice's shatter) is neither an attack nor a spell: only the generic,
+        // area and projectile buckets apply, and no attack/spell support classification.
+        spell = spell && !secondary;
+        melee = !spell && !secondary && melee;
         var modifiers = supportModifiers?.ToArray() ?? [];
         // Preserve native area/projectile support classification, but do not let contradictory supplied flags turn
         // an attack into a spell or admit melee-only modifiers on a spell. The explicit hit context owns that family.
@@ -19,15 +23,15 @@ static class PlayerHitDamage
         supportTypes.Remove(0);
         supportTypes.Remove(1);
         supportTypes.Remove(19);
-        supportTypes.Add(spell ? 1 : 0);
+        if (!secondary) supportTypes.Add(spell ? 1 : 0);
         if (melee) supportTypes.Add(19);
-        double common = (double)get("damage_+%") + get(spell ? "spell_damage_+%" : "attack_damage_+%")
+        double common = (double)get("damage_+%") + (secondary ? 0 : get(spell ? "spell_damage_+%" : "attack_damage_+%"))
             + (melee ? get("melee_damage_+%") : 0) + (area ? get("area_damage_+%") : 0)
-            + (projectile ? get("projectile_damage_+%") : 0) + (spell ? 0 : DamageStats.SpellAttackIncrease(get));
+            + (projectile ? get("projectile_damage_+%") : 0) + (spell || secondary ? 0 : DamageStats.SpellAttackIncrease(get));
         bool lifeLeech = get("is_life_leeching") != 0, manaLeech = get("is_mana_leeching") != 0,
             shieldLeech = get("is_es_leeching") != 0, fullShield = get("on_full_energy_shield") != 0;
         bool anyLeech = lifeLeech || manaLeech || shieldLeech;
-        common += (anyLeech ? (double)get("damage_+%_while_leeching") + (spell ? 0 : get("attack_damage_+%_while_leeching")) : 0)
+        common += (anyLeech ? (double)get("damage_+%_while_leeching") + (spell || secondary ? 0 : get("attack_damage_+%_while_leeching")) : 0)
             + (lifeLeech ? get("damage_+%_while_life_leeching") : 0)
             + (manaLeech ? get("damage_+%_while_mana_leeching") : 0)
             + (shieldLeech ? get("damage_+%_while_es_leeching") : 0)

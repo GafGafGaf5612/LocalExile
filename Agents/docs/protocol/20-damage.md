@@ -578,6 +578,20 @@ average range. The caller applies the target's resistance. Non-damaging ailments
 ailment damage, ailment chance/application and ailment duration stats are not modelled yet. Righteous Fire still uses
 its existing per-tick percentage-of-life burn; it is a fire DoT but not an ignite.
 
+The character panel's 32 damaging-ailment rows (`minimum/maximum_{bleeding,ignite,poison}_damage_to_deal_per_minute_from_{non_critical,critical}_{main_hand,off_hand,spell,secondary}_damage`
+and the `_to_always_deal_` poison rows) come from `AilmentPanelStats`, which takes the same raw packet and conversion as
+the hit (the default attack per hand, a supported gem's hit per hand / as a spell / as secondary damage) and applies
+the ailment's buckets instead of the hit's: each converted portion keeps the increases of the types it visited, plus
+generic, attack or spell, melee, area and projectile damage, damage over time (generic and the ailment type's),
+`bleeding_damage_+%` / `burn_damage_+%` / `base_poison_damage_+%`, elemental damage for ignite, then the
+damage-over-time multipliers (`dot_multiplier_+`, the type's, and `critical_ailment_dot_multiplier_+` for the critical
+rows: critical strikes give ailments nothing else) and the Frenzy Charges' more multiplier, times the base percentage
+(70 / 90 / 30) and 60. The "from only Chaos Damage" rows use the chaos portion alone and show with a
+`chaos_damage_chance_to_poison_%` source. Pinned PoB CalcOffence (16de4b82, `calcAilmentDamage` and the bleed /
+poison / ignite sections) composes the same buckets. Not modelled: conditional sources, stacking, "as though dealing
+more", support more multipliers, the moving bleed bonus, and the rows' native formatting; these are display rows
+only, actual ailment application is still the open item above.
+
 ## 3a. Impale contacts and reflected damage
 
 `ImpaleStats` resolves unconditional general + attack/spell chance, the attacking weapon's local chance, general
