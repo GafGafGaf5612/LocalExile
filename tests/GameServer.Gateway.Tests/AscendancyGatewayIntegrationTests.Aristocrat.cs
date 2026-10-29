@@ -126,6 +126,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
         var ailments = new PlayerElementalAilments();
         ailments.Apply(hit, hit, critical: true, maxLife: 1000, now: 0, Get, new Random(1));
         var effects = ailments.Snapshot(0);
+        Assert.Equal(1, AristocratStat(state, "cannot_be_frozen")); // The Defence tab's "Cannot be Frozen" row.
+        Assert.Equal(0, AristocratStat(state, "cannot_be_ignited"));
+        Assert.Equal(0, AristocratStat(state, "cannot_be_shocked"));
         Assert.False(effects.Freeze); // Dexterity higher than Intelligence.
         Assert.True(effects.Ignite); // Strength is not strictly higher than Dexterity.
         Assert.True(effects.Shock > 0); // Private Tuition is not allocated.
@@ -137,9 +140,9 @@ public sealed partial class AscendancyGatewayIntegrationTests
         ailments.Clear();
         ailments.Apply(hit, hit, critical: true, maxLife: 1000, now: 0, Get, new Random(1));
         Assert.True(ailments.Snapshot(0).Freeze);
+        Assert.Equal(0, AristocratStat(game.State, "cannot_be_frozen"));
         Assert.Null((await game.Change([11154], allocate: true)).Error);
-        Assert.Equal(0, AristocratStat(game.Reload(), "cannot_be_frozen") + (Program.CharacterPlayerStats(game.Reload())
-            .GetValueOrDefault(Program.Stats.Key("cannot_be_frozen_with_dex_higher_than_int")!.Value) == 1 ? 0 : 1));
+        Assert.Equal(1, AristocratStat(game.Reload(), "cannot_be_frozen"));
     }
 
     [Fact]

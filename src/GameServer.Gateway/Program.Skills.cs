@@ -48,6 +48,12 @@ partial class Program
     }
 
     const string LowestAttributeDamage = "damage_+%_per_5_of_your_lowest_attribute";
+    static readonly (string Conditional, string Plain, string Higher, string Lower)[] AttributeAilmentConditions =
+    [
+        ("cannot_be_ignited_with_strength_higher_than_dex", "cannot_be_ignited", "strength", "dexterity"),
+        ("cannot_be_frozen_with_dex_higher_than_int", "cannot_be_frozen", "dexterity", "intelligence"),
+        ("cannot_be_shocked_with_int_higher_than_strength", "cannot_be_shocked", "intelligence", "strength"),
+    ];
 
     static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
     {
@@ -183,6 +189,11 @@ partial class Program
         if (Get(LowestAttributeDamage) is int perFive and not 0 && Stats.Key("damage_+%") is uint damageKey && !devSet.Contains(damageKey))
             stats[damageKey] = (int)Math.Clamp(Get("damage_+%") + (long)perFive
                 * (Math.Min(Get("strength"), Math.Min(Get("dexterity"), Get("intelligence"))) / 5), int.MinValue, int.MaxValue);
+        // Aristocrat: "cannot be X if A is higher than B" becomes the plain cannot_be_X while it holds (strictly higher),
+        // which the Defence tab shows and the ailment consumer reads.
+        foreach (var (conditional, plain, higher, lower) in AttributeAilmentConditions)
+            if (Get(conditional) != 0 && Get(higher) > Get(lower) && Stats.Key(plain) is uint plainKey && !devSet.Contains(plainKey))
+                stats[plainKey] = 1;
         // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
