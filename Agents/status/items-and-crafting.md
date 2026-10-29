@@ -186,8 +186,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   CoE pool/jewel checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
   The old live check (2026-10-21) predates these rules; native re-acceptance is pending.
   See [13](../docs/protocol/13-items.md), "Exalted Orb", and [evidence](../docs/re/exalted-coe.md).
-- **Orb of Annulment (verified live, 2026-10-21):** removes one random affix from a magic or rare item.
-  See [13](../docs/protocol/13-items.md), "Orb of Annulment".
+- **Orb of Annulment:** removes one random unprotected affix from a magic or rare item; rarity, name, implicits and
+  the other affixes stay. Metamod/fractured filters exclude protected affixes; corrupted/mirrored/unsupported/
+  `Unmodifiable` and no-eligible-explicit targets are refused before spending.
+  CoE rarity/metamod checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  The old live check (2026-10-21) predates these rules; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Orb of Annulment", and [evidence](../docs/re/annulment-coe.md).
 - **Armourer's Scrap (verified live, 2026-10-21):** +1% quality on armour, up to 20%; Scouring resets it to 0.
   See [13](../docs/protocol/13-items.md), "Armourer's Scrap".
 - **Blacksmith's Whetstone (verified live, 2026-10-21):** +1% quality on weapons, up to 20%; Scouring resets it.

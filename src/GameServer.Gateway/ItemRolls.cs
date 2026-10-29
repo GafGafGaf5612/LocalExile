@@ -226,9 +226,12 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         return item with { Mods = kept, Rarity = rarity, Identified = true, NameWords = rarity == ItemRarity.Rare ? item.NameWords : [] };
     }
 
+    /// <summary>Annulment's validated explicit-affix removal: one random unprotected explicit leaves a magic or rare
+    /// item; rarity and name stay. Refused targets return null before removing or spending: non-magic/rare,
+    /// corrupted/mirrored, unknown/unsupported/unmodifiable bases and items with no eligible explicit.</summary>
     public Item? Annul(Item item, Random rng)
     {
-        if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare)) return null;
+        if (item.Rarity is not (ItemRarity.Magic or ItemRarity.Rare) || !TryModifiable(item, out _)) return null;
         var rules = new MetacraftRules(item, catalog.Mods);
         var candidates = Enumerable.Range(0, item.Mods.Count).Where(i => item.Mods[i].Section == ModSection.Explicit && !rules.Protected(i)
             && (catalog.Mods.ByHash(item.Mods[i].Hash) is not { } mod || rules.Allows(mod))).ToArray();

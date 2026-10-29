@@ -20,8 +20,9 @@ static class CurrencyEffects
     public const string ExaltedOrb = "Metadata/Items/Currency/CurrencyAddModToRare";
     public const string OrbOfAnnulment = "Metadata/Items/Currency/CurrencyRemoveMod";
 
-    /// <summary>Orb of Annulment: one random explicit affix leaves a magic or rare item; implicits, the other affixes,
-    /// rarity and name stay. Refused for anything else, or an item without explicit affixes.</summary>
+    /// <summary>Orb of Annulment: one random unprotected explicit affix leaves a magic or rare item; implicits, the
+    /// other affixes, rarity and name stay. Corrupted/mirrored/unsupported/unmodifiable bases and items without an
+    /// eligible explicit are refused before the inventory handler spends an orb.</summary>
     public static Item? Annulment(Item item, ItemRolls rolls, Random random) => rolls.Annul(item, random);
 
     /// <summary>Exalted Orb: a modifiable rare item keeps its affixes and name and gets one more within its rare

@@ -570,11 +570,16 @@ targets are refused before spending.
 The four-mod wand pool (nine candidates, weight 5150) and the jewel 2+2 refusal are in
 [the source comparison](../re/exalted-coe.md).
 
-### Orb of Annulment (2026-10-21, verified live)
+### Orb of Annulment (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyRemoveMod`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Annulment` removes one random explicit
-affix from a magic or rare item; implicits, the other affixes, rarity and name stay. Anything else, or an item without
-explicit affixes, is refused and nothing is spent.
+`CurrencyRemoveMod`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Annulment` delegates to `ItemRolls.Annul`:
+one random unprotected explicit affix leaves a magic or rare item; implicits, the other affixes, rarity and name stay.
+Prefix/suffix locks and cannot-roll attack/caster crafts filter the candidates, and fractured affixes are never
+removed.
+Corrupted/mirrored items, unsupported/unknown or `Unmodifiable` bases, and items without an eligible explicit are
+refused before spending.
+CoE confirms the magic/rare rarity stays and the metamod candidate rule; see
+[the source comparison](../re/annulment-coe.md).
 
 ### Armourer's Scrap (2026-10-21, verified live)
 
