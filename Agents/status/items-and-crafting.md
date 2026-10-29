@@ -147,8 +147,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   See [13](../docs/protocol/13-items.md), "Orb of Alchemy", "Chaos Orb", "Divine Orb".
 - **Orb of Scouring (verified live, 2026-10-21):** a magic / rare / unique item becomes normal, only base mods stay.
   See [13](../docs/protocol/13-items.md), "Orb of Scouring".
-- **Orb of Transmutation (verified live, 2026-10-21):** a normal item becomes magic with 1-2 random affixes.
-  See [13](../docs/protocol/13-items.md), "Orb of Transmutation".
+- **Orb of Transmutation:** normal to identified magic, targeting 1-2 weighted affixes at equal probability.
+  Unknown, unsupported, unmodifiable and empty-pool bases are refused before spending.
+  CoE count/pool comparisons, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  Framed native wand/flask upgrades, repeat/unmodifiable refusal and relog passed on 2026-10-29.
+  Fresh native Shift/stash and manual currency UI checks remain separate.
+  See [13](../docs/protocol/13-items.md), "Orb of Transmutation", and [evidence](../docs/re/transmutation-coe.md).
 - **Orb of Alteration (verified live, 2026-10-21):** a magic item gets 1-2 new affixes (one prefix, one suffix at
   most).
   See [13](../docs/protocol/13-items.md), "Orb of Alteration".

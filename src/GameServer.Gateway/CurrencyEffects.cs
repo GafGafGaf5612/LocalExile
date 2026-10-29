@@ -46,11 +46,9 @@ static class CurrencyEffects
         item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null
             : rolls.Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
 
-    /// <summary>Orb of Transmutation: a normal item with mods becomes an identified magic one with 1-2 random affixes
-    /// (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
-    public static Item? Transmutation(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
+    /// <summary>Orb of Transmutation: a modifiable normal item becomes identified magic, with 1-2 weighted affixes.
+    /// Admission and the ordinary pool are validated before the inventory handler spends an orb.</summary>
+    public static Item? Transmutation(Item item, ItemRolls rolls, Random random) => rolls.Transmute(item, random);
 
     /// <summary>Remove unprotected explicit mods, preserving quality, sockets and locked affixes.</summary>
     public static Item? Scouring(Item item, ItemRolls rolls) => rolls.Scour(item);

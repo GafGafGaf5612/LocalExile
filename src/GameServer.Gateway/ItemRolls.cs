@@ -24,6 +24,16 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             .Where(m => m.Domain == t.ModDomain && m.GenerationType is Prefix or Suffix && m.Level <= itemLevel && !m.EssenceOnly)
             .Select(m => (m, m.WeightFor(t.Tags))).Where(p => p.Item2 > 0)]);
 
+    /// <summary>Transmutation's validated normal-to-magic upgrade. Refused targets return null before rolling or
+    /// spending: no unknown/unmodifiable bases or empty ordinary affix pools. Ordinary magic counts stay 50/50.</summary>
+    public Item? Transmute(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Normal || item.Corrupted || item.Mirrored || !item.Components.Contains("Mods") ||
+            catalog.ByHash(item.TypeHash) is not { } type || !type.Supported || !type.Components.Contains("Mods") ||
+            type.Unmodifiable || Pool(type, item.ItemLevel).Count == 0) return null;
+        return Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
+    }
+
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.

@@ -502,8 +502,16 @@ and nothing is spent.
 ### Orb of Transmutation (2026-10-21, verified live)
 
 `CurrencyUpgradeToMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Transmutation` makes a normal item with
-a Mods component magic and identified: 1-2 affixes (at most one prefix and one suffix) rolled by `ItemRolls.Roll`, each
-tier drawn by weight; implicits kept. Anything else is refused and nothing is spent.
+a Mods component magic and identified through `ItemRolls.Transmute`: 1-2 target affixes, 50/50, at most one prefix
+and one suffix, each tier drawn by weight; implicits, enchants, quality, sockets, gems and charges stay.
+An unavailable second side or conflicting family can leave only one affix, as on a level-1 Small Life Flask.
+The base must be known and serializable, with Mods and neither its base nor its class marked `Unmodifiable`.
+Corrupted, mirrored, non-normal and empty-pool targets are refused before spending.
+The empty-pool refusal is LocalExile safety policy; other currencies are unchanged.
+The pinned CoE beta count model and two native pools agree with the existing ordinary generator.
+Framed real-client 0x71 upgrade/refusal and relog checks passed on 2026-10-29; Shift/stash combinations have automated
+production-dispatch coverage, not fresh native acceptance.
+See [the source comparison and evidence limits](../re/transmutation-coe.md).
 
 ### Orb of Alteration (2026-10-21, verified live)
 
