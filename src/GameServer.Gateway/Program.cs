@@ -54,7 +54,7 @@ catch (Exception e) when (e is IOException or Microsoft.Data.Sqlite.SqliteExcept
 // Every item sent carries its level requirement (13-items.md §2d): the client shows and checks the byte it receives.
 // Gems have their own (GrantedEffectsPerLevel), which the client reads from the SkillGem component instead. Maps have
 // none, as in the game: their drop level is where they drop, not who may run them.
-Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { Class: not MapDevice.MapClass } t
+Item.LevelRequirementOf = item => !item.Components.Contains("SkillGem") && Items.ByHash(item.TypeHash) is { Class: not (MapDevice.MapClass or MapDevice.MapKeyClass) } t
     ? ItemModStats.LevelRequirement(item, t.DropLevel, Items.Mods) : 0;
 
 // Local play only by default; Game_BIND=0.0.0.0 to accept other machines (then also set Game_GATEWAY_HOST).
@@ -197,7 +197,7 @@ sealed partial class Program
     internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, GemSkillIds> GemSkillIdsOf = new(StringComparer.OrdinalIgnoreCase);
     internal static readonly Lazy<ushort[]> GemSkillIdPool = new(() => [.. Skills.SkillIds().Skip(1).Where(Skills.IsGemSkill)]);
     // Maps.dat: which area each map opens (MapDevice.cs); loaded with the first Activate.
-    internal static readonly Lazy<MapDevice> MapDevices = new(() => MapDevice.Load("data", row => Items.Row(row)?.Hash));
+    internal static readonly Lazy<MapDevice> MapDevices = new(() => MapDevice.Load("data", row => Items.Row(row)?.Hash, Items));
     // The map device's portals are MultiplexPortals of the player type (1): the map device type (3) is only drawn after an
     // open transition, which hung or crashed the client (21-hideouts.md §5). Game_MAP_PORTAL_TYPE overrides it.
     internal static readonly byte MapPortalType = byte.TryParse(Environment.GetEnvironmentVariable("Game_MAP_PORTAL_TYPE"), out byte t) ? t : MapPortalObject.PlayerPortal;
@@ -214,7 +214,7 @@ sealed partial class Program
     internal static readonly EssenceCrafting Essences = new(Items, Rolls);
     internal static readonly BenchCrafting Bench = new(Items, Rolls);
     internal static readonly HarvestCrafting Harvest = new(Items, Rolls);
-    internal static readonly ItemDrops Drops = new(Items, Rolls);
+    internal static readonly ItemDrops Drops = new(Items, Rolls, maps: MapDevices.Value.Atlas);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
     internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);
@@ -248,9 +248,8 @@ sealed partial class Program
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
     // The projectiles' explosion (Fireball's, MiscAnimatedArtVariations fireball_standard variant 0).
     internal const string DefaultProjectileImpactAo = "Metadata/Effects/Spells/fireball/explode_new2.ao";
-    // Kinetic Blast's area explosion where its wand projectile lands (spells/cluster_burst/big.ao; the skill's own effect
-    // is ClusterBurst, and 3.29 names no Projectiles row for it, see SkillCatalog.ProjectileFallbacks).
-    internal const string KineticBlastImpactAo = "Metadata/Effects/Spells/cluster_burst/big.ao";
+    // Secondary KB explosion: kinetic_blast_small, distinct from the unscaled main-impact kinetic_blast_large art.
+    internal const string KineticBlastExplosionAo = "Metadata/Effects/Spells/cluster_burst/mini.ao";
     // The player's own tick (RunPlayerTick): regeneration and damage over time.
     internal const int PlayerTickMs = 250;
     // How often Righteous Fire's ring is moved to the player (RunRingFollow), and how far ahead it aims (our own number).

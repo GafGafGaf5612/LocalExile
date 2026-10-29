@@ -88,7 +88,8 @@ public class MonsterAiCadenceTests
 
         Assert.Equal(1, moves);
         Assert.Equal(1, monster.ActionGeneration);
-        Assert.Equal((48, 10), monster.LastTarget);
+        // A size-2 body's surround cell (MonsterSurround): the innermost ring, contact radius 5, on its own bearing.
+        Assert.Equal((45, 10), monster.LastTarget);
     }
 
     [Fact]

@@ -7,6 +7,11 @@ using DamagePacket = GameServer.Core.World.DamagePacket;
 
 partial class Program
 {
+    // Monster basic Melee skills are weapon-polymorphic, just like the player's default attack.
+    internal static bool MonsterAttackIsRanged(MonsterCatalog.Variety variety) =>
+        variety.GrantedEffects is [int first, ..] && (Skills.IsRangedAttack(first)
+            || variety.RangedWeapon && Skills.IsAttack(first));
+
     // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
@@ -39,15 +44,18 @@ partial class Program
         // affixes' increased damage, attack speed and extra elemental / chaos damage (MonsterModEffects.Hit).
         var (baseMin, baseMax) = Monsters.BaseDamage(variety, level) ?? (1, 1);
         var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
-            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)));
+            mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)))
+        {
+            Ranged = MonsterAttackIsRanged(variety)
+        };
         var skill = variety.GrantedEffects is [int effect, ..]
-            ? Skills.FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
+            ? SkillsFor(conn).FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
         // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
         var stage = BossFights.For(variety.Id);
         // Its stats as the attack's (skill_is_non_pathing above all, and the stage's own time): without them the client sent
         // the action through its pathing step, played nothing and kept the monster in it (live 2026-10-21).
         var stageSkill = skill is not null && stage is not null
-            ? Skills.FindByRow(StageSkillId, stage.SkillEffect, level, (attack with { SkillId = StageSkillId, Seconds = stage.CastSeconds }).SkillStats())
+            ? SkillsFor(conn).FindByRow(StageSkillId, stage.SkillEffect, level, (attack with { SkillId = StageSkillId, Seconds = stage.CastSeconds }).SkillStats())
             : null;
         List<(uint, int)>? stats = skill is null ? null : [.. attack.Stats()];
         // The final maximum too: the client applies no modifier of its own (as for the player's maximum_life), so without it
@@ -69,7 +77,7 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), !log ? null : $"0x01a9 monster 0x{id:x} enters wake zone");
         if (log && mods.Affixes.Any()) Console.WriteLine($"[gateway] {remote} monster 0x{id:x} mods: {MonsterModRolls.Value.Describe(mods)}" +
             (mods.NameWords.Count > 0 ? $", named {MonsterModRolls.Value.NameOf(mods.NameWords)}" : ""));
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
             MonsterEmerge.AddLocked(conn, id, new SpawnedMonster($"{variety.Name}@{level}", conn.NewMonsterWalk(id, x, y, mods.Effects.MovementSpeed(variety.MovementSpeed), bodySize, rarity == MonsterRarity.Unique),
                 variety.AggroRange, Math.Max(2, variety.ObjectSize + 1), life)
             {
@@ -90,6 +98,8 @@ partial class Program
     {
         var layout = conn.Layout;
         if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0") return;
+        // A capture tour only waits for the recorder: no monsters to attack the character meanwhile.
+        if (CaptureTour.Active(CharacterName(conn))) return;
         // An instance entered before keeps its monsters as the last connection left them: where they were, with their
         // damage; the dead stay dead (#12).
         if (conn.Instance.Monsters is { } saved)
@@ -162,10 +172,15 @@ partial class Program
         {
             if (conn.Closed || conn.LeavingArea || conn.PendingTransfer is not null
                 || !cadence.TryBeginStep(now, conn.AiEnabled && !conn.Paused && conn.PlayerLife > 0)) return plan;
+            using var blockers = conn.BeginMonsterBlockerFrame(now);
             var (px, py) = conn.Walk.Position(now);
+            // Entry protection: hostile monsters neither chase nor swing while the player stands protected on the arrival cell.
+            bool protectedEntry = InGracePeriod(conn);
+            var askers = new List<(MonsterSurround.Asker Asker, SpawnedMonster M, double D)>();
             foreach (var (id, m) in conn.Monsters)
             {
                 if (m.Dead || m.Life == 0 || m.StageRunning || !MonsterAiCadence.Due(now, m.FlinchUntil)) continue;
+                if (m.Hostile && protectedEntry) continue;
                 var (mx, my) = m.Walk.Position(now);
                 double d = Math.Sqrt((double)(mx - px) * (mx - px) + (double)(my - py) * (my - py));
                 if (!m.Aggro && d <= m.AggroRange) { m.Aggro = true; m.LastTarget = null; }
@@ -194,14 +209,48 @@ partial class Program
                     plan.Swings.Add((id, m, m.ActionGeneration));
                     continue;
                 }
-                if (d <= m.StopRange) continue;
-                double f = (m.StopRange - 1) / d;
-                (int X, int Y) to = ((int)Math.Round(px + (mx - px) * f), (int)Math.Round(py + (my - py) * f));
-                if (conn.Layout.Walkable is { } w && !w(to.X, to.Y)) to = (px, py);
-                if (!cadence.TryChase(m, to, now)) continue;
+                // Bodies take distinct surround slots. A negative footprint does not collide with living actors,
+                // but still chases: retain its direct approach without reserving space in the surround.
+                if (LivingCollision.Size(m) < 0)
+                {
+                    if (d <= m.StopRange) continue;
+                    double f = (m.StopRange - 1) / d;
+                    (int X, int Y) to = ((int)Math.Round(px + (mx - px) * f), (int)Math.Round(py + (my - py) * f));
+                    if (!conn.Layout.WalkableFor(to.X, to.Y, 0) || conn.Barrier.Contains(to)) to = (px, py);
+                    if (!cadence.TryChase(m, to, now)) continue;
+                    m.LastTarget = to;
+                    m.SwingGeneration = null;
+                    plan.Moves.Add((id, m, ++m.ActionGeneration, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
+                }
+                else if (LivingCollision.Blocks(m))
+                    askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget,
+                        m.Attack?.Range ?? double.PositiveInfinity), m, d));
+            }
+            if (askers.Count == 0) return plan;
+            // Every other living body near the player keeps its place: the chasers' cells go around it.
+            var asking = askers.Select(a => a.Asker.Id).ToHashSet();
+            var occupied = blockers.Bodies.Where(b => !asking.Contains(b.Id)
+                && Math.Max(Math.Abs(b.X - px), Math.Abs(b.Y - py)) < 64).Select(b => (b.X, b.Y, b.Size));
+            var fixedBlockers = blockers.FixedBlockers;
+            long surroundAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            long allocationAt = GC.GetAllocatedBytesForCurrentThread();
+            var slots = MonsterSurround.Assign(askers.Select(a => a.Asker), (px, py), occupied,
+                (x, y, size) => conn.Layout.WalkableFor(x, y, size) && !conn.Barrier.Contains((x, y))
+                    && !GameServer.Core.World.ClientPathfinder.ObjectBlocks(fixedBlockers, x, y, size + 1, size + 4));
+            conn.Performance.Elapsed(LatencyPhase.Surround, surroundAt);
+            conn.Performance.SurroundAllocation(GC.GetAllocatedBytesForCurrentThread() - allocationAt);
+            foreach (var (asker, m, d) in askers)
+            {
+                // A full surround (every ring taken): aim at the player and queue behind the others, as before.
+                (int X, int Y) to = slots.TryGetValue(asker.Id, out var slot) ? slot : (px, py);
+                // Standing in its cell already: it waits there for the swing (no order, no new path).
+                if ((asker.X, asker.Y) == to) { m.LastTarget = to; continue; }
+                // The repath budget and the three-cell change rule apply; the native budget can end a path short of its
+                // cell, so the same cell is retried after arrival on the bounded retry cadence.
+                if (!cadence.TryChase(m, to, now, retryAfterArrival: now >= m.Walk.ArrivesAt)) continue;
                 m.LastTarget = to;
                 m.SwingGeneration = null;
-                plan.Moves.Add((id, m, ++m.ActionGeneration, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
+                plan.Moves.Add((asker.Id, m, ++m.ActionGeneration, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
             }
         }
         return plan;
@@ -211,7 +260,8 @@ partial class Program
         MonsterAiCadence cadence)
     {
         MonsterAiPlan plan;
-        lock (conn.Monsters) plan = PlanMonsterAi(conn, cadence, conn.Clock.Elapsed.TotalSeconds);
+        // Advance the projectile runtime first: decisions and committed projectile contacts share one game time and pose.
+        using (ProjectileMutation(conn, phase: "ai")) plan = PlanMonsterAi(conn, cadence, ProjectileWorldTime(conn));
         const ushort Move = 0x2909;
         foreach (var (id, m, action, from, to, why) in plan.Moves)
             await SendMonsterAction(remote, stream, ciphers, conn, id, m, action,
@@ -224,6 +274,7 @@ partial class Program
         }
         foreach (var (id, m, action) in plan.Swings)
             _ = RunPlannedMonsterSwing(remote, stream, ciphers, conn, cadence, id, m, action);
+        conn.Performance.MaybeLog(remote);
     }
 
     static async Task RunPlannedMonsterSwing(string remote, NetworkStream stream, ConnectionCiphers ciphers,
@@ -374,6 +425,8 @@ partial class Program
         SpawnedMonster m, int action)
     {
         if (m.Attack is not { } a) return;
+        // Entry protection: a protected player is not attacked (the planner also skips hostile monsters meanwhile).
+        if (InGracePeriod(conn)) return;
         double startedAt = 0;
         if (!await SendMonsterAction(remote, stream, ciphers, conn, id, m, action, () =>
         {
@@ -395,12 +448,16 @@ partial class Program
         uint life = 0, mana = 0, manaBefore = 0;
         int rawDamage = 0, damage = 0, chaosDamage = 0;
         bool blocked = false, monsterCritical = false;
+        PlayerRecoveryIntent? recovery = null;
         RecentEnemyHits.Decision armour = default;
         // Damage is committed at the same gate as the action hit. A flinch accepted while contact was queued must
         // suppress both the old packet and the life mutation, not just hide a hit that has already damaged the player.
         if (!await SendMonsterAction(remote, stream, ciphers, conn, id, m, action, () =>
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
+            // Entry protection: the player standing protected on the arrival cell takes no hit.
+            if (InGracePeriod(conn)) return null;
+            // Contacts share the projectile runtime's committed time: a buffered input cannot rewrite that history.
+            double now = ProjectileWorldTime(conn);
             int priorContacts = conn.RecentEnemyHits.Count(now);
             using var defenceTime = FortificationOf(conn).Capture(now);
             // Resolve lazy final defences here, never at AI collection or before a queued echo/pause wait.
@@ -408,9 +465,9 @@ partial class Program
             var reduction = PlayerDamageReduction(conn, stats);
             var here = conn.Walk.Position(now);
             var from = m.Walk.Position(now);
-            if (Dist(here, m.Walk.Position(now)) > a.Range + 2)
+            if (Dist(here, from) > a.Range + 2)
             {
-                Console.WriteLine($"[gateway] {remote} monster 0x{id:x} missed: the player is {Dist(here, m.Walk.Position(now)):0.0} away");
+                Console.WriteLine($"[gateway] {remote} monster 0x{id:x} missed: the player is {Dist(here, from):0.0} away");
                 return null;
             }
             // The monster's accuracy comes from DefaultMonsterStats at its level. Evasion uses PoE's shared entropy
@@ -424,27 +481,36 @@ partial class Program
                     $"vs evasion {conn.Pools.Evasion}, {hitChance}% chance to hit, entropy {conn.EvasionEntropy:0}");
                 return null;
             }
-            // Roll the whole monster-mod packet, then mitigate each component with this hit's one armour decision.
-            var rolled = a.Damage.Roll(conn.IncomingHitRandom);
+            // Roll the whole monster-mod packet (the Gambler's incoming luck included), then mitigate each component
+            // with this hit's one armour decision.
+            var gambler = GamblerFor(stats);
+            var rolled = gambler.RollIncomingHit(a.Damage, conn.IncomingHitRandom);
             rolled = MonsterModHit(m, rolled, conn.PlayerLife, conn.PlayerMaxLife, conn.IncomingHitRandom, out monsterCritical,
                 () => SelfCriticalReduction(conn));   // its crit, Executioner's
-            var mitigated = DamageModel.Mitigate(rolled, type =>
-                new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)));
+            var mitigated = gambler.MitigateIncomingHit(rolled, type =>
+                new DamageModel.ResistanceValue(Resistance(conn, type), MaxResistance(conn, type)), conn.IncomingHitRandom);
             var immune = PlayerImmunities(conn);
             // This remains the original next RNG draw when the feature is absent. Blocking never
             // consumes an armour draw; one lazy decision is shared by the whole rolled packet.
-            blocked = DamageModel.Blocks(conn.Pools.BlockChance, conn.IncomingHitRandom.NextDouble() * 100, conn.Pools.AttackBlockLucky);
+            blocked = DamageModel.Blocks(conn.Pools.BlockChance, conn.IncomingHitRandom.NextDouble() * 100, conn.Pools.AttackBlockLucky, conn.Pools.AttackBlockUnlucky);
             bool armourRelevant = mitigated.Components.Any(c => !immune.Contains(c.Type)
                 && Math.Round(c.Range.Min) > 0 && (c.Type == DamageType.Physical
                     || c.Type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage));
             armour = IncomingArmourLocked(conn, !blocked && armourRelevant, priorContacts, stats);
             rawDamage = (int)Math.Round(rolled[DamageType.Physical].Min);
             damage = 0;
+            var ailmentTaken = DamagePacket.Empty;
+            double shockFactor = conn.ElementalAilments.DamageTakenFactor(now);
             foreach (var (type, range) in mitigated.Components)
             {
                 int value = immune.Contains(type) ? 0 : (int)Math.Round(range.Min);
                 value = PlayerHitMitigation.AfterResistance(conn.Pools, type, value,
                     reduction.Physical, reduction.Elemental, armour.EffectiveArmour);
+                if (type == DamageType.Physical)
+                    value = AntiquarianEffects.RangedPhysical(value, a.Ranged,
+                        name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0);
+                value = (int)Math.Round(value * shockFactor);
+                ailmentTaken = ailmentTaken.Add(type, new(value, value));
                 if (type == DamageType.Chaos) chaosDamage += value;
                 damage += value;
             }
@@ -454,20 +520,28 @@ partial class Program
             manaBefore = conn.PlayerMana;
             int gainedLife = blocked ? conn.Pools.LifeGainedOnBlock : 0;
             int gainedMana = blocked ? conn.Pools.ManaGainedOnBlock : 0;
-            conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - conn.EnergyShield.Damage(damage - chaosDamage, false, now) - conn.EnergyShield.Damage(chaosDamage, true, now) + gainedLife));
+            conn.PlayerLife = (uint)Math.Min(conn.PlayerMaxLife, Math.Max(0, (long)conn.PlayerLife - DamagePlayerHit(conn, damage - chaosDamage, chaosDamage, now, stats) + gainedLife));
             conn.PlayerMana = (uint)Math.Min((uint)UnreservedMana(conn), (long)conn.PlayerMana + gainedMana);
+            ApplyPlayerAilmentsLocked(conn, a.Damage, ailmentTaken.Select((_, r) =>
+                new(FortificationDamageTaken(conn, (int)r.Min), FortificationDamageTaken(conn, (int)r.Max))),
+                monsterCritical, blocked, now, stats);
             conn.RecentEnemyHits.Record(now);
             ChargesWhenHit(conn, blocked);
-            if (conn.PlayerLife == 0) conn.InvalidateIncomingHits();
+            if (conn.PlayerLife == 0) { conn.InvalidateIncomingHits(); ClearAntiquarianOnDeath(conn); }
+            RecordHardcoreDeath(conn);
             life = conn.PlayerLife;
             mana = conn.PlayerMana;
+            if (!blocked && !a.Ranged && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
+                recovery = CommitPlayerHitRecoveryLocked(conn, damage, now);
+            else if (Stats.Key(AntiquarianEffects.StunRecoverySource) is uint turtle && stats.GetValueOrDefault(turtle) > 0)
+                Console.WriteLine($"[gateway] Turtle Shell hit ineligible: block={blocked}, ranged={a.Ranged}, "
+                    + $"alive={life > 0}, types={string.Join(',', a.Damage.Components.Select(c => c.Type))}");
             RageWhenHitLocked(conn);
             return InstanceProtocol.ActionHit(id, 0xffff, PlayerId, flags: 0x4601, kind: 0x02, u34: 450,
                 angle: HitAngle(here.X - from.X, here.Y - from.Y));
         }, $"0x01af monster 0x{id:x} hit on the player (sequence 0xffff)")) return;
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
-        if (!blocked && life > 0 && a.Damage.Components.All(c => c.Type == DamageType.Physical))
-            await SendPlayerHitRecovery(remote, stream, ciphers, conn, damage);
+        if (recovery is not null) await SendPlayerHitRecovery(remote, stream, ciphers, conn, recovery);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.
         if (life == 0)
             await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, [(StatKeys.HideMiniLifeBar, 1)]),

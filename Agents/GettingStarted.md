@@ -250,16 +250,19 @@ Every reply should contain `"ok":true`; the last one lists your character.
 
 ## 9. (Optional) Walk maps
 
-The Gateway estimates where your character is so it can answer the client's moves. For that it needs each area's walk
-map: which cells are walkable. Walk maps are not shipped. You capture them from your own client.
+The Gateway needs each area's layout: which cells are walkable, the area transitions, the rooms with monster points.
+For every area its level generator port reproduces (the supported areas, [re/011](docs/re/011-level-generation.md)),
+it generates the layout itself from the seed: nothing to capture, and nothing is written to disk. Any other area needs
+a capture from your own client. This step is optional and only for those areas or for working on the generator; by
+default nothing is recorded.
 
-- **Without walk maps:** you can still play. In town, position estimates assume every cell is walkable. In other
-  areas you may spawn somewhere odd, for example in the sea on The Coast.
-- **With walk maps:** `live.ps1 -Walkmaps` attaches a small Frida script to the client, which saves each area's map
-  and its area transitions (`<area>_seed<seed>.transitions.json`) the first time the client generates it. The Gateway
-  picks both up during that same load. Without a capture, a generated area has no area transitions. It also saves the
-  doodads the client places (`<area>_seed<seed>.doodads.json`), from which the Gateway finds the rooms with monster
-  points: without that file an area has its packs but no unique boss.
+- **Without captures:** you can play every supported area. An area that is not supported tells you so in game; its
+  layout is unknown to the server (you may spawn somewhere odd, and it has no area transitions).
+- **With captures:** `live.ps1 -Walkmaps` attaches a small Frida script to the client, which saves each area's walk
+  map, its area transitions (`<area>_seed<seed>.transitions.json`), the doodads and rooms it places (from which the
+  Gateway finds the rooms with monster points) and its generation trace into `data/walkability/` the first time the
+  client generates it. The Gateway picks them up during that same load. Only with `-Walkmaps` does the Gateway write
+  anything per load (`current.json`, which tells the recorder the area) and accept `/tour`.
 
 ```powershell
 python -m pip install frida
@@ -299,6 +302,19 @@ and click Play again. The server supports only Predictive. With the default "aut
 localhost: your character is not drawn and does not move, and the server shows a message box saying so. The setting is
 saved in `Documents\My Games\Path of Exile\production_Config.ini` (`networking_type=predictive`), which your normal
 client shares.
+
+**League modes:** the existing creation screen's Hardcore, SSF and Ruthless choices select server rules.
+Selected modes change server rules; Hardcore Ruthless death is permanent.
+Ruthless balance can be edited in `config/ruthless.json` without rebuilding or restarting the server.
+That active file is local and git-ignored; `config/ruthless.example.json` holds the tracked defaults.
+To create a missing local copy and edit it, run from the repository root:
+
+```powershell
+if (!(Test-Path .\config\ruthless.json)) { Copy-Item .\config\ruthless.example.json .\config\ruthless.json }
+notepad .\config\ruthless.json
+```
+
+See [league modes](docs/game/league-modes.md) for exact behavior, limitations and editing instructions.
 
 To check the result from the logs (useful for agents):
 - `logs\live-gateway.log` has `create PlayerObject { Name = <your character>`.
@@ -345,7 +361,7 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
 | In town, but your character is invisible and clicks do nothing | Network Mode is lockstep ("auto" picks it on localhost); the Gateway log says `lockstep movement` | Options → Game → Network Mode → Predictive, then log out to the character screen and Play again |
 | Stuck after Play (no area) | `Game_GATEWAY_ENTER` was set to something other than `1` | unset it; `live.ps1` sets it to `1` |
 | `HNC mask not found` in `live-gateway.err` | `Client\Game.exe` is not 3.29.3b | use the right client version |
-| Spawn on The Coast is in the sea | no walk map for that area yet | use `-Walkmaps` (step 9) and enter the area again |
+| Spawn in the sea or off the map | an area the server does not generate, with no walk map yet | use `-Walkmaps` (step 9) and enter the area again |
 | `walkmaps: permission denied` | client and Python run at different privilege levels | run both as the same user, not one as administrator |
 | Esc → "Exit to character selection" hangs | not implemented yet | run `.\scripts\dev\live.ps1 -NoClient` (the client drops to the login screen) |
 | Windows Firewall prompt | should not happen (servers bind to 127.0.0.1) | if it does, deny: nothing needs outside access |
@@ -363,8 +379,12 @@ Environment variables, read when each server starts:
 | `Game_GATEWAY_HOST` | 127.0.0.1 | address sent to the client for area changes |
 | `Game_AUTH_CONTROL_PORT` | 20495 | Auth ↔ Gateway control port (localhost only) |
 | `Game_CLIENT_EXE` | `Client/Game.exe` | client executable the Gateway reads protocol constants from |
-| `Game_RANDOM_SEEDS` | unset | `1` = random seeds for new non-town instances (each needs its own walk map) |
+| `Game_RANDOM_SEEDS` | unset | new instances of the areas the Gateway generates itself (`gate-baseline.json`, [re/011](docs/re/011-level-generation.md)) get random seeds, every other area seed 1; `0` = seed 1 everywhere |
+| `Game_WALKMAPS` | unset | set by `live.ps1 -Walkmaps`: the Gateway announces each area load to the walk-map recorder and runs capture tours (`/tour`); unset, it records nothing |
+| `Game_SEED` | unset | a number = that seed for every new non-town, non-hideout instance (generation traces of one seed with `live.ps1 -Walkmaps`; overrides `Game_RANDOM_SEEDS`) |
 | `Game_LEAGUE` | `standard` | `hardcore` shows the hardcore death screen (a single Exit button) |
+| `Game_LEAGUES` | `Standard,Allflame` | base leagues; each offers its Hardcore/SSF/Ruthless combinations |
+| `Game_RUTHLESS_RULES` | `config/ruthless.json` | Ruthless tuning file; valid edits apply during play |
 | `Game_START_WEAPON` | unset | `ground` = a new character's class weapon waits on the ground near the spawn instead of being worn |
 | `Game_FLASK_BUFFS` | unset | `0` = flasks recover without putting their flask_effect buff on the player |
 | `Game_FLASK_CHARGES` | unset | unset = the game's flask charge rules (kills by rarity, charge mods, a flask put on the bar in a hostile area starts empty); `full` = every kill fills all flasks and equipped flasks keep their charges |

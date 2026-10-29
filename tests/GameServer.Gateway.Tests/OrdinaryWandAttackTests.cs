@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
+using GameServer.Core.Projectiles;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
@@ -72,17 +73,16 @@ public class OrdinaryWandAttackTests
 
     static SpawnedMonster Target(int x) => new("target", new(x, 10, 10, width: 300, height: 300), 0, 2, 1000);
 
-    static async Task<uint> AssertWandLaunch(Wire wire, CancellationToken cancellation)
+    static bool IsWandCreate(ReadOnlySpan<byte> plain) => plain.Length >= 16
+        && BinaryPrimitives.ReadUInt16BigEndian(plain) == InstanceEntities.CreateObjectId
+        && BinaryPrimitives.ReadUInt32BigEndian(plain[12..]) == InstanceEntities.ObjectTypeHash(OrdinaryRangedAttack.Wand);
+
+    // Concatenated runtime output has no framing: find the bolt's creation by its message id and type hash.
+    static uint? CreatedWand(byte[] bytes)
     {
-        int create = InstanceEntities.CreateObject(0x3000, 0, new ProjectileObject(OrdinaryRangedAttack.Wand, 0, 0, Height: 0).Blob()).Length;
-        int wake = InstanceProtocol.EnterWakeZone(0x3000).Length;
-        int move = InstanceProtocol.MoveTo(0x3000, 0, 0, 1).Length;
-        byte[] packets = await wire.Read(create + wake + move, cancellation);
-        Assert.Equal(InstanceEntities.CreateObjectId, BinaryPrimitives.ReadUInt16BigEndian(packets));
-        Assert.Equal(InstanceEntities.ObjectTypeHash(OrdinaryRangedAttack.Wand),
-            BinaryPrimitives.ReadUInt32BigEndian(packets.AsSpan(12)));
-        Assert.Equal(new byte[] { 0x01, 0xba }, packets.AsSpan(create + wake, 2).ToArray());
-        return BinaryPrimitives.ReadUInt32BigEndian(packets.AsSpan(2));
+        for (int i = 0; i + 16 <= bytes.Length; i++)
+            if (IsWandCreate(bytes.AsSpan(i))) return BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(i + 2));
+        return null;
     }
 
     [Fact]
@@ -118,8 +118,7 @@ public class OrdinaryWandAttackTests
             if (plain.Length < 6) return;
             ushort message = BinaryPrimitives.ReadUInt16BigEndian(plain);
             uint entity = BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(2));
-            if (plain.Length >= 16 && BinaryPrimitives.ReadUInt16BigEndian(plain) == InstanceEntities.CreateObjectId
-                && BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(12)) == InstanceEntities.ObjectTypeHash(OrdinaryRangedAttack.Wand))
+            if (IsWandCreate(plain))
             {
                 projectileId = entity;
                 created.TrySetResult((entity, target.Life));
@@ -133,11 +132,11 @@ public class OrdinaryWandAttackTests
             .U16(SkillCatalog.FirstSkillId).U16(0).U16(1).ToArray();
         try
         {
+            // Dispatch only schedules the release and echoes the action; its deadline covers a cold catalog load when this
+            // test runs first. Each later stage has its own deadline, and completion is witnessed by writes, not polling.
             await Program.OnClientMessages("wand-test", wire.Stream, wire.Ciphers,
-                [(InstanceProtocol.UseSkillAtLocationId, packet)], [], conn).WaitAsync(TimeSpan.FromSeconds(2));
+                [(InstanceProtocol.UseSkillAtLocationId, packet)], [], conn).WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal((10, 10), conn.Walk.Destination);
-            // Each stage has its own deadline. Cold shared data initialization before dispatch must not consume the
-            // projectile's terminal-lifetime budget, and completion is witnessed by writes, not HashSet polling.
             var launch = await created.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(1000u, launch.Life);
             uint finalLife = await damaged.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -146,16 +145,16 @@ public class OrdinaryWandAttackTests
             byte[] action = InstanceProtocol.ActionStarted(Program.PlayerId, 10, 10, 110, 10, SkillCatalog.FirstSkillId, 0, 1);
             byte[][] writes = wire.Stream.Writes.ToArray();
             int actionAt = Array.FindIndex(writes, p => p.AsSpan().SequenceEqual(action));
-            int createAt = Array.FindIndex(writes, p => p.Length >= 16
-                && BinaryPrimitives.ReadUInt16BigEndian(p) == InstanceEntities.CreateObjectId
-                && BinaryPrimitives.ReadUInt32BigEndian(p.AsSpan(2)) == launch.Id);
+            int createAt = Array.FindIndex(writes, p => IsWandCreate(p) && BinaryPrimitives.ReadUInt32BigEndian(p.AsSpan(2)) == launch.Id);
             int damageAt = Array.FindIndex(writes, p => p.AsSpan().SequenceEqual(InstanceProtocol.LifeUpdate(42, finalLife)));
             int removeAt = Array.FindIndex(writes, p => p.AsSpan().SequenceEqual(InstanceProtocol.RemoveObject(launch.Id)));
             Assert.True(actionAt >= 0 && createAt > actionAt);
-            Assert.Equal(InstanceEntities.ObjectTypeHash(OrdinaryRangedAttack.Wand),
-                BinaryPrimitives.ReadUInt32BigEndian(writes[createAt].AsSpan(12)));
             Assert.Equal(InstanceProtocol.EnterWakeZoneId, BinaryPrimitives.ReadUInt16BigEndian(writes[createAt + 1]));
-            Assert.Equal(InstanceProtocol.MoveToId, BinaryPrimitives.ReadUInt16BigEndian(writes[createAt + 2]));
+            // The runtime's glide pins the start cell before the move: one write, 0x1b7 then 0x1ba.
+            byte[] glide = writes[createAt + 2];
+            int stop = InstanceProtocol.Teleport(launch.Id, 0, 0).Length;
+            Assert.Equal(InstanceProtocol.TeleportId, BinaryPrimitives.ReadUInt16BigEndian(glide));
+            Assert.Equal(InstanceProtocol.MoveToId, BinaryPrimitives.ReadUInt16BigEndian(glide.AsSpan(stop)));
             Assert.True(damageAt > createAt + 2 && removeAt > damageAt);
             lock (conn.Monsters) Assert.DoesNotContain(launch.Id, conn.ProjectileObjects);
         }
@@ -167,29 +166,46 @@ public class OrdinaryWandAttackTests
     {
         var (conn, character) = EquippedWand();
         using var wire = new Wire();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var selected = Target(110);
         var intervening = Target(60);
         conn.Monsters.Add(42, selected);
         conn.Monsters.Add(43, intervening);
+        var created = new TaskCompletionSource<uint>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var damaged = new TaskCompletionSource<(uint Entity, uint Life)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var impacted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var removed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        uint projectileId = 0;
+        wire.Stream.AfterWrite = plain =>
+        {
+            if (plain.Length < 6) return;
+            ushort message = BinaryPrimitives.ReadUInt16BigEndian(plain);
+            uint entity = BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(2));
+            if (IsWandCreate(plain)) { projectileId = entity; created.TrySetResult(entity); }
+            if (message == InstanceProtocol.LifeUpdateId && entity is 42 or 43 && plain.Length >= 16)
+                damaged.TrySetResult((entity, BinaryPrimitives.ReadUInt32BigEndian(plain.AsSpan(12))));
+            // The stop (0x1b7) and the rig's impact clip (0x1b2) go out in one write at the contact cell.
+            if (projectileId != 0 && plain.AsSpan().IndexOf(InstanceProtocol.AnimationUpdate(projectileId, 0,
+                OrdinaryRangedAttack.WandImpactAnimation, 1f)) >= 0)
+                impacted.TrySetResult();
+            if (projectileId != 0 && plain.AsSpan().SequenceEqual(InstanceProtocol.RemoveObject(projectileId)))
+                removed.TrySetResult(impacted.Task.IsCompleted);
+        };
         try
         {
-            var attack = Program.Attack("wand-test", wire.Stream, wire.Ciphers, conn,
-                new InstanceTransfer.UseSkillOnObject(42, SkillCatalog.FirstSkillId, 0, 0), selected, 0);
+            await Program.Attack("wand-test", wire.Stream, wire.Ciphers, conn,
+                new InstanceTransfer.UseSkillOnObject(42, SkillCatalog.FirstSkillId, 0, 0), selected, 0).WaitAsync(TimeSpan.FromSeconds(5));
             byte[] action = InstanceProtocol.ActionStarted(Program.PlayerId, 10, 10, 110, 10,
                 SkillCatalog.FirstSkillId, 0, 0, targetObjectId: 42);
-            Assert.Equal(action, await wire.Read(action.Length, timeout.Token));
-            uint projectileId = await AssertWandLaunch(wire, timeout.Token);
-            await attack.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains(wire.Stream.Writes, p => p.AsSpan().SequenceEqual(action));
+            await created.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var (entity, life) = await damaged.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(43u, entity);
+            Assert.True(life < 1000);
             Assert.Equal(1000u, selected.Life);
             Assert.True(intervening.Life < 1000);
-            Assert.Empty(conn.ProjectileObjects);
-            byte[] remaining = await wire.Read(wire.Reader.Available, timeout.Token);
-            int impact = remaining.AsSpan().IndexOf(InstanceProtocol.AnimationUpdate(projectileId, 0,
-                OrdinaryRangedAttack.WandImpactAnimation, 1f));
-            int removed = remaining.AsSpan().IndexOf(InstanceProtocol.RemoveObject(projectileId));
-            Assert.True(impact >= 0); // The rig's native impact clip, with its own sound/particles.
-            Assert.True(removed > impact);
+            await impacted.Task.WaitAsync(TimeSpan.FromSeconds(5)); // The rig's native impact clip, with its own sound/particles.
+            Assert.True(await removed.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+            lock (conn.Monsters) Assert.Empty(conn.ProjectileObjects);
         }
         finally { conn.Closed = true; PlayerInventories.Forget(character); }
     }
@@ -223,8 +239,11 @@ public class OrdinaryWandAttackTests
                 SkillCatalog.FirstSkillId, 0, 0, targetObjectId: 42).Length;
             await wire.Read(actionLength, timeout.Token);
             await attack.WaitAsync(TimeSpan.FromSeconds(5));
+            // The release was scheduled at acceptance, at the wand's contact (well under a second): wait past it.
+            await Task.Delay(TimeSpan.FromSeconds(1.5));
             Assert.Equal(1000u, target.Life);
-            Assert.Empty(conn.ProjectileObjects);
+            Assert.DoesNotContain(wire.Stream.Writes, p => IsWandCreate(p));
+            lock (conn.Monsters) Assert.Empty(conn.ProjectileObjects);
             Assert.Equal(0, wire.Reader.Available);
         }
         finally { conn.Closed = true; PlayerInventories.Forget(character); }
@@ -235,56 +254,38 @@ public class OrdinaryWandAttackTests
     [InlineData(true)]
     public async Task Wand_impact_tail_uses_game_time_and_transfer_invalidates_its_pending_removal(bool transfer)
     {
-        using var wire = new Wire();
-        var conn = new ClientState(new AreaLayout(1, "wand-tail-test", 300, 300, 10, 10, null, []), 1, 1)
-            { PlayerLife = 100 };
-        var target = Target(50);
-        conn.Monsters.Add(42, target);
-        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 10, 10), int.MaxValue, 0, 150, 0);
-        var impactWritten = new TaskCompletionSource<double>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var removalWritten = new TaskCompletionSource<double>(TaskCreationOptions.RunContinuationsAsynchronously);
-        const uint projectileId = 0x3000;
-        wire.Stream.AfterWrite = plain =>
-        {
-            if (plain.AsSpan().SequenceEqual(InstanceProtocol.AnimationUpdate(projectileId, 0,
-                OrdinaryRangedAttack.WandImpactAnimation, 1f)))
-            {
-                // Pause inside the impact write itself, before FlyProjectile can begin its terminal wait.
-                // This remains deterministic even if this test's awaiting continuation is scheduled much later.
-                conn.Clock.Stop();
-                impactWritten.TrySetResult(conn.Clock.Elapsed.TotalSeconds);
-            }
-            if (plain.AsSpan().SequenceEqual(InstanceProtocol.RemoveObject(projectileId)))
-                removalWritten.TrySetResult(conn.Clock.Elapsed.TotalSeconds);
-        };
-        var flight = Program.FlyProjectile("wand-tail-test", wire.Stream, wire.Ciphers, conn,
-            (OrdinaryRangedAttack.Wand, 100), (10, 10), (110, 10), null,
-            conn.ProjectileEpoch, log: false, impact: "none", ordinaryShot: shot);
-        try
-        {
-            double impactAt = await impactWritten.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await Task.Delay(TimeSpan.FromSeconds(OrdinaryRangedAttack.WandImpactSeconds + 0.1));
-            Assert.False(flight.IsCompleted);
-            Assert.False(removalWritten.Task.IsCompleted);
-            lock (conn.Monsters) Assert.Contains(projectileId, conn.ProjectileObjects);
-            Assert.Equal(impactAt, conn.Clock.Elapsed.TotalSeconds, 6);
+        await using var f = new ProjectileRuntimeFixture();
+        f.Conn.Monsters.Add(42, ProjectileRuntimeFixture.Monster(50, 10));
+        var offense = new ProjectileOffense(DamagePacket.Of(DamageType.Physical, 10, 10), false, int.MaxValue, 0, 150, "ordinary wand")
+            { Presentation = Program.OrdinaryWandPresentation };
+        f.Release(f.Shot(new ProjectileProfile(OrdinaryRangedAttack.Wand)
+            { Speed = 10, Range = 100, Radius = 1, Lifetime = ProjectileRuntime.Time(20) }, offense));
+        // Let the creation reach the wire first: a visual whose projectile has already ended is never created.
+        var created = CreatedWand(await f.Read());
+        Assert.NotNull(created);
+        uint id = created.Value;
+        // At 10 cells/s the bolt reaches the body at x = 50 before 4 s; its impact tail lasts 0.5 s of game time after that.
+        f.Advance(4.1);
+        byte[] contact = await f.Read();
+        Assert.True(contact.AsSpan().IndexOf(InstanceProtocol.AnimationUpdate(id, 0, OrdinaryRangedAttack.WandImpactAnimation, 1f)) >= 0);
+        Assert.True(contact.AsSpan().IndexOf(InstanceProtocol.RemoveObject(id)) < 0);
+        lock (f.Conn.Monsters) Assert.Contains(id, f.Conn.ProjectileObjects);
+        // Game time stands still: however long the wall clock runs, the pending removal does not fire.
+        await Task.Delay(TimeSpan.FromSeconds(OrdinaryRangedAttack.WandImpactSeconds + 0.1));
+        Assert.Empty(await f.Read());
 
-            if (transfer)
-            {
-                Assert.True(conn.TryBeginAreaChange(new PendingTransfer(2, 0, false), out var oldObjects));
-                Assert.Contains(projectileId, oldObjects);
-                await flight.WaitAsync(TimeSpan.FromSeconds(5));
-                Assert.False(removalWritten.Task.IsCompleted); // The obsolete tail cannot write into the new area.
-            }
-            else
-            {
-                conn.Clock.Start();
-                await flight.WaitAsync(TimeSpan.FromSeconds(5));
-                double removedAt = await removalWritten.Task.WaitAsync(TimeSpan.FromSeconds(5));
-                Assert.True(removedAt >= impactAt + OrdinaryRangedAttack.WandImpactSeconds);
-            }
-            Assert.Empty(conn.ProjectileObjects);
+        if (transfer)
+        {
+            Assert.True(f.Conn.TryBeginAreaChange(new(2, 0, false), out var oldObjects));
+            Assert.Contains(id, oldObjects);
+            f.Advance(10);
+            Assert.Empty(await f.ReadWire()); // The obsolete tail cannot write into the new area.
         }
-        finally { conn.Closed = true; conn.Clock.Start(); }
+        else
+        {
+            f.Advance(4.1 + OrdinaryRangedAttack.WandImpactSeconds + 0.1);
+            Assert.True((await f.Read()).AsSpan().IndexOf(InstanceProtocol.RemoveObject(id)) >= 0);
+        }
+        lock (f.Conn.Monsters) Assert.Empty(f.Conn.ProjectileObjects);
     }
 }

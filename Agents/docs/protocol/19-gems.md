@@ -7,6 +7,13 @@ locked (§4). Requirements are in §2; supports are still planned (Roadmap "Gems
 
 ## 1. The gem in the item data (SkillGem component)
 
+Family gem-level stats now raise effective active-skill levels in the common supported-skill calculation.
+The Herald/Vaal/Link families come from GemTags stat columns; Raise Zombie uses SkillGems' minion-level stat.
+Both skills of a Vaal gem share the gem's family bonus; support gems remain outside these active-only bonuses.
+Supported level bonuses and family sources sum before clamping to at least one.
+Actor skill records and skill stats use that same effective level without changing SkillGem experience or quality.
+Intrinsic requirements remain unchanged; see [scope and checks](../game/ascendancies.md#family-gem-levels).
+
 The SkillGem component's reader `0x14246eb00` (writer `0x14246ea40`) takes, in order:
 
 | Data | Stored at | Use |
@@ -49,9 +56,13 @@ The variant: the copy `0x14246fa50` checks +0x3c against the `GemVariants` count
 count in the 3.29 layout) and keeps 0 when it is outside the list. The u16: `0x14246fae3` and `0x1424732c3` look it up
 in `Data/IndexableSupportGems.dat` when it is not 0.
 
-The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`,
-`GemFlags`: 0, or 4 for a locked level); saves keep the experience, the variant and the flags (`GemExperience`,
-`GemVariant`, `GemFlags`).
+The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`).
+Serialization derives flag bit 5 (`0x20`) from a positive variant and clears a stale bit 5 for variant 0, including
+gems nested inside sockets. Level-lock and other flags are preserved; saves retain the original `GemFlags`.
+The network reader copies the raw flags byte into +0x10 (`0x14246eb46..0x14246eb5b`), without applying the native
+copy's bit-5 normalization (`0x14246fab8..0x14246fae3`). A variant index alone therefore leaves the native variant
+marker unset even though the server grants the correct variant skill. Wire regression tests cover both item paths;
+the transfigured item-name display still needs a native retest.
 
 ## 2. The game data
 
@@ -89,8 +100,13 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   for is drawn red, "Requires level 70", and the item it is socketed in with it (checked live 2026-10-23: a level 20
   Fireball in an equipped wand, then `/set_level 10`). It still sends uses of the skill, though — it plays the cast
   animation and takes the mana off its bar before the server hears of it — so the server is the one that refuses. The
-  server treats the item as inactive, as it does a worn item the character is too low for (`CharacterStatSources`,
-  `InactiveItems`): its mods and its gems do nothing and its skills leave the Actor skill list, so the client has
+  server treats the item as inactive, as it does a worn item the character is too low for: `EquipmentStatSources`
+  raises each worn item's level and attribute requirements to the highest of its socketed gems' before resolving the
+  inactive items (`SocketedGemRequirements`, from catalog data and the resolver's own attribute totals, never the
+  pools, which may not exist yet at login; a `/set_stat virtual_*_for_requirements` replaces the attribute there as
+  it does for the client), and `InactiveItems` keeps the result. PR #175 had dropped this rule, so the
+  gems stayed on the skill bar and every use was refused (restored 2026-10-29). Its mods and its gems do nothing and
+  its skills leave the Actor skill list, so the client has
   nothing to cast (`GemSkillEffects`); a use that arrives anyway is refused before the action is started — no 0x1ab so
   the cast does not run, and the mana pool goes out again so the cost comes back (`GemDisabled`, logged "(disabled,
   action not started)"). Socketing a gem the character is too low for is refused (0x30, `GemRequirementsUnmet`), and a
@@ -140,7 +156,8 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   - **Cooldown:** the cooldown of the gem's level (GrantedEffectsPerLevel `Cooldown`, the auras' 1.2 s) is the one
     the server enforces and sends with the skill ([11](11-skills.md)); the server allows one use per cooldown even when
     `StoredUses` is higher.
-  - **Vaal skills** need their `VaalSouls`; souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill is refused.
+  - **Vaal skills** have a soul collector and native budget payloads; unsupported Vaal executors remain refused.
+    See [27-vaal-souls.md](27-vaal-souls.md); collection does not enable casting.
 - **Not created** (`ItemCatalog.FindGem`, `/gem`): the "[DNT]" placeholder variants, the "[UNUSED] …", "[DNT] …" and
   "WIP …" gem rows, the awakened supports other than Awakened Empower, Enhance and Enlighten, and the Vaal variants
   whose base skill is only a placeholder's (Vaal Fireball has only its normal variant). A Vaal variant's name is "Vaal "

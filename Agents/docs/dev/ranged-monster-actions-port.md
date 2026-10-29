@@ -21,7 +21,11 @@ Nonflinching hits return without waiting on a paused animation notification.
 
 The source's later Rage/retired-connection guards were carried into the ranged path.
 The renamed OrdinaryRangedShot retains the destination's existing Rage and conditional-critical calculations.
-The projectile loop retains upstream piercing, return, landing explosions, delayed effects and accepted-hit callbacks.
+Merged onto main's projectile framework, the legacy flight loop is gone: ordinary bows and wands release through the
+shared runtime (`Projectiles/Program.ProjectileRanged.cs`), scheduled at the weapon contact before the action echo, and
+the wand impact clip is a runtime presentation whose removal lifetime runs on the same game clock.
+Monster contact keeps main's Gambler, ailment, Antiquarian, Hardcore and grace-period rules inside the action gate, and
+the AI planner keeps main's surround cells and blocker frames on the 50 ms cadence.
 Monster contact retains the current destination's injected incoming RNG, recent-hit armour decisions,
 chaos-hit armour, resistance/immunity processing, Fortification, Energy Shield, block gains and Rage gains.
 Charge-on-hit accounting remains single rather than duplicating the pre-existing contact update.
@@ -35,9 +39,13 @@ No private Ruthless catalog, PoB importer, character-stat port or league present
 ## Validation and limits
 
 The solution builds with zero warnings/errors.
-The 429 focused bow/wand, monster lifecycle, recent-hit and Rage cases pass.
-All 38 chaos-armour cases also pass after adapting the last old reflection-based test helper.
-All required suites pass: Core 525, Data 18, Gateway 3,368; total 3,911, no failures/skips.
+Before the merge onto main, the standalone port passed Core 525, Data 18 and Gateway 3,368 (429 focused bow/wand,
+monster lifecycle, recent-hit and Rage cases; 38 chaos-armour cases after adapting the last reflection-based helper).
+After the merge (main's trimmed suites, projectile framework and surround AI): Core 353, Data 34 and Gateway 1,335
+pass with serialized collections. Under the repository's unlimited test parallelism two wall-clock-bound tests can
+flake and pass again in isolation: `Chill_slows_attack_and_spell_timers_once_in_both_modes` (main's, its chill expires
+while a slow connection setup consumes the clock) and
+`A_running_enemy_worker_sends_its_first_chase_promptly_after_the_player_enters_aggro_range` (300 ms bound under load).
 Four Python animation-extraction tests pass.
 The first focused/full attempts are retained in local artifacts alongside their corrections.
 The final Gateway runs serialize test collections through a local build-output runner file.

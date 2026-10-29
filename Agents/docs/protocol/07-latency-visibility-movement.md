@@ -42,6 +42,30 @@ So the Gateway sends server delay 0xFFFF in every 0x1c (`ClientInbox.ServerDelay
 become 0, so each 0x1c sets the value to 0 and F1 NETWORK reads 0. An overdue tick still raises it through the network
 update, which ignores the delay, so a real stall still shows until the next 0x1c.
 
+The 0x1c takes only the connection's wire gate (`Program.Write`: encryption and the socket write), never the send gate
+whose packets evaluate game state in their `still`/`atGate` callbacks. Those callbacks wait for the combat lock, and in
+a crowd of 148 monsters they held the send gate for up to 4 s, so the answers queued behind them and the meter jumped
+to 0.5–4 s. Measured afterwards: no 0x1c later than 50 ms in a crowded Coast session.
+
+Tick latency does not measure queued gameplay work.
+`ConnectionPerformance` separately records socket-read-to-handler queue age, handler duration, send-gate wait/hold,
+wire-gate wait/hold, socket writes, hot combat-lock wait/hold, channel lateness, surround time and blocker-index builds.
+The `LocalExile.Gateway` meter exports duration histograms in milliseconds, surround allocations in bytes and pending
+input batches; tags contain operation names, never character or account identifiers.
+Closed connections discard their abandoned backlog so its depth does not remain in the process total.
+At most one `[latency]` log summary is emitted per connection every ten seconds when an interval sample reaches 50 ms.
+Set `$env:Game_LATENCY_METRICS = '1'` in the PowerShell session before starting `scripts/dev/live.ps1` to log every
+interval instead; read `logs/live-gateway.log` for `pending-batches` and each phase's `interval-max-ms`.
+The logging flag does not change gameplay or the client's latency display.
+
+The full player stat and Actor refreshes (aura, charge, Fortification and Rage changes) build the whole skill list
+(`PlayerSkills`) inside the send gate, so every echo and monster packet waits for it. In 2026-10 one build of a 10-gem
+level 100 Witch cost 180–270 ms in the Debug Gateway (45–65 ms Release), and an aura toggle ran two or three of them:
+move handlers logged 400–730 ms in an empty hideout. Each gem resolved its links and supports (`SupportedSkill`) and the
+final player stats five or six times, and every gem requirement check scanned the whole GrantedEffectStatSetsPerLevel
+requirement list. One build now resolves each once (`SkillBuildScope`) and the requirements are indexed by stat set:
+5–10 ms per build in Debug and Release alike.
+
 ## 2. HNC, the hidden side channel
 
 The 0x1c u32 is not free data. `0x141fa0720` feeds its bits 9..31 then 0..8 (LSB first) into a byte accumulator on the
@@ -202,11 +226,36 @@ and crawled (~1 cell per 1.5 s), so it is not sent for the local player (`Game_M
 
 `LivingCollision` uses `MonsterVarieties.ObjectSize - 1` as the positioned footprint, including unique bosses.
 Negative footprints do not block; zero is a valid small body.
+Monsters with a negative footprint still chase directly without reserving surround slots or avoiding living bodies.
 `AreaLayout.WalkableFor` retains the captured terrain clearance values instead of treating every actor as player-sized.
-Monster `WalkEstimator` orders use the bounded native pathfinder with a 1000-expansion budget.
+Monster `WalkEstimator` orders use the bounded native pathfinder with the client's budget: 1000 expansions for a
+unique, 100 for any other monster (`0x141e4d890`).
 Their blockers include stationary objects, other living monsters, the local player and published instance players.
-The 50 ms correction loop checks each traversed cell, stops movement through newly occupied cells and sends
-ActionEnded followed by Teleport when a body must be corrected.
+Surround candidates, including retained slots, must clear the player's Chebyshev footprint.
+The circular ring alone is insufficient: its diagonal cells can lie inside the player's blocker for larger monsters.
+Inner slots must also lie within the monster's attack reach when space permits.
+Stationary blockers and published players are excluded from candidate slots.
+The native path budget can end a valid route short; an arrived chaser retries at most twice a second.
+Each AI/collision pass owns one combat-locked body snapshot and indexed self-exclusion views for all mover paths.
+Collision corrections update both current and previous-position indexes before later movers use them.
+The indexes are discarded after the pass; normal/unique expansion budgets, stationary hulls and phasing remain intact.
+AI and correction passes advance prior projectile contacts before taking the body snapshot, using the shared
+projectile mutation scope and its experience-before-combat lock order.
+The 50 ms correction loop checks each traversed cell, stops movement through newly occupied cells and moves only the
+server's estimate (then paths it again to the same target, as the client does when a walk ends short). It used to send
+ActionEnded followed by Teleport: 1,608 corrections in one crowded session, each a visible stop and jump, although the
+client already paths every monster around the other bodies. The client never snaps a non-predicted monster to the
+0x1ab position pair (the ≥ ~92 unit check in `0x1421940a0` runs only for sequence ≥ 0), so the AI's new orders do not
+jump either. The overlap test reads every body's cell once per frame, and `BlockerSet` buckets the blockers by cell so
+`ClientPathfinder.ObjectBlocks` reads only those that can reach the queried cell (same answers as the full scan).
+The player's own path treats estimated monster bodies as blockers too; when they leave no way to the clicked cell but
+the stationary blockers do (`PlayerWalk`'s fallback), the server follows the client through the crowd instead of
+pulling the player back on every click.
+This escape is allowed only when the original path cannot get beyond the immediate footprint and the alternate end
+cell is free of living bodies; clicking an occupied destination does not grant an escape.
+While that walk is in progress, player correction ignores estimated monster bodies but still enforces terrain,
+stationary blockers and peer arbitration.
+Arrival, a replacement order or a teleport ends the escape; a new stationary obstruction still cancels and corrects it.
 Alive friendly monsters also block; corpses and removed objects do not.
 Phasing removes living bodies from the local player's path checks.
 Large bodies are checked even when their centres lie outside the small query's spatial buckets.

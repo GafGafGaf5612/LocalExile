@@ -78,7 +78,10 @@ public static class InstanceProtocol
     {
         TickId => 7, AreaGeneratedId => 10, UseSkillAtLocationId => 16, 0x015a => 2, 0x01ef => 2, 0x0099 => 4, 0x0129 => 2,
         // Primary 3.29.3b writers: 0x140e29080 (u16 + u8), 0x141f935a0 (u16 + 4/2/2/4/1/1 bytes).
-        0x020a => 3, 0x0059 => 16,
+        0x020a => 3, 0x0059 => 16, InstanceSocial.TradeRequestId => InstanceSocial.TradeRequestLength,
+        InstanceSocial.TradeRequestAcceptId => InstanceSocial.TradeRequestAcceptLength,
+        InstanceSocial.PartyAcceptId => InstanceSocial.PartyAcceptLength,
+        InstanceSocial.PartyLeaveId => InstanceSocial.PartyLeaveLength,
         InstanceChat.JoinChannelId => InstanceChat.JoinChannelLength,
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
@@ -87,7 +90,7 @@ public static class InstanceProtocol
         InstanceItems.UnsocketGemId => 17, BindSkillId => 5, ExitToCharacterSelectId => 2,
         InstanceItems.LevelUpGemId => 14, InstanceItems.LockGemId => InstanceItems.LockGemLength,
         InstanceEntities.AllocatePassiveId => 7, InstanceEntities.MasteryEffectId => InstanceEntities.MasteryEffectLength, InstanceEntities.RefundPassiveId => InstanceEntities.RefundPassiveLength,
-        InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength, InstanceStash.MoveToTabId => InstanceStash.MoveToTabLength, InstanceStash.TakeFromTabId => InstanceStash.TakeFromTabLength, InstanceMapDevice.ActivateId => InstanceMapDevice.ActivateLength,
+        InstanceEntities.RefundAllPassivesId => 2, InstanceEntities.PanelToggleId => 3, InstanceWaypoints.TravelId => InstanceWaypoints.TravelLength, InstanceNpcs.DialogueClosedId => 2, InstanceNpcs.OptionId => InstanceNpcs.OptionLength, InstanceNpcs.TradeAnswerId => InstanceNpcs.TradeAnswerLength, InstanceNpcs.TradeOfferId => InstanceNpcs.TradeOfferLength, InstanceNpcs.TradeTakeBackId => InstanceNpcs.TradeTakeBackLength, InstanceNpcs.TradeMoveAllId => InstanceNpcs.TradeMoveAllLength, InstanceNpcs.TradeAcceptId => InstanceNpcs.TradeAcceptLength, InstanceNpcs.TradeUnacceptId => InstanceNpcs.TradeUnacceptLength, InstanceStash.RequestTabId => InstanceStash.RequestTabLength, InstanceStash.MoveTabId => InstanceStash.MoveTabLength, InstanceStash.MoveToTabId => InstanceStash.MoveToTabLength, InstanceStash.TakeFromTabId => InstanceStash.TakeFromTabLength, InstanceMapDevice.ActivateId => InstanceMapDevice.ActivateLength, InstanceMapDevice.SelectMapId => InstanceMapDevice.SelectMapLength,
         SwapWeaponsId => 3, ChannelUpdateId => 10, ChannelEndId => 2, LockstepMoveStartId => 15, LockstepMoveUpdateId => 10, LockstepMoveStopId => 2,
         UseInstantSkillAtLocationId => 12, UseInstantSkillId => 8,
         InstancePause.RequestId => InstancePause.RequestLength, InstanceMicrotransactions.SlotId => InstanceMicrotransactions.SlotLength,
@@ -435,7 +438,9 @@ public static class InstanceProtocol
                 : id == InstanceStash.MoveToAffinityTabId ? InstanceStash.MoveToAffinityTabLength(data[pos..]) ?? int.MaxValue
                 : id == InstanceStash.SetAffinitiesId ? InstanceStash.SetAffinitiesLength(data[pos..]) ?? int.MaxValue
                 : id == InstanceNpcs.CtrlBuyId ? InstanceNpcs.CtrlBuyLength(data[pos..]) ?? int.MaxValue
-                : id == InstanceWaypoints.VisitHideoutId ? InstanceWaypoints.VisitHideoutLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
+                : id == InstanceWaypoints.VisitHideoutId ? InstanceWaypoints.VisitHideoutLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceSocial.PartyInviteId ? InstanceSocial.PartyInviteLength(data[pos..]) ?? int.MaxValue
+                : id == InstanceSocial.FriendAddId ? InstanceSocial.FriendAddLength(data[pos..]) ?? int.MaxValue : KnownClientLength(id);
             if (known is not int len) { unknown = data[pos..].ToArray(); break; }
             if (data.Length - pos < len) { partial = data[pos..].ToArray(); break; }
             result.Add((id, data.Slice(pos, len).ToArray()));

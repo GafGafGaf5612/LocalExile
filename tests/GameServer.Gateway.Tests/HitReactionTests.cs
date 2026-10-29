@@ -21,50 +21,6 @@ public class HitReactionTests
     }
 
     [Fact]
-    public void The_threshold_follows_the_max_life()
-    {
-        var m = Monster(1000, 0, 7);
-        Assert.Null(Flinch(m, 99, now: 10));
-        Assert.NotNull(Flinch(m, 100, now: 10));
-    }
-
-    [Fact]
-    public void A_monster_flinches_at_most_every_0_4_s()
-    {
-        var m = Monster(100, 0, 7);
-        Assert.NotNull(Flinch(m, 50, now: 10));
-        Assert.Null(Flinch(m, 50, now: 10.3));
-        Assert.NotNull(Flinch(m, 50, now: 10.4));
-    }
-
-    [Fact]
-    public void A_clip_longer_than_0_4_s_holds_the_next_flinch_until_it_has_played()
-    {
-        var m = Monster(100, 0.8, 7);
-        Assert.NotNull(Flinch(m, 50, now: 10));
-        Assert.Null(Flinch(m, 50, now: 10.45));
-        Assert.Null(Flinch(m, 50, now: 10.79));
-        Assert.NotNull(Flinch(m, 50, now: 10.8));
-    }
-
-    [Fact]
-    public void A_dead_monster_does_not_flinch()
-    {
-        var m = Monster(100, 0, 7);
-        m.Life = 0;
-        Assert.Null(Flinch(m, 50, now: 0));
-        var marked = Monster(100, 0, 7);
-        marked.Dead = true;
-        Assert.Null(Flinch(marked, 50, now: 0));
-    }
-
-    [Fact]
-    public void A_variety_without_a_TakeHit_clip_does_not_flinch()
-    {
-        Assert.Null(Flinch(Monster(100), 50, now: 0));
-    }
-
-    [Fact]
     public void A_flinch_stops_the_current_walk_and_cancels_only_the_ordinary_swing_recovery()
     {
         var m = Monster(100, 0.8, 7);

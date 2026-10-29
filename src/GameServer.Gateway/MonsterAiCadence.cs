@@ -11,6 +11,7 @@ sealed class MonsterAiCadence
     public const double StepSeconds = StepMilliseconds / 1000.0;
     public const double RepathSeconds = 0.1;
     public const int TargetChangeCells = 3;
+    public const double RetrySeconds = 0.5;
 
     sealed class Schedule
     {
@@ -37,12 +38,18 @@ sealed class MonsterAiCadence
     public int DelayMilliseconds(double now) => !running ? StepMilliseconds
         : (int)Math.Clamp(Math.Ceiling((nextStep - now) * 1000), 1, StepMilliseconds);
 
-    public bool TryChase(SpawnedMonster monster, (int X, int Y) target, double now)
+    public bool TryChase(SpawnedMonster monster, (int X, int Y) target, double now, bool retryAfterArrival = false)
     {
         var schedule = monsters.GetValue(monster, _ => new());
         if (!Due(now, schedule.NextChase)) return false;
         if (monster.LastTarget is { } previous
-            && Math.Abs(previous.X - target.X) + Math.Abs(previous.Y - target.Y) < TargetChangeCells) return false;
+            && Math.Abs(previous.X - target.X) + Math.Abs(previous.Y - target.Y) < TargetChangeCells)
+        {
+            // The native path budget can end a walk short of its cell: a monster that has arrived may retry the same
+            // target, at most every RetrySeconds; a target that only jittered keeps the current walk.
+            if (!retryAfterArrival || !Due(now, monster.NextChaseRetryAt)) return false;
+            monster.NextChaseRetryAt = now + RetrySeconds;
+        }
         schedule.NextChase = now + RepathSeconds;
         return true;
     }

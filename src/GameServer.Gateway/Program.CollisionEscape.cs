@@ -9,13 +9,14 @@ partial class Program
         if (!conn.PlayerSent || conn.PlayerLife == 0 || conn.PendingTransfer is not null || conn.Closed
             || conn.Layout.GridW <= 0 || conn.Layout.GridH <= 0) return;
         (int X, int Y) from, to;
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
+            double now = ProjectileWorldTime(conn);
             from = conn.Walk.Position(now);
             bool Walkable(int x, int y) => conn.Layout.Walkable?.Invoke(x, y) != false && !conn.Barrier.Contains((x, y));
             if (CollisionEscape.Find(from, conn.Layout.GridW, conn.Layout.GridH, Walkable,
-                living ? conn.CorrectionBlockers() : conn.StationaryBlockers) is not { } free) return;
+                living ? conn.CorrectionBlockers(includeMonsters: !conn.Walk.EscapingCrowd(now))
+                    : conn.StationaryBlockers) is not { } free) return;
             to = free;
             Interlocked.Increment(ref conn.ActionCount);
             conn.ChannelSkill = 0;

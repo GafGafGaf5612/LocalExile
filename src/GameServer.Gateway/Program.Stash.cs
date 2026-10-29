@@ -6,14 +6,15 @@ partial class Program
 {
     // The account's stash (AccountStash): every character of the account shares it. Without an account (an old Auth) the
     // character's name stands in.
-    static AccountStash StashOf(ClientState conn) => conn.GuildStashOpen ? GuildStashOf(conn) : PersonalStashOf(conn);
+    static AccountStash StashOf(ClientState conn) => conn.GuildStashOpen && !conn.Ssf ? GuildStashOf(conn) : PersonalStashOf(conn);
 
     // The personal stash (and the account's gold, kept with it), whichever stash panel is open: the account's in the
     // character's league (AccountStash.Key).
-    static AccountStash PersonalStashOf(ClientState conn) => AccountStash.For(AccountStash.Key(conn.Account ?? CharacterName(conn), conn.League), Items);
+    static AccountStash PersonalStashOf(ClientState conn) => AccountStash.For(AccountStash.Key(conn.Account ?? CharacterName(conn), conn.League), ItemsFor(conn));
 
-    // The guild stash: no guilds yet, so each account has its own (AccountStash.ForGuild).
-    static AccountStash GuildStashOf(ClientState conn) => AccountStash.ForGuild(conn.Account ?? CharacterName(conn), Items);
+    // The guild stash: no guilds yet, so each account has its own per league. SSF refuses this storage boundary.
+    static AccountStash GuildStashOf(ClientState conn) =>
+        AccountStash.ForGuild(conn.Account ?? CharacterName(conn), ItemsFor(conn), conn.League, conn.Ssf);
 
     // The tabs of that stash whose contents this connection has.
     static HashSet<int> TabsSentOf(ClientState conn, AccountStash stash) => stash.IsGuild ? conn.GuildStashTabsSent : conn.StashTabsSent;
@@ -39,15 +40,18 @@ partial class Program
             && conn.Layout.Hash is not (StashCatalog.DelveHub or AreaLayouts.LioneyesWatch)) return;
         var (gx, gy) = scene?.Guild ?? conn.Layout.Near((at.X, at.Y));
         float guildRotation = SavedHideoutPlacements(conn)?.GetValueOrDefault("guild-stash")?.Rotation ?? at.Rotation;
-        uint guild = conn.NextObjectId++;
-        await Send(remote, stream, ciphers, InstanceEntities.CreateObject(guild, InstanceEntities.ObjectTypeHash(StashObject.GuildMetadataPath),
-            new StashObject(gx, gy, guildRotation).Blob()), $"0x02b9 create guild stash 0x{guild:x} at ({gx}, {gy})");
-        await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(guild), null);
-        conn.GuildStashObject = guild;
-        conn.GuildStashAt = (gx, gy);
-        await RegisterStationaryCollision(remote, stream, ciphers, conn, guild, StashObject.GuildMetadataPath, gx, gy, guildRotation,
-            scene is not null ? "guild-stash" : null);
-        if (scene?.Bench is { } bench
+        if (!conn.Ssf)
+        {
+            uint guild = conn.NextObjectId++;
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(guild, InstanceEntities.ObjectTypeHash(StashObject.GuildMetadataPath),
+                new StashObject(gx, gy, guildRotation).Blob()), $"0x02b9 create guild stash 0x{guild:x} at ({gx}, {gy})");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(guild), null);
+            conn.GuildStashObject = guild;
+            conn.GuildStashAt = (gx, gy);
+            await RegisterStationaryCollision(remote, stream, ciphers, conn, guild, StashObject.GuildMetadataPath, gx, gy, guildRotation,
+                scene is not null ? "guild-stash" : null);
+        }
+        if (!conn.Ruthless && scene?.Bench is { } bench
             && HideoutCatalog.TypeOf(bench.Type!) is var (components, states)
             && HideoutObject.CanSerialize(components))
         {
@@ -118,6 +122,7 @@ partial class Program
     // builds its page. The tab asked for is the one on screen: the stash opens on it next time.
     static async Task SendStashTab(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, ushort tab, byte kind)
     {
+        if (conn.Ssf && kind == InstanceStash.Guild) return;
         var stash = StashOf(conn);
         if (kind != (stash.IsGuild ? InstanceStash.Guild : InstanceStash.Personal) || tab >= stash.Count)
         {
@@ -133,11 +138,32 @@ partial class Program
             (chosen ? "" : $" (the panel's tab before it opened on {conn.StashForcedTab}: not kept as the last tab)"));
         if (chosen) stash.SetLastTab(tab);
         uint inventory = stash.InventoryOf(tab);
-        if (TabsSentOf(conn, stash).Add(tab))
+        byte manager = stash.IsGuild ? InstanceStash.GuildManager : (byte)0;
+        var sent = TabsSentOf(conn, stash);
+        // Every loaded tab makes each later stash open slower by its item count (the panel walks them all as it shows), so
+        // when the player picks a tab the others the panel doesn't show are unloaded (0xc1), and the tab list goes out
+        // again with them marked not loaded, so the panel asks for them (0xc7) when shown again. Never during the first
+        // open's two requests (the shown tab would go), and never the tabs with shop currency (PreloadsForPrices).
+        var unload = chosen && !forcedOpen
+            ? sent.Where(o => o != tab && (stash.IsGuild || !PreloadsForPrices(stash.TabType(o), stash.Inventory(o).Items, ItemsFor(conn)))).ToList()
+            : [];
+        foreach (int other in unload)
+        {
+            sent.Remove(other);
+            await Send(remote, stream, ciphers, InstanceInventories.RemoveInventory(stash.InventoryOf(other), manager),
+                $"0x00c1 unload stash tab {other} inventory {stash.InventoryOf(other)} (the panel shows tab {tab})");
+        }
+        if (sent.Add(tab))
         {
             var (slot, items) = stash.Inventory(tab);
-            await Send(remote, stream, ciphers, InstanceInventories.AddInventory(inventory, slot, stash.IsGuild ? InstanceStash.GuildManager : (byte)0, items),
+            await Send(remote, stream, ciphers, InstanceInventories.AddInventory(inventory, slot, manager, items),
                 $"0x00c0 stash tab {tab} inventory {inventory} ({slot.Width} x {slot.Height}): {items.Count} item(s)");
+        }
+        if (unload.Count > 0)
+        {
+            var tabs = stash.Records(null, sent);
+            await Send(remote, stream, ciphers, InstanceStash.TabList(tabs, stash.IsGuild ? InstanceStash.Guild : InstanceStash.Personal),
+                $"0x0136 stash tab list again ({tabs.Count} tabs): {unload.Count} unloaded tab(s) marked not loaded");
         }
         await Send(remote, stream, ciphers, InstanceStash.TabLoaded(tab, inventory, stash.IsGuild ? InstanceStash.Guild : InstanceStash.Personal), $"0x00c8 stash tab {tab} loaded");
     }
@@ -272,6 +298,7 @@ partial class Program
     // settings window waits for it before it closes.
     static async Task SendTabListAgain(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, byte kind)
     {
+        if (conn.Ssf && kind == InstanceStash.Guild) return;
         var stash = kind == InstanceStash.Guild ? GuildStashOf(conn) : PersonalStashOf(conn);
         var tabs = stash.Records(null, TabsSentOf(conn, stash));
         await Send(remote, stream, ciphers, InstanceStash.TabList(tabs, kind == InstanceStash.Guild ? InstanceStash.Guild : InstanceStash.Personal),

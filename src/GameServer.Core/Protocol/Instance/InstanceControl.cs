@@ -45,7 +45,8 @@ public static class InstanceControl
 /// <summary>
 /// Ops: "resolve" (Ticket) → the ticket's area, seed, instance, character; "list" (Ticket, Area) → live instances of
 /// Area; "transfer" (Ticket, Area, Instance = 0 for the default choice, New = true for a fresh instance) → Auth moves
-/// the ticket's player and returns the destination's new Ticket; "leave" (Ticket) → the player left its instance (expiry starts);
+/// the ticket's player and returns the destination's new Ticket (with New, Seed ≠ 0 gives the new instance that seed:
+/// the Gateway's capture tour); "leave" (Ticket) → the player left its instance (expiry starts);
 /// "set_level" (Ticket, Level) → the ticket's character gets that level (1 to 100) in the account store;
 /// "set_portrait" (Ticket, Portrait) → the ticket's character's worn portrait, which the character list shows.
 /// </summary>
@@ -56,6 +57,7 @@ public sealed record ControlRequest
     public ushort Area { get; init; }
     public ulong Instance { get; init; }
     public bool New { get; init; }
+    public uint Seed { get; init; }
     public int Level { get; init; }
     public ushort Portrait { get; init; }
 }
@@ -73,11 +75,15 @@ public sealed record ControlResponse
     public uint Ticket { get; init; }
     public bool IsTown { get; init; }
     public string? Character { get; init; }
+    /// <summary>Stable account-character identity; reused display names must not reactivate old tickets/world state.</summary>
+    public Guid? CharacterId { get; init; }
     /// <summary>"resolve": the name of the account the character belongs to (its stash is the account's).</summary>
     public string? Account { get; init; }
-    /// <summary>The character's league and whether it is hardcore (the death screen offers only Exit).</summary>
+    /// <summary>The canonical full league name; selected modes are explicit flags, not inferred from this display name.</summary>
     public string? League { get; init; }
     public bool Hardcore { get; init; }
+    public bool Ssf { get; init; }
+    public bool Ruthless { get; init; }
     /// <summary>The character's class: Characters.dat IntegerId (CharacterClass), the Witch (3) if unknown.</summary>
     public int Class { get; init; } = 3;
     /// <summary>The character's level (from the account store).</summary>

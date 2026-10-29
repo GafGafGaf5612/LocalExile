@@ -6,7 +6,8 @@
 #   -NoExtract  skip scripts/dev/extract-data.ps1, which otherwise first extracts any missing or outdated game data into
 #               data/ (a quick check when nothing is missing)
 #   -Walkmaps   also run scripts/walkmaps/walkmaps.py (needs Python + `pip install frida`): captures the walk map of every
-#               area the client generates into data/walkability/
+#               area the client generates into data/walkability/, and lets the Gateway announce each load to it and run
+#               capture tours (Game_WALKMAPS=1). Without it nothing is recorded.
 #   -Only Gateway[,Auth,Patch]   rebuild and restart only these servers; the others and the client keep running (implies
 #               -NoClient). Restarting the Gateway drops the client to the login screen, but Auth keeps the login session.
 param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [switch]$ClientOnly, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
@@ -65,7 +66,8 @@ if (-not $env:Game_GATEWAY_ENTER) { $env:Game_GATEWAY_ENTER = '1' }
 
 $servers = if ($Only) { $Only } else { @('Auth', 'Patch', 'Gateway') }
 if ($Only) { $NoClient = $true }
-$ports = @{ Auth = @(20493); Patch = @(12995, 8080); Gateway = @(6112) }
+$patchWebPort = if ($env:Game_PATCH_URL -match ':(\d+)') { [int]$Matches[1] } else { 8080 }
+$ports = @{ Auth = @(20493); Patch = @(12995, $patchWebPort); Gateway = @(6112) }
 
 if (-not $NoClient) { Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue | Stop-Process -Force }
 if (-not $Only) {
@@ -104,6 +106,8 @@ function Start-Detached([string]$exe, [string[]]$arguments, [string]$log, [strin
 
 $bin = 'bin\Debug\net10.0'
 $serverArgs = @{ Auth = @('serve'); Patch = @(); Gateway = @() }
+# The servers inherit it: the Gateway records area loads for the recorder only beside it (AreaLayouts.Recording).
+$env:Game_WALKMAPS = if ($Walkmaps) { '1' } else { $null }
 # The cached gateway list can point elsewhere even when the patch welcome says no download is needed.
 # Select the local Auth explicitly before the patch server or client opens the GGPK.
 if (-not $NoClient) {
