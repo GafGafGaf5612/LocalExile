@@ -213,6 +213,9 @@ partial class Program
         // Special maxima mirror completed standard maxima, including explicit final replacements.
         foreach (var (stat, value) in ChargePanelStats.MirroredMaximums(Get))
             if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
+        // Reap's Blood Charges: the count held, the maximum and the rows' gate (BloodChargePanelRows).
+        foreach (var (stat, value) in BloodChargePanelRows(conn, Get))
+            if (Stats.Key(stat) is uint key && !devSet.Contains(key)) stats[key] = value;
         // Derive once from the resolved final rating, after pools and explicit stat replacements. Only this
         // temporary dictionary changes; repeated builds and removal cannot feed the bonus back into raw sources.
         if ((Get(ArmourAttackDamage.Per450Armour) != 0 || Get(ArmourAttackDamage.Per450Evasion) != 0)
@@ -523,7 +526,9 @@ partial class Program
                 double damageFactor = CriticalStrikePolicy.DamageFactor(
                     CriticalProhibitedBy(characterInputs, SkillsFor(conn).IsAttack(effect), own) ? 0 : criticalChance,
                     criticalMultiplier, CriticalExtraRollsFor(conn, characterInputs, own),
-                    SkillsFor(conn).IsAttack(effect) ? accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false) : 100);
+                    SkillsFor(conn).IsAttack(effect) ? accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false) : 100)
+                    // Reap's more damage per Blood Charge held (the hits take the same multiplier in AreaSkillHit).
+                    * BloodChargeDamageMore(conn, name => Stats.Key(name) is uint k ? own.GetValueOrDefault(k) : 0);
                 var ranges = SkillsFor(conn).IsAttack(effect)
                     ? AttackPanelStats.Compute(finalPlan, supportedHit, 1 / seconds, damageFactor)
                     : SpellPanelStats.Compute(finalPlan, supportedHit, 1 / seconds,

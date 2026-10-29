@@ -346,11 +346,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   charges are Brutal / Affliction / Absorption Charges: the special `current_*` and `minimum_*` rows and BuffDefinitions
   1757–1759 buffs, the standard effects off, Brutal's triple-damage chance and stun threshold per charge applied, and
   Affliction's more ailment damage in the ailment panel rows; automated only (`ConvertedChargesGatewayTests`,
-  `ChargeEffectsTests`, `ChargeSessionTests`, `ChargeBuffsTests`). Spirit, Siphoning, Blood, Blitz and Challenger
-  have no reachable player source here (abyss-jewel / Elder-Shaper counting, Reap, none in 3.29), the Affliction
+  `ChargeEffectsTests`, `ChargeSessionTests`, `ChargeBuffsTests`). Reap's Blood Charges (2026-10-29): a use whose hit
+  leaves an enemy alive gives one, a kill takes one, up to Character.ot's 5 plus the enchantment; the charges held are
+  15% more damage per charge on the hits and the Offence rows and 20% more cost, with the Charges tab rows, the
+  `show_blood_charge_info` gate and BuffDefinitions 1822; no duration (none in the tables), not carried across
+  areas, automated only (`BloodChargesTests`, `BloodChargesGatewayTests`). Spirit, Siphoning, Blitz and Challenger
+  have no reachable player source here (abyss-jewel / Elder-Shaper counting, none in 3.29), the Affliction
   non-damaging effect and Absorption recoup have no consumer.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
-  `Program.Charges.cs`, `ChargePanelStats.cs`.
+  `Program.Charges.cs`, `ChargePanelStats.cs`, `BloodCharges.cs`, `Program.BloodCharges.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §15.
 - Character panel sums: about 150 panel stats that sum base forms are computed from passives, items and auras with
   their unconditional combined stats: stun, ailment avoidance, durations and effects (ignite, chill, freeze, shock,

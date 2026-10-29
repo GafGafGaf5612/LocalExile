@@ -101,7 +101,7 @@ and automated checks. Wait for shared resources and stop only this task's own pr
 
 ## Exact target
 
-Current disposition: 187 partial, 170 pending, 0 complete. These are audit states, not implemented-stat counts.
+Current disposition: 188 partial, 169 pending, 0 complete. These are audit states, not implemented-stat counts.
 
 | Stat | Status | Review record / next audit |
 |---|---|---|
@@ -351,7 +351,7 @@ Current disposition: 187 partial, 170 pending, 0 complete. These are audit state
 | `self_freeze_duration_-%` | pending | [pending audit](#pending-audit) |
 | `self_ignite_duration_-%` | pending | [pending audit](#pending-audit) |
 | `self_shock_duration_-%` | pending | [pending audit](#pending-audit) |
-| `show_blood_charge_info` | pending | [pending audit](#pending-audit) |
+| `show_blood_charge_info` | partial | [blood charges](issue75-review.md#blood-charges) |
 | `skill_area_of_effect_+%` | pending | [pending audit](#pending-audit) |
 | `skill_is_instant` | pending | [pending audit](#pending-audit) |
 | `skill_show_average_damage_instead_of_dps` | partial | [row batch](issue75-review.md#offence-defence-misc-and-charges-row-batch) |

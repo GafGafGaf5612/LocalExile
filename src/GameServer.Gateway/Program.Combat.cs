@@ -786,6 +786,9 @@ partial class Program
         }
         bool fortificationGranted = false; // One simultaneous sweep, independent of notification latency.
         bool rageGranted = false; // Only a positive gain takes this sweep's latch.
+        // Reap's Blood Charges: the charges held scale this sweep's hits; the hits that land and the kills settle them.
+        double bloodMore = BloodChargeDamageMore(conn, Stat);
+        int landed = 0;
         // One sweep, one hit: its offensive inputs are read once, at the first contact (inside the projectile mutation, after
         // earlier contacts caught up), and rolled per monster. They were computed again for every monster (a whole stat
         // calculation each), which spread one sweep's hits over a second in a crowd.
@@ -834,11 +837,13 @@ partial class Program
                 int multiplier = CriticalMultiplierOn(m, sweepMultiplier);
                 (damage, resistance) = MonsterDamage(m, rolled, critical, attack: !spell, mods, pen, out var taken, gambler.InvertsResistance(Random.Shared));
                 if (critical) damage = DamageModel.CriticalDamage(damage, multiplier);
-                if (damageMore != 1) damage = (int)Math.Floor(damage * Math.Max(0, damageMore));
+                double more = damageMore * bloodMore;
+                if (more != 1) damage = (int)Math.Floor(damage * Math.Max(0, more));
                 LeechOnHitLocked(conn, m, taken, damage, leech!);
                 damage = WithImpaleHitLocked(conn, m, damage, rolled, critical, sweepMultiplier,
-                    critical ? criticalImpale : impale, damageMore).Damage;
+                    critical ? criticalImpale : impale, more).Damage;
                 applied = ApplyMonsterHitLocked(conn, m, damage);
+                if (applied is not null) landed++;
                 if (applied is { StageStarts: true } staged)
                 {
                     CommitBossStage(remote, stream, ciphers, conn, id, m, ProjectileWorldTime(conn));
@@ -863,6 +868,12 @@ partial class Program
         }
         foreach (var (deadId, dead) in deaths) await MonsterKilled(remote, stream, ciphers, conn, deadId, dead);
         Console.WriteLine($"[gateway] {remote} skill 0x{skillId:x4} {gem.Name}: {(spell ? "spell" : "attack")} hit {targets.Count} monster(s) within {radius} cells of ({centre.X}, {centre.Y}) (t={conn.Clock.Elapsed.TotalSeconds:0.000})");
+        if (BloodCharges.Uses(Stat) && player is not null)
+        {
+            bool changed;
+            lock (conn.Monsters) changed = conn.PlayerLife > 0 && SettleBloodChargesLocked(conn, player, deaths.Count, landed - deaths.Count);
+            if (changed) await SendBloodCharges(remote, stream, ciphers, conn, $"{gem.Name}: {landed} hit, {deaths.Count} killed");
+        }
     }
 
     static async Task<bool> WaitProjectileTime(ClientState conn, double until, int epoch)

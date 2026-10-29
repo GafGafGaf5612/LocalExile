@@ -144,6 +144,7 @@ partial class Program
             LeechOf(conn).Clear(conn.Clock.Elapsed.TotalSeconds);
             ClearRageOnDeath(conn);
             ChargesOnDeath(conn);
+            ClearBloodChargesOnDeath(conn);
             ClearAntiquarianOnDeath(conn);
         }
         foreach (var (id, life) in RecoverRuthlessBossesOnDeath(conn))
@@ -234,9 +235,14 @@ partial class Program
     // the mana.
     static bool PayMana(ClientState conn, ushort skillId, out uint cost)
     {
-        cost = Stats.Key("mana_cost") is uint k ? (uint)Math.Max(0, SupportedSkill(conn, skillId).Stats.GetValueOrDefault(k)) : 0;
+        var own = SupportedSkill(conn, skillId).Stats;
+        int Own(string name) => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
+        cost = (uint)Math.Max(0, Own("mana_cost"));
         lock (conn.Monsters)
         {
+            // Reap's Blood Charges: more cost per charge held (BloodCharges), rounded as the client rounds costs.
+            if (cost > 0 && BloodCharges.Uses(Own))
+                cost = (uint)Math.Round(cost * BloodCharges.More(Own(BloodCharges.CostPerCharge), conn.BloodCharges));
             if (conn.PlayerMana < cost) return false;
             conn.PlayerMana -= cost;
             return true;

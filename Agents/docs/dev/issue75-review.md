@@ -904,6 +904,31 @@ rows, Affliction ailment-only multiplier), `ChargeSessionTests` (special buff an
 (composition through `CharacterPlayerStats` with the stun threshold accepted) and the adjusted
 `Issue75UpstreamCompositionTests` stun case. Not natively validated; a real conversion unique has not been equipped.
 
+## Blood Charges
+
+Reap's Blood Charges (2026-10-29; `BloodCharges.cs`, `Program.BloodCharges.cs`), the Charges tab's Blood Charges rows
+and the two per-charge coefficient rows gated by `show_blood_charge_info`.
+
+- Sources: ActiveSkills `reap` ("If any survive, you gain a blood charge … Players can have 5 maximum blood charges"),
+  the skill's `lose_blood_scythe_charge_on_kill`, GrantedEffectStatSets `Reap` constants
+  `blood_scythe_damage_+%_final_per_charge` 15 and `blood_scythe_cost_+%_final_per_charge` 20, the gem base
+  `Metadata/Items/Gems/SkillGemBloodreap`, BuffDefinitions 1822 `blood_scythe_charge` (`Current_StatsKey`
+  `current_blood_scythe_charges`, `Maximum_StatsKey` `maximum_blood_scythe_charges`, `CancelOnDeath`), Character.ot's
+  `maximum_blood_scythe_charges` 5 through pinned PoB `16de4b8` Misc.lua, PoB act_str.lua's Damage / LifeCost MORE ×
+  BloodCharge.
+- Mechanics: `AreaSkillHit` counts the hits that landed and the sweep's kills, then `BloodCharges.Settle` takes one per
+  kill and gives one when any hit enemy survived, within 0 and the published maximum; `SendBloodCharges` swaps the
+  buff and resends the stats and skills. The charges held multiply the sweep's hits (`BloodChargeDamageMore`, with the
+  caller's `damageMore`), the skill's Offence rows (`GemSkills`' damage factor) and its cost (`PayMana`). Rows:
+  count, maximum (base 5 + raw sources, published once in `CharacterPlayerStatsSnapshot`) and the show flag while a
+  socketed gem has the per-charge damage stat. Death clears them.
+- Not modelled: a duration (none in the tables or PoB), carrying them across areas, Vaal Reap's temporary maximum,
+  Reap's physical damage over time debuff, its life cost (the server pays mana). Not natively validated.
+
+Tests: `BloodChargesTests` (tables, multiplier, settle rule), `BloodChargesGatewayTests` (Reap on the contact
+fixture: a surviving target gives a charge, the second hit is floor(first × 1.15), the cost at two charges is
+round(base × 1.4), a killing use takes one and gives none, the rows are hidden without the gem).
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
@@ -922,9 +947,9 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
 4. Damaging-ailment application, duration, critical and stacking mechanics: the panel ranges are display rows
    (batch above); Protocol 20 section 3 documents helpers, but also the missing execution paths.
 5. Current-branch validation of the incoming Ward implementation, the defence estimates (batch above), remaining
-   regeneration/recharge conversions, specialized leech, the converted charges (above), the special charge types
-   without a reachable player source here (Spirit and Siphoning need abyss-jewel / Elder-Shaper item counting, Blood
-   needs Reap, Blitz and Challenger have no 3.29 player source), minion/brand/trap/mine mechanics and conditional
+   regeneration/recharge conversions, specialized leech, the converted charges and Blood Charges (above), the special
+   charge types without a reachable player source here (Spirit and Siphoning need abyss-jewel / Elder-Shaper item
+   counting, Blitz and Challenger have no 3.29 player source), minion/brand/trap/mine mechanics and conditional
    source operators documented in the roadmap.
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 

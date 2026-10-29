@@ -358,6 +358,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public bool RageRetired;
     public ushort RageBuff;
     public RageState.Value? SentRage;
+    // Reap's Blood Charges held (BloodCharges), the buff instance sent for them and the count it carried; guarded by Monsters.
+    public int BloodCharges;
+    public ushort BloodChargeBuff;
+    public int SentBloodCharges;
     // Shared Vaal row budgets and native presentation belong to this connection; guarded by Monsters.
     public readonly VaalSoulState VaalSouls = new();
     public bool VaalSoulsRetired;

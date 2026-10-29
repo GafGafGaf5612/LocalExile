@@ -2511,6 +2511,20 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   the HUD uses BuffDefinitions 1757 `brutal_charge`, 1758 `affliction_charge`, 1759 `absorption_charge` (whose
   `Current_StatsKey` is `current_*_charges` itself) and swaps the buff when the flag changes. Not modelled: the
   non-damaging ailment effect per Affliction Charge and the Absorption recoup (no consumer), native validation.
+- **Blood Charges** (Reap; 2026-10-29; `BloodCharges.cs`, `Program.BloodCharges.cs`). ActiveSkills `reap`: a use whose
+  hit leaves any enemy alive gives one charge, and the skill's `lose_blood_scythe_charge_on_kill` takes one per enemy
+  its hit kills (`BloodCharges.Settle`, run by `AreaSkillHit` after the sweep's kills); the maximum is Character.ot's
+  `maximum_blood_scythe_charges` 5 (PoB Misc.lua) plus the raw stat (the Reap enchantment). Each charge held is the
+  skill's own `blood_scythe_damage_+%_final_per_charge` (15%, +0.25 per quality) more damage on its hits and on its
+  Offence rows, and `blood_scythe_cost_+%_final_per_charge` (20%) more cost at `PayMana` (the server pays Reap's cost
+  from mana), one multiplier of value × charges (pinned PoB act_str.lua). Rows: `current_blood_scythe_charges`,
+  `maximum_blood_scythe_charges` and `show_blood_charge_info` (1 while a socketed gem has the per-charge stat; the Blood
+  Charges rows are gated by it); HUD: BuffDefinitions 1822 `blood_scythe_charge` with the count as stacks, re-sent on
+  every change with `SendChargeStats`. Death takes them (`CancelOnDeath`). No game table or PoB gives them a duration,
+  so they stay until a kill or death; an area change does not carry them; Vaal Reap's temporary maximum, Reap's
+  physical damage over time debuff and its life cost are not modelled. Automated only (`BloodChargesTests`,
+  `BloodChargesGatewayTests`: a surviving target gives a charge, the next hit is floor(× 1.15), the cost × 1.4 at two
+  charges, a kill takes one).
 - **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
   on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)
   hands the charges to the destination ticket with the time they had left;
@@ -2578,8 +2592,8 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   set with `/set_stat` counts in the charge effects and limits too.
 - **Not modelled.** Held state and gain/expiry for the charge types without a reachable player source here: Spirit
   and Siphoning (their maxima come only from abyss-jewel and Elder/Shaper item counts the server does not model),
-  Blood (needs Reap), Blitz and Challenger (no 3.29 player source: their stats appear only in monster/mercenary skill
-  stat sets), Brine and the rest, beyond the three bounded maxima and the converted charges above;
+  Blitz and Challenger (no 3.29 player source: their stats appear only in monster/mercenary skill stat sets), Brine
+  and the rest, beyond the three bounded maxima, the converted charges and the Blood Charges above;
   skills and effects that consume or remove
   charges (Discharge, Flicker Strike's cooldown bypass, Immortal Call, "lose all … when", expiry triggers); gains that
   need stun, freeze, bleed, poison, curses, traps, mines, totems, Vaal souls, other warcries, allies, flask use (the
