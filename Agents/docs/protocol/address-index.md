@@ -290,6 +290,8 @@ G = global / static data.
 | `0x1401ff190` | Fn | hideout panel shown or hidden by `0x14216c840` |
 | `0x1401fc880` | Fn | hideout panel (palette) constructor |
 | `0x142163420` case 5 | Fn | S→C 0x7b kind 5 → listeners at instance +0x1778 → `0x140dcd9a0` |
+| `0x142163420` case 0x2b | Fn | S→C 0x7b kind 0x2b (HideoutMapDeviceScreen) → listeners at instance +0x2278; opens the Atlas map device |
+| `0x00e7` | C→S | Atlas map node picked: u16 BE WorldAreas HASH16, u8 0x0d (21-hideouts.md §4) |
 | `0x140dcd9a0` / `0x140dce1f0` / `0x140dce290` | Fn | open the map device window (modes 0xd, 0x5e, 0x56; lists +0x1778, +0x17f8, +0x1878) |
 | `0x140c2a1c0` | Fn | map device window: Activate button (mode 0xd → `0x142166480`, mode 0x5e → C→S 0x296) |
 | `0x142166480` | Fn | C→S 0x00d8 Activate: u16 (target +0x7b), u8 (writer class `0x1435bff20`) |

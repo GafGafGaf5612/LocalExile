@@ -420,7 +420,7 @@ sealed class PlayerInventories
         8 => itemClass == "Gloves",
         9 => itemClass == "Boots",
         10 => itemClass == "Belt",
-        MapDevice => itemClass is global::MapDevice.MapClass or global::MapDevice.FragmentClass,
+        MapDevice => itemClass is global::MapDevice.MapClass or global::MapDevice.MapKeyClass or global::MapDevice.FragmentClass,
         Flask => itemClass is "LifeFlask" or "ManaFlask" or "HybridFlask" or "UtilityFlask" or "UtilityFlaskCritical",
         _ => true,
     };

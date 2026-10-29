@@ -43,6 +43,7 @@ public class MapDeviceTests
     {
         Assert.True(PlayerInventories.Accepts(PlayerInventories.MapDevice, MapDevice.MapClass));
         Assert.True(PlayerInventories.Accepts(PlayerInventories.MapDevice, MapDevice.FragmentClass));
+        Assert.True(PlayerInventories.Accepts(PlayerInventories.MapDevice, MapDevice.MapKeyClass));
         Assert.False(PlayerInventories.Accepts(PlayerInventories.MapDevice, "Ring"));
     }
 
