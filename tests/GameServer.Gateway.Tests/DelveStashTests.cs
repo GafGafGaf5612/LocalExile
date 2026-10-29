@@ -102,27 +102,31 @@ public class DelveStashTests
         Assert.Equal(item.TypeHash, restored.Item.TypeHash);
     }
 
-    [Fact]
-    public void Lifeforce_stacks_past_inventory_limit_without_wrapping_and_survives_reload()
+    [Theory]
+    [InlineData("HarvestSeedRed", 50000)]
+    [InlineData("HarvestSeedGreen", 50000)]
+    [InlineData("HarvestSeedBlue", 50000)]
+    [InlineData("HarvestSeedBoss", 10000)]
+    [InlineData("HarvestSeedFaridun", 10000)]
+    public void Harvest_currency_uses_its_table_limit_preserves_overflow_and_survives_reload(string id, int limit)
     {
         TestSaves.Ensure();
         string account = "lifeforce-" + Guid.NewGuid().ToString("N");
         var stash = AccountStash.For(account, Catalog);
         const int tab = 7;
-        foreach (var type in Enumerable.Range(4762, 5).Select(row => Catalog.Row(row)!))
-        {
-            var item = ItemCatalog.Create(type);
-            var initial = stash.AddStacked(tab, item with { StackSize = 50000 }, Shape, out _)!;
-            Assert.Equal(0, initial.Left);
-            var grown = stash.AddStacked(tab, item with { StackSize = 20000 }, Shape, out _)!;
-            Assert.Contains(grown.Changed, i => i.Item.StackSize == ushort.MaxValue);
-            Assert.Equal(70000, stash.Inventory(tab).Items.Where(i => i.Item.TypeHash == type.Hash)
-                .Sum(i => (int)i.Item.StackSize) + grown.Left);
-        }
+        var type = Catalog.Find("Metadata/Items/Currency/" + id)!;
+        var item = ItemCatalog.Create(type);
+        var initial = stash.AddStacked(tab, item with { StackSize = 50000 }, Shape, out _)!;
+        Assert.Equal(0, initial.Left);
+        var grown = stash.AddStacked(tab, item with { StackSize = 20000 }, Shape, out _)!;
+        Assert.Equal(0, grown.Left);
         var before = stash.Inventory(tab).Items;
-        Assert.NotEmpty(before);
+        Assert.Equal(70000, before.Sum(i => (int)i.Item.StackSize));
+        Assert.Equal(limit, before.Single(i => i.X == Catalog.Stash.SlotOf(StashRules.Currency, type.Hash)).Item.StackSize);
+        Assert.All(before, i => Assert.InRange((int)i.Item.StackSize, 1, limit));
         AccountStash.Forget(account);
         var after = AccountStash.For(account, Catalog).Inventory(tab).Items;
-        Assert.Equal(before.Sum(i => (int)i.Item.StackSize), after.Sum(i => (int)i.Item.StackSize));
+        Assert.Equal(before.Select(i => (i.Id, i.X, i.Y, i.Item.StackSize)),
+            after.Select(i => (i.Id, i.X, i.Y, i.Item.StackSize)));
     }
 }

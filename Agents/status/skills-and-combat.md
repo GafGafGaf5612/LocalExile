@@ -5,6 +5,102 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Works (verified with the real client)
 
+- Fortification: qualifying melee hits build temporary protection through an explicit LocalExile generation model.
+  Native checks confirmed the buff component, expiry, 20/30-stack limits, attack speed and actual hit protection.
+  Elapsed Life regeneration, stopping at expiry, area carry, death and relog were also verified.
+  The evidence uses a new unascended character with raw inputs; it does not establish Behemoth selection.
+  See [Fortification](../docs/game/fortification.md) for the formula, source coverage and remaining extensions.
+- Antiquarian's real selected nodes now drive Ward absorption/restoration and Runic Tablet's pausable Adrenaline.
+  Goliath's zero Intelligence reaches requirements and pools; Whaletooth extends actual Enduring Cry recovery.
+  Turtle Shell integrates 8% Life over one second after accepted melee stun, with native Life correction at expiry.
+  Lioneye's Hair bypasses supported attack accuracy, Bow scales actual travelled projectiles, and Shield replaces
+  usable-shield base block and reduces physical ranged hits after armour.
+  Three native builds cover all nodes, combat controls, paid refunds and effect/save lifecycles.
+  See [Antiquarian](../docs/game/antiquarian.md) for evidence, exact graph admission and remaining engine boundaries.
+- Conditional critical policy (#242): ordinary, low-life, Focus and Sharp and Brittle sources share a signed clamp.
+  Opposing luck cancels, and multiple lucky sources still add at most one critical draw.
+  The unarmed multiplier applies only to the active empty-hand melee attack, with matching panel values.
+  Fifteen native checks verified real 200/150 critical hits, active-set switching and bonus removal.
+  A 66-Life Marauder verified above, exactly at and below the inclusive 50% boundary.
+  Native virtuals confirmed cancellation, clamping, unlucky state, cannot-crit, healing, death and relog.
+  Native evidence targets `ea24316`; the resolved `effb797` composition has automated coverage and awaits native reruns.
+  The checks use raw inputs on an unascended character; spell/bow contact rules and RNG order have automated coverage.
+  A parsed 200-damage critical hit against 400 Life generates 14 Fortification from the same resolved multiplier.
+  Removing the unarmed bonus gives 150 damage and 12 stacks; cannot-crit gives 100 damage and 10 stacks.
+  Successful paid ascendancy refunds and Focus/curse lifecycles remain separate integration work.
+  See [11-skills.md](../docs/protocol/11-skills.md), conditional critical policy.
+
+- Generic Rage (#281): source-qualified attack/melee/critical and incoming gains share a half-second interval.
+  Maximum, effect, separate delay recovery/loss speed, prevention and final attack multipliers are consumed.
+  Seventeen native checks verify raw-source generation, installed buff/count, actual damage and unchanged speed.
+  Fixed 100 damage at 15 Rage displays and deals 115; prevention, decay, pause, travel, death and relog pass.
+  The checks use an unascended Witch; Behemoth selection and Vaal consumers remain separate.
+  Supported contacts, area-sweep deduplication, queued refreshes and the 140-damage/11-Fortification composition
+  have automated coverage; further native composition checks remain in [26-rage.md](../docs/protocol/26-rage.md).
+  Capped attempted gains and frozen destination-loading time use explicit LocalExile policy v1.
+
+- Mana per final Strength (#287): `X_mana_per_4_strength` joins the ordinary flat mana bucket before increases.
+  Thirteen native controls verify complete four-Strength groups, signed inputs, source removal and relog.
+  A fresh Witch's 56 mana becomes 80 at 14/15 Strength, 88 at 16 Strength and 110 with 25% increased mana.
+  Maximum-mana attack lightning follows the final pool; display-only Strength overrides cannot feed it back.
+  Idle aura reservation and current-mana clamps have decrypted command-wire coverage, including the send gate.
+  Historical native controls use raw inputs and synthetic gear; Phrecia selection remains gated.
+  The full Mental Conditioning node now composes with Power of Purpose in automated tests; native reruns remain pending.
+  See [11](../docs/protocol/11-skills.md) section 4.
+
+- Player Actor scale (#299): passive, active item, aura, flask and cosmetic size inputs share final1973.
+  Metadata limit100 adds before ordinary limits, then explicit development replacements, including zero.
+  Eighteen native checks measured real Positioned and interpolated Render scale on a new unascended Witch.
+  Item20 plus cosmetic20 plus cosmetic3 produces scale1.43; removing sources restores1.0.
+  Area entry, relog, death/revival, the default cap and explicit zero overrides were verified.
+  Raw720 alone leaves the native model unchanged; server-derived final1973 drives its scale observer.
+  Native object size, type scale and stretches remain unchanged; geometry consumers have automated coverage.
+  Current/late peer change, reset, creation and revival have loopback-wire coverage, not a second-client visual check.
+  Phrecia admission, Rampage and the separate native melee-range flag9807 remain separate work.
+  See [04](../docs/protocol/04-player-entity.md#41a-player-actor-scale-299) for formula and evidence limits.
+
+- Armour against chaos hits (#288): the boolean `base_armour_applies_to_chaos_damage` enables the existing armour
+  model after chaos resistance, with the ordinary 90% limit.
+  Eleven native controls verify actual player Life loss, source toggles, resistance ordering and relog.
+  Extra physical/elemental reductions stay with their own types; the native final Armour rating is unchanged.
+  Mixed monster packets, block, suppression, ES, Fortification and DoT separation have automated coverage.
+  Native controls use a raw source on an unascended Marauder; Incorruptible selection and partial armour
+  percentages remain separate.
+  Recent-hit doubling composes in automated tests and fresh ordered joint native controls at `c9cd1864`.
+  See [20](../docs/protocol/20-damage.md) section 2e.
+
+- Increased attributes (#285): typed and all-attribute percentages scale the complete class/passive/active-gear
+  flat bucket once, using the documented PoB rounding model.
+  Historical evidence at `60044ad` has thirteen native controls for 3% Strength, additive increases, derived pools and
+  matching requirement values on an unascended Marauder.
+  A Plate Vest stops contributing below its requirement and resumes when the final attributes recover.
+  Calculated zero attributes stay zero; source clearing and relog restore the expected base values.
+  Own-item percentage retention, cascading activation, passive refunds and weapon swaps have automated coverage.
+  Current-main composition with mana per final Strength, inactive weapons and raw zero/off overrides has regressions.
+  Eleven current-main native controls verify final Strength groups, additive increases, mana and equipment requirements.
+  Maximum mana follows 47 to 111, then 127/145 as attributes rise; 100% mana increases it to 290 once.
+  Source removal and the ordinary vest's requirement disable/restore pass at rebased source `00b246f2`.
+  Ordered joint native validation at `c9cd1864` also verifies final attributes feeding mana-to-armour conversion.
+  Odd final Intelligence keeps its half mana until converted pools round; 16 Strength / 7 Intelligence gives 15 mana.
+  Inactive-weapon, cascading-equipment, passive-refund and active-aura composition remain automated-only.
+  The evidence does not establish official-server fractional parity or enable Phrecia class selection.
+  See [11](../docs/protocol/11-skills.md) section 4 and [13](../docs/protocol/13-items.md) section 2d.
+
+- Power of Purpose (#291): raw `keystone_mental_conditioning` converts 80% of flat mana to twice as much armour.
+  Mana and armour increases add for the converted contribution, under the documented PoB calculation model.
+  Thirteen historical native controls at original head `7678d60` covered toggles, increases, rounding and relog.
+  Those controls exercised actual Steel Willed attack damage and remaining-mana lightning on an unascended Witch.
+  Current-main tests compose mana per final Strength, active equipment, increases, chaos-armour/CI and Mageblood.
+  The rebase onto `939b44fe` adds increased-attribute and complete command-snapshot regressions.
+  Final scaled Strength/Intelligence, odd half mana, independent zero/off overrides and main's bounds compose there.
+  Reservation, clamps, zero/off/removal, Iron Reflexes, MORE and own-aura send-gate freshness have automated coverage.
+  Historical joint validation at `c9cd1864` passed 28 native controls, including eight final-attribute conversion cases.
+  B=127 gives 25 mana / 222 Armour; 100% mana gives 51 / 425; odd final Intelligence retains its half mana.
+  Remaining native cases include reservation, Iron Reflexes, MORE and the full node's independent consumers.
+  The candidate on `939b44fe` has no new native acceptance; the earlier controls remain historical evidence.
+  Phrecia selection remains gated.
+  See [the model and scope](../docs/game/power-of-purpose.md).
+
 - Skills and combat: the player has the default attack (PlayerMelee, Characters.dat StartingMeleeSkill) in the Actor
   skill list; it goes on the skill bar, walks into range, swings at the unarmed speed (757 ms with dual wielding's
   10%) or faster with `/set_stat attack_speed_+%` (server-computed final stats, 0x2ba skill update, panel's Attacks
@@ -21,8 +117,53 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Offence panel damage rows: the hit the server swings with becomes `main_hand_minimum/maximum_total_damage` and the
   per-type minimum/maximum rows, with `skill_uses_main_hand` so the client shows them;
   whole numbers, main hand only, and an empty packet sends none.
+  The rows and the server's hit share `AttackHit`, so the maximum-mana added lightning (Whisperer "we know all")
+  appears in the panel the same way.
+  Fourteen real-client stat checks verified 56 mana → 3–3 lightning, 1000 → 60–60, 50% increased lightning → 90–90,
+  997 → 59–59 at the panel's floor, removal and relog.
+  Generic attack increases apply; melee increases follow the actual attack type and active weapon set.
+  Native switching between wand and club verified ranged exclusion and melee inclusion of that increase.
+  These native checks belong to original head `378ffde`.
+  The resolved supported-skill path has automated context, effectiveness and spell-isolation checks.
+  Recheck that composition natively.
   Code: `PanelStats.HandDamage`, Gateway (`CharacterPlayerStats`).
   Docs: [11](../docs/protocol/11-skills.md) §14.
+- Whisperer "your mind is destroyed": resolved spell increases/reductions also scale attacks at 150% of their value.
+  Weapon, added-damage and supported attack constructors share the fractional additive contribution.
+  Native panel and target-life checks verify 100 to 250, additive 230, a half-percent endpoint of 203 and reductions.
+  Removal and relog clear the effect; ordinary bows retain release snapshots and supported spells remain isolated.
+  The native check uses development stat inputs; Phrecia node selection and the rest of Whisperer remain separate.
+  Code: `DamageStats`, `SkillCatalog.Unarmed.HitDamage`, `SupportedAttackDamage`.
+  Docs: [20](../docs/protocol/20-damage.md) §2c.
+- Behemoth Steel Willed: each complete group of 450 final armour adds 2% increased attack damage.
+  The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
+  Native fixed-hit checks verify thresholds, additive 204/214, modifier removal and maximum-mana lightning.
+  Weapon physical panel checks show 2â€“5 becoming 6â€“15; relog clears the development inputs.
+  Native checks use raw stats on an unascended character; selection remains separate.
+  Recent-hit armour defence is implemented below; current-main composition awaits native verification.
+  Code: `ArmourAttackDamage`, Gateway (`CharacterPlayerStats`), `SkillCatalog.Unarmed.IncreasedDamage`.
+  Docs: [20](../docs/protocol/20-damage.md) Â§2d.
+- Steel Willed incoming-hit armour: prior accepted enemy contacts supply a four-second authoritative counter.
+  The per-hit contribution caps at 30%, then the real generic double-armour chance adds before a 0..100 clamp.
+  One decision supplies physical and enabled chaos mitigation; blocked and zero contacts count without armour RNG.
+  Permanent armour and the outgoing attack bonus remain unchanged.
+  Parsed development routes, mixed monster packets, idle expiry, pause and stale swings pass tests.
+  Connection lifecycle, AI collection epochs and queued full/partial stat sends also have automated coverage.
+  Rage, own-aura and Mageblood full writers acknowledge their exact encoded pair after gated construction.
+  Return-to-previous-pair, queued expiry and rejected-send regressions cover these remaining full writers.
+  Dirty aura prefixes and Fortification tails build in wire order across expiry, with decoded-pair/idle checks.
+  Eighteen historical native checks at original head `777b292` verified 50/33 Life loss and a real Zombie hit.
+  They covered unchanged 500 armour/outgoing 102, the 30% cap, additive 50%, pause/expiry and full-refresh counters.
+  Death, resurrection, area change and relog clear history under explicit LocalExile model v1.
+  Current-main mixed physical/chaos, charges/resists/Fortification/ES and parsed suppression regressions pass.
+  Queued hits sample changed sources and final defences at contact, including lazy own-aura suspension.
+  Ordered joint validation at `c9cd1864` passes 28 native controls with final attributes and mana conversion active.
+  Permanent Armour 251 stays unchanged as a physical 100 hit removes 67 Life normally or 50 when doubling is certain.
+  A raw40 single-contact source verifies cap30 plus generic20; full refresh and idle expiry retain generic20.
+  Four-contact timing and the forced Fortification/aura/Rage/Mageblood deadline races have automated coverage.
+  Class admission and suppression-to-armour chance integration remain separate work.
+  See [Steel Willed armour](../docs/game/steel-willed-armour.md).
+
 - Accuracy: the player's final rating includes flat/increased passives, weapon-specific stats and the unconditional
   Accuracy Mastery effects; attacks roll PoB's hit chance against the monster's `DefaultMonsterStats.Evasion`, misses
   send no life update, spells always hit; the Offence panel gets `main_hand_accuracy_rating` /
@@ -46,8 +187,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   entropy counter before damage, and `/defences` shows armour, physical reduction and the chance to evade a reference
   monster.
   Iron Reflexes converts all evasion to armour and drops dexterity's evasion bonus.
-  Not yet: item mods/quality, shields or auras.
-  Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, Gateway.
+  Chaos Inoculation sets maximum life to 1 (after the life modifiers) and grants chaos immunity in the damage model
+  and the panel's Immune row; energy shield remains the pool. The pre-CI life used for stun/ailment thresholds and the
+  low-life condition are not modelled.
+  Armour and evasion items count their local flat/increased mods and quality, and a shield in the off hand adds its base
+  armour/evasion/energy shield (`ItemDefences`); auras are still only the simple set above.
+  Code: `CharacterStats.cs`, `DamageModel.cs`, `ItemCatalog.cs`, `ItemDefences.cs`, Gateway.
   Docs: [11](../docs/protocol/11-skills.md) §4, [13](../docs/protocol/13-items.md) §2.
 - Gem skills and bow attacks: Fireball from the socketed gem with its level-1 stats (9–14 fire, 750 ms cast via
   `virtual_base_spell_cast_time_ms`, 5 mana), cast at the ground or at a monster; a bow's ordinary attack and attack
@@ -55,11 +200,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   contact (0.374 of the attack time).
   Attack gems deal the weapon's damage × `DamageEffectiveness` with the attack's crit; a bow arrow has no Fireball
   impact.
+  Fireball's impact explodes: an area hit of its radius (`active_skill_base_area_of_effect_radius`) on an enemy or a
+  wall, excluding the projectile's own target; the explosion art is a standalone effect object and the projectile is
+  removed at the impact.
   Ordinary bow ground/object attacks now share contact-time release and damage at the actual flight collision
   (#203, automated and native collision/release/pause checks pass).
   Object uses no longer also deal a melee contact hit.
   Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
   without a capture they use the bare offset.
+  An attack gem at the ground swings (and pays its mana) when the point is within the weapon's reach, and only walks
+  (attack-move, no mana) beyond it; the client spends the mana itself on either use, so the Gateway answers an
+  attack-move with the authoritative mana.
   Code: `SkillCatalog.cs`, Gateway (`CastOn`, `LaunchProjectile`, `AreaSkillHit`), `ProjectileObject`.
   Docs: [11](../docs/protocol/11-skills.md) §9–10.
 - Resistances: the passive `base_resist_all_elements_%` / per-element `base_*_damage_resistance_%` are summed from the
@@ -132,6 +283,46 @@ Part of [Status](../Status.md); what to build next in this area is in
   ms; server-side mana (cost, regeneration); `/god` (also 200% increased area of effect), `/set_aoe`.
   Code: Gateway (`ActivateRighteousFire`, `RunPlayerTick`), `SkillArea.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §12.
+- Warcry admission restriction (#297): any signed nonzero `your_warcry_skills_are_disabled` blocks new typed warcries.
+  Actual caster passive/equipment/raw dev sources are read before skill overlays, action echoes, costs and cooldowns.
+  Explicit zero and source removal restore admission without rebuilding pools or removing Actor skills.
+  Parsed ground/object, paid Enduring Cry, source, instant safety and queued-send regressions pass.
+  Accepted non-cancellable cry releases retain their existing behavior; Enduring Cry's charge executor stays partial.
+  Seven native checks verify refusal without Mana loss or release, source clearing and paid 13-Mana retries.
+  Native Endurance Charges confirm accepted releases; Fireball remains usable and relog clears the developer flag.
+  Phrecia play stays gated; source precedence, aliases and queued boundaries have additional automated coverage.
+  See [11](../docs/protocol/11-skills.md) section 10b.
+- Own-aura restriction (#304) consumes signed 21148 OR 11881, with explicit final 11075 developer precedence.
+  Typed Aura and accepted Blasphemy metadata drive admission and native skill flags.
+  Admission and queued acknowledgements use the requested skill ID; duplicate gems keep separate support context.
+  Remembered candidates check their own requirements, so an unusable copy cannot suppress another available gem.
+  Local policy suspends self-owned pairs, bonuses and reservation while retaining intent, without a mana refill.
+  Lifting the restriction restores available remembered ordinary self auras once with fresh buff IDs and a mana clamp.
+  RF, flasks, Fortification and received effects remain outside this owned lifecycle; no party aura executor is claimed.
+  Source, real-dispatch, loopback, queued snapshot/add, initial creation and entry replay regressions pass.
+  Rage refreshes reconcile paired removals and reservation before their snapshots, even when Rage is unchanged.
+  Fifteen native controls verify Clarity/Haste pairs, real bonuses/Mana, three refused routes and ordinary Fireball.
+  Relog restores remembered Haste after the transient source clears; death while suspended clears saved intent.
+  Native grey-icon prediction and persistent restricting equipment remain unverified.
+  The suspend/restore lifecycle is explicit LocalExile policy, not proven GGG behavior; Phrecia play stays gated.
+  See [11](../docs/protocol/11-skills.md) section 10c.
+- **Spell skills deal no damage (#293):** raw caster key 5341 suppresses supported Spell hit packets and RF enemy burn.
+  Physical, elemental and chaos spell damage, supported projectiles and areas share the final packet restriction.
+  Selected native record ranges, average damage and DPS use that packet, including inherited main-hand zero rows.
+  Casting, costs, timing, visuals, zero-hit callbacks, attacks and aura-granted attack bonuses retain their scope.
+  RF self-burn continues independently; source changes follow existing impact/tick resolution without pool rebuilds.
+  Automated supported constructors, dispatch/Life, in-flight changes, aura controls and RF tick checks pass.
+  Current-main controls cover Rage/charge contacts, quality, Mana sources, Mageblood, chaos armour
+  and cosmetic identity.
+  Unpaid release guards, utility reservation/cooldowns and RF fractional carry keep their existing behavior.
+  Eleven historical native checks at original head `e80a81c` cover Fireball/Ice Nova, paid casts and attacks.
+  Native Fireball action rows clear ranges and DPS; RF keeps its self-burn while its enemy damage stops/resumes.
+  Those controls cover source changes and relog at the historical head.
+  Fresh ordered joint controls at `c9cd1864` verify Fireball 200 / zero, attack 100 and restored Fireball 200.
+  Final attributes and converted pools remain active in that same unascended Marauder session.
+  Rampager 49937 supplies the source, but class admission, owner execution and the node's other mechanics are separate.
+  Code: `SkillDamageContext`, `SupportedHit`, `SpellHit`, `BurnAround`, `GemSkills`.
+  Docs: [20](../docs/protocol/20-damage.md) section 2f.
 - Spells are released at the cast animation's contact keyframe (Witch 599 of 1066 ms;
   every class's from its rig .amd), with the server duration adjusted once for cast speed.
   Code: `AnimationContacts.cs`, `scripts/re/anim_contacts.py`.
@@ -139,6 +330,41 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+The generic [projectile framework](../docs/game/projectile-framework.md) owns production gem/bow routing and
+the sole 30 Hz runtime. Catalog fallback provides basic flight; registered skill definitions supply special rules
+and can require explicit recipes.
+
+- Ruthless resolves native skill/gem, passive and mod alternatives per connection, including zero-valued overrides.
+  Ordinary characters in the same Gateway keep ordinary catalogs.
+  Hardcore death is terminal for the old connection; a queued level-up cannot revive it.
+  Hardcore migration and permanent Ruthless death have automated lifecycle coverage.
+  Earlier native checks were against the original fork; native checks on the current integration are recorded separately.
+  Native skill/passive/mod alternatives and late-action guards have automated coverage.
+  Main's projectile kill path retains Ruthless rewards, gem XP and active utility-flask restrictions.
+  Synchronous quest/gem commits retain the Hardcore terminal-progress guard; composed regressions pass.
+  See [league modes](../docs/game/league-modes.md).
+- Grace Period grants 60 seconds of entry protection outside towns and hideouts.
+  First movement, a skill, a flask or expiry ends it; incoming damage, hostile targeting and RF damage are suppressed.
+  The native buff uses floating-point seconds for its countdown; the icon was checked live, timer retest is pending.
+  See [11](../docs/protocol/11-skills.md), "Area-entry Grace Period".
+- Vaal souls (#308): genuine owner kills collect into bounded shared ActiveSkills-row budgets.
+  Creation and skill updates publish the proved native Actor lists; automated wire/dispatcher checks pass.
+  Duplicates, source/cost changes, removal/readd, range, prevention, queued sends and transient lifecycle are covered.
+  Eligibility commits with lethal mutations before death notifications, including shared hits and Righteous Fire.
+  Vaal aura costs use per-instance Aura types and accepted supports, with explicit developer replacement precedence.
+  Player soul loss commits at zero Life; delayed death notices preserve actual resurrection earnings.
+  Vaal gem/support requirements use current equipment snapshots while gear notifications are held.
+  Source checks on base `939b44fe` preserve wide raw attributes, mana, pool flags and supported skill payment.
+  Skill-record bit1 (0x02) now retains native Vaal soul inputs using catalog raw stored uses in both lookup paths.
+  Parsed creation/update and real socketed tests cover zero cost/balance, ordinary partners and inactive hosts.
+  A pinned 3.29.3b session passes 42 collection/counter checks: real kills, cap, cost, zero capacity and prevention.
+  Native required-soul and manager consumers agree, including natural gem level-ups and unsupported-input refusal.
+  The build and all three suites pass; exact private composition with PR #294 also passes.
+  Distribution and capacity are documented LocalExile policies, not a claim of official algorithm parity.
+  Native duplicate/removal, death/relog/transfer, aura costs and held-notification composition remain unverified.
+  Unsupported Vaal casts are refused before action echoes or cooldown reservation, including effective zero cost.
+  No executor, Rage payment or SGP countdown is added.
+  See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md).
 - Aura restoration bootstrap fix: socketed gem requirements no longer deactivate their entire host item during pool
   initialization.
   Equipment contributes attributes before individual gem validation;
@@ -149,7 +375,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   Exit/relogin/character return restores available remembered auras without rechecking cast affordability;
   manual activation still validates mana.
   Death clears saved/runtime auras; skill refresh resumes temporarily unavailable effects.
-  Automated lifecycle coverage; live verification pending.
+  The shared own-aura restriction has separate native controls above; broader town/character round trips remain partial.
   See protocol/11-skills.md.
 - Aura presentation (2026-10-25): self auras select their distinct EPKFiles2 art.
   A live check found that source-only buffs hid the top-left icons;
@@ -167,6 +393,37 @@ Part of [Status](../Status.md); what to build next in this area is in
   Helena's picker now receives all 103 exported personal hideouts, including MTX templates;
   switching templates now uses the native selection request and persists the chosen home.
   See [11](../docs/protocol/11-skills.md) and [21](../docs/protocol/21-hideouts.md).
+- **Projectile modifiers.** Generic profiles consume resolved primary counts, speed, pierce/fork/chain/split/return
+  grants and independent prohibitions in the sole staged runtime. Ordinary bows and catalog-known projectile gems
+  work without a skill provider. A basic recipe is straight flight, not complete special-skill behavior.
+  Return opens another hit-admission phase and reads the shared returning-damage multiplier. Partial return chance,
+  return speed, contact budgets, overshoot and terrain behavior are configurable through skill definitions.
+  Boolean fork sources grant one generation, and raw bow always-pierce sources bind to the same common profile.
+  Return retains remaining continuation counts and the original lifetime; return pierce-all requires its own stat.
+  Direct and area snapshots keep area increases/supports scoped to their damage stages.
+  Area effects scale to the committed radius when the selected art exports a native radius; unknown art stays unscaled.
+  Terrain-blocked area centers are omitted without resampling or reserving time; surviving areas keep consecutive intervals.
+  Skill explosions, pulses, children, forms, native art and specialized resources belong to skill definitions.
+  Missing metadata or unsupported damage plans are refused before costs, without generic area-hit fallback.
+  [Named skills](../docs/game/projectile-skills.md) implement terminal Fireball blasts and Kinetic Blast clusters.
+  Direct volleys share admission separately outbound and returning; denied siblings pass through.
+  Fireball waits for exhausted continuation and gives the terminal victim one area-classified hit.
+  Normal KB creates four offset explosions with 40% less area damage; Clustering creates three plus quantity modifiers,
+  keeps one primary and cannot Split.
+  The internal AltY row retains normal-KB compatibility, without establishing a third playable gem.
+  Separate blast/placement radii use supported area stats once; independent explosions can overlap covered victims.
+  Each KB contact group excludes its own triggering enemy, including delayed explosions; other groups may hit it.
+  Automated checks cover large triggering victims, pierced neighbors and wall/range groups. Gateway actor radii
+  remain zero, so live area coverage uses monster centers rather than calibrated body intersections.
+  KB centers use a fixed scaled circle and random sector angles, with separate first-delay/inter-slot parameters:
+  immediate first blast, then 1/30 s between slots. These are user-tuned feel values, not official measurements.
+  Secondary explosions use their own small-burst art and equipped MTX; native art scales to the actual blast radius.
+  Skill-bar explosion totals use the resolved cluster recipe, including quality and Clustering's projectile conversion.
+  Fireball wall-contact damage and default/Stygian packets have regression coverage; visual visibility remains unverified.
+  Flights retain fixed terrain-plus-offset height (bare offset without a grid); explosion effects follow client terrain.
+  Official geometry/timing, surface height and art equivalence still need client validation.
+  Code: Core `Projectiles/`, Gateway `Projectiles/` and `Projectiles/Skills/`; see the
+  [framework guide](../docs/game/projectile-framework.md).
 - **Instant skills and cooldowns (verified live 2026-10-21).** Haste, the Purities and Righteous Fire carry
   `skill_is_instant`, so the client sends them as C→S 0x191 and keeps walking;
   the server applies them and answers S→C 0x1ce, which starts the skill bar's cooldown.
@@ -230,8 +487,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   the two target-conditional effects at the roll), and the final rating value is
   sent as `main_hand_accuracy_rating` / `off_hand_accuracy_rating` for the Offence panel;
   armour and evasion also take their flat/increased passives and the base equipped armour pieces (body, helmet,
-  gloves, boots), while life and mana still ignore passives and items (attack speed is handled below)
-  ([11](../docs/protocol/11-skills.md) §4).
+  gloves, boots); life and mana take their existing flat/increased passive and active item sources.
+  See [11](../docs/protocol/11-skills.md) §4.
 - **Attack speed passives.** Generic, melee, one-/two-handed, weapon-family, shield and dual-wield passive attack
   speed is summed into the client's `main_hand_attack_speed_+%`;
   dual wielding adds PoB's 10% more and the server's unarmed attack uses the same final value.
@@ -273,8 +530,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Selected spell hit damage panel (#188).** Spell total/per-type ranges and pre-crit average damage/DPS
   now use the same converted packet as projectile and area combat.
   All range fields are explicit, including zeros for absent types; hitless spells clear inherited weapon DPS/per-use.
-  Initial player creation and later skill refresh both pass separate character conversion inputs.
-  Attack displays, modifier precedence and the existing level-only conversion rule are preserved.
+  Final selected spell records use the supported combat packet for spell and inherited main-hand ranges.
+  This includes explicit zero ranges after spell damage suppression, without changing attack displays.
   Automated mixed conversion/gain, added-damage effectiveness, hitless, attack and native row-format checks pass.
   Native selection/getter checks show Fireball 10-15 fire and Freezing Pulse 10-15 cold with a +12% spell-damage wand.
   A conversion/gain control split Fireball into fire and chaos rows and dealt a noncritical 14-damage server hit.
@@ -289,6 +546,27 @@ Part of [Status](../Status.md); what to build next in this area is in
   each spell's extracted base chance, and 150% plus `base_critical_strike_multiplier_+`;
   critical damage is multiplied and logged.
   Unarmed has 0% base crit.
+  Two pure base stats replace that base before the increased chance, the way PoB's `WeaponBaseCritChance` replaces
+  an attack pass's `source.CritChance` when that hand has a weapon:
+  `override_weapon_base_critical_strike_chance` (Stats row 9892, permyriad) on the armed main hand — Slayer
+  Overwhelm (graph id 17315) grants 800 = 8.00% and Blind Prophet's Sightless (graph id 24698) grants 900 =
+  9.00% — and `base_melee_critical_strike_chance_while_unarmed_%` (Stats row 3906, permyriad; Behemoth Final Blow,
+  graph id 10135, grants 1000 = 10.00%) on the unarmed melee attack.
+  Each is a base, not a fixed final chance: generic increased crit still applies on top;
+  the weapon override stays out of unarmed and spell rolls, and the unarmed base stays out of a weapon hand.
+  Only the active weapon set supplies the attack base and its weapon-specific increases.
+  `/set_stat` replaces the input and rebuilds the pools, so the panel and the rolls agree.
+  Generic/spell development increases replace the same complete raw input used by spell rolls, including aura sources.
+  Attack/spell increased percentages and the pooled spell reference now follow those effective inputs.
+  Automated regressions cover these replacements, signed sum bounds and shared integer rounding.
+  Attack and spell chances now share half-up permyriad rounding: 650 with +1% gives 657.
+  Native evidence below targets original head `8c4c62d`; recheck the changed midpoint and resolved stack natively.
+  Five follow-up native checks verify generic/spell input agreement and maximum/minimum integer saturation.
+  Twelve native checks verified 830 → 800 → 900, increased chance → 1800, cannot-crit → zero,
+  empty-set/unarmed behavior, weapon restoration and relog.
+  Ascendancy allocation remains in the separate lifecycle change.
+  Global, virtual-global and attack-specific cannot-crit flags suppress the attack chance.
+  `SpellCriticalStrike` reads neither base override.
   The final main-hand and spell crit chance/multiplier stats go to the client for the Offence panel;
   selected spell chance and server projectile/area rolls now share raw player and skill inputs once.
   Precision and Zealotry retain their existing bonuses without counting them twice.
@@ -298,59 +576,48 @@ Part of [Status](../Status.md); what to build next in this area is in
   Combined generic/spell bonuses add once; the no-crit flag clears the native chance and hides its row.
   A hitless Scorching Ray cast dealt no weapon damage, while the same connection's Fireball dealt a critical hit.
   Catalog, chance, panel gates, aura sources and hit routing also have automated checks.
-  Timed, charge, enemy-state, lucky/more and added-base crit mechanics are not modelled.
+  Focus skill and curse lifecycles, other enemy-state/more and added-base crit mechanics remain separate work.
   `/crit` shows the attack values and a pooled 5%-base spell reference ([11](../docs/protocol/11-skills.md) §5).
-- **Projectiles.** Moving targets are checked throughout flight by sweeping observed relative movement.
-  A monster can change course away from a hit, enter the path later, or intercept before a farther target.
-  The client glide is stopped at the contact cell before impact with the creation marker/world-z pair in 0x1b7.
-  Cast release, flight and explosion cleanup use game time and wait through pause.
-  Area changes remove outstanding visuals before handoff and invalidate flights even if the transfer fails.
-  Disconnects cancel outstanding flight tasks.
-  Ordinary bows snapshot current position, weapon and offensive inputs after their release wait, retaining the
-  original aim; target evasion and impales resolve at the accepted collision's actual send gate.
-  An evaded target is skipped once per straight flight, including a later hit within the same swept interval.
-  This is a current-wiki-supported policy; official-server evasion continuation and snapshot equivalence remain
-  unverified. Already-paused uses are rejected; accepted queued confirmations run outside
-  ground input dispatch and can wait for resume or original-token cancellation.
-  Actual queued-send tests cover pause, action replacement, death and transfer, plus released arrows surviving
-  later actions/player death. Ordinary hits use ranged notifications, preserve existing damage/crit/impale
-  approximations and clear impales on death. Native before-controls confirmed the old visual-only ground arrow
-  and independent melee contact hit on object use. On the combined runtime, native ground/object right-clicks
-  each dealt one hit only at the arrow stop (13 at (296,221), 6 at (296,220)), without melee `0x1af 0x4201`.
-  Creation now occurs in the bow clip near contact; frame/server scheduling delay remains visible.
-  Native wall-before-object, nearer interceptor, moving-away miss, framed Move before/after release, flight pause,
-  release pause and paused raw ground/object dispatch controls passed. Added cold removed after release stayed
-  in the arrow's 112-damage killing hit, with one 4-XP award (loot unmeasured).
-  Combined-only Frostblink checks passed: actual Q after release preserved the old hit; a timed framed `0x190`
-  before release changed the sampled origin while retaining the original aim. Combined recovery controls
-  cancelled a pending release, denied recovery-time input and accepted fresh input after expiry; an already
-  released arrow still stopped/removed. These checks compose separate Frostblink/recovery contributions.
-  Automated trajectory, wall, lifecycle and packet checks pass.
-  Live checks verified a moving-away miss, a later-entry hit, first-wall contact, pause/resume and native glide stop.
-  Raw fixed-height and terrain-sentinel stop packets preserved their fields and cleared native movement duration.
-  Earlier Fireball/raw-stop checks preceded the bow packet/height update; the ordinary bow controls above cover
-  its combined path on natural ground. Attack-gem height/collision composition still needs a live recheck.
-  Creation, glide endpoint and stop now share one signed marker; packet tests cover positive, negative and zero height.
-  Corrected normal launches retained marker 5/world z -39.0625 at creation, paused mid-flight and both contact stops.
-  Broader surface-height accuracy remains open (#182).
-  Positions remain integer server walk estimates sampled about every 16 ms, with a shared collision radius
-  and straight movement between samples.
-  Sharp turns, scheduling stalls and client interpolation can still differ; official timing equivalence is unverified.
-  Static walls use the captured two-dimensional projectile grid with diagonal-corner traversal and endpoint checks.
-  Without a height grid, flight uses the bare hand offset; platforms and doodads need a surface-height model (#182).
-  Height capture still uses `scripts/re/frida/capture-terrain-tiles.js` and `scripts/walkmaps/heights.py`.
-  Doodad/object colliders, explosion area damage and pierce/chains remain unimplemented.
-  Ordinary player and skill projectile-speed increases/reductions now share the flight and predicted-arrival speed.
-  The player's computed total is counted once; the skill's own level/quality bonus is added separately.
-  The development speed override retains priority.
-  Live Fireball casts over the same 116-cell path took 1.212 seconds at baseline, 0.606 at +100% and 2.425 at -50%.
-  Conditional/more/less speed and support-gem application remain open.
-  Code: `ProjectileSpeed.cs`, `ProjectileFlight.cs`, `OrdinaryBowShot.cs`, `Program.Bows.cs`,
-  `Program.Combat.cs` (`LaunchProjectile`, `FlyProjectile`), `ClientState.cs`,
-  `InstanceProtocol.Teleport`.
-  Docs: [11](../docs/protocol/11-skills.md) §10 and [22](../docs/protocol/22-pause.md).
-- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour or resistances
-  yet; the player's hit lands at the attack animation's contact keyframe, a monster's still at half its attack time).
+- **Overcapped-resistance modifiers.** While the flag stat is set, the uncapped resistance above its maximum is a
+  generic increased modifier, exactly PoB's `ResistOverCap` (the maximum capped at 90): +1% increased evasion per 1%
+  of cold overcap, +1% increased critical chance per 1% of lightning overcap, additive with the other increases for
+  attacks and spells alike.
+  The flags are ordinary stats, so any source sets them: the Surfcaster's Sea Legs notable (graph 61696, with its
+  +40% cold-and-lightning pair resistance the aggregator now sums into both elements), an item mod, or `/set_stat`.
+  An explicit `/set_stat` value replaces its own input (per-type, pair and all-element resistance, and per-type or
+  global maximum resistance) instead of adding to the aggregate, and rebuilds the pools; a Kitava change rebuilds them
+  again.
+  `PoolsFor` derives the increases once per pool build and stores them in the pools, so the monster-attack evade
+  rolls, the panel rows and the spell crit consumers read the same numbers; the uncapped resistance values stay
+  untouched, and Iron Reflexes' converted evasion keeps the overcapped increase once.
+  Automated checks cover below/equal/above cap, the 90 maximum, both penalties, flag removal and override, additive
+  behaviour, spell/attack isolation and the Iron Reflexes conversion.
+  Combined automated checks retain the 830 +45% =1204 armed chance and complete signed critical cancellation.
+  Purity-aware raw replacements now remove the aura contribution for that exact key, including explicit zero maxima.
+  Real aura/catalog/pool regressions pass; the corrected aura-override composition needs a native recheck.
+  The resolved stack needs native rechecking; the following thirteen checks belong to original head `39cbda2`.
+  Real-client stat checks verified evasion 15 → 22 and spell crit 500 → 725 at 120% resistances,
+  raised maxima, replacement of global inputs, both Kitava penalties, flag removal and relog.
+  Ascendancy allocation remains part of the separate lifecycle change.
+  See [11](../docs/protocol/11-skills.md) §4, §5 and §12.
+- **Projectiles.** One chronological runtime drives production gem/bow flight, contacts and continuation.
+  It runs at 30 Hz boundaries with subtick contacts and commits damage/rewards before network output.
+  Native gem skill records derive projectile count, pierce, chain, fork, split and return from shared parameter rules.
+  These display-only projections respect prohibitions and refresh after support removal without changing release inputs.
+  Missing projectile metadata allows generic panel parameters while executable release remains unavailable.
+  Release captures position and offense; target movement, evasion, defenses and impales resolve on contact.
+  Pause freezes the game horizon, transfer/retirement invalidates epochs, and released shots survive later actions.
+  Real-input held-output, moving-target, wall, evasion, pierce, return, pause, transfer, impale and actor-scale checks
+  exercise this same runtime. Native bow/skill controls and animation alignment still require client validation.
+  Straight flight uses captured ground plus `Game_PROJECTILE_HEIGHT` (default 5); missing captures use the bare offset.
+  Creation, glide and stop retain the same height; independent effects still follow client terrain.
+  Platforms/doodads still need a surface model (#182). Integer walk estimates and shared radius remain approximations.
+  Code: Core `Projectiles/`, Gateway `Projectiles/`, `Program.Bows.cs`, `Program.Combat.cs` and `ClientState.cs`.
+  Docs: [framework](../docs/game/projectile-framework.md), [11](../docs/protocol/11-skills.md) section 10.
+- **Combat.** The player's default attack kills monsters with server-side damage (no monster armour yet; each damage
+  type of a hit takes the monster's own base resistance with the hit's penetration subtracted from the capped value,
+  `HitMitigation`/`Penetration`; the player's hit lands at the attack animation's contact keyframe, a monster's still
+  at half its attack time).
   Monsters use their first granted effect and swing back; their attacks roll player evasion and then go through armour
   and block.
   Ordinary physical melee hits can trigger native player TakeHit recovery through 0x1d1.
@@ -368,6 +635,31 @@ Part of [Status](../Status.md); what to build next in this area is in
   every 500 ms.
   Item mods count through the global item stats;
   346 varieties with NPC / ControlZone / ... components are refused.
+- **Critical-strike elemental resistance rules (Inevitable Judgement).** The hit's
+  already-rolled critical boolean decides the resistance: the packet rolls once (the original per-type draws), the
+  existing single critical draw keeps its original place after them, and the mitigation resolves on the
+  already-rolled packet without a second roll — a critical elemental hit with
+  `critical_strikes_ignore_elemental_resistances` mitigates with an effective resistance
+  of zero, negative included, overriding any penetration; the attack-only variant covers attacks only; a
+  non-critical elemental hit keeps its capped resistance and `non_critical_strikes_penetrate_elemental_resistances_%`
+  (10) subtracts after the cap, stacked with the hit's general penetration;
+  `cannot_penetrate_or_ignore_elemental_resistances` restores the plain capped resistance.
+  Physical, chaos and damage over time are outside the rules; Inevitable Judgement (graph node 48214) grants the
+  generic ignore and the 10 penetration through the ordinary passive stat sum.
+  The shared helper (`HitResistances`, the Gateway's `MonsterDamage`) covers default attacks, bows and gem hits.
+  Default and area damage logs name the decision; gem projectiles emit a separate resistance trace.
+  Core and Gateway checks cover positive/negative resistance, maximum independence and the node's exact stat keys.
+  Eight native checks read monster life: fixed 100 fire dealt 60 normally and 70 with non-critical penetration.
+  Guaranteed critical hits dealt 150 with generic or attack-only ignore, and 90 after removal or prohibition.
+  Those captures belong to original head `13c41e5`; combined penetration/modifier/bow paths need native rechecking.
+  Automated checks preserve same-key source sums, fractional totals, target damage taken and the original RNG order.
+  Sequential C24 handler tests read real `/set_stat` changes after a prior hit on the same connection and target.
+  Skill `0x102`, sequence 0 and flags `0x408` give ignore 300, ordinary critical 330 and prohibition 240.
+  Friendly and hostile controls pass without a production hostility change.
+  The combined run labelled `462c883` used a DLL proven by hash to be #225 `4a71968`; its ninth case is not #226 proof.
+  Ascendancy allocation remains in its separate lifecycle change.
+  Code: `HitResistances.cs`, `HitMitigation.cs`, Gateway (`MonsterDamage`).
+  Docs: [20](../docs/protocol/20-damage.md) §4.
 - **Damage model (foundation, with armour/evasion).** A hit is a per-type `DamagePacket`;
   `DamageConversion` handles the game's physical, lightning, cold, fire, chaos order, chained conversion, skill/global
   precedence, the 100% cap and gain-as-extra.
@@ -383,8 +675,25 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live checks covered absorption, regeneration, interrupted recharge and chaos bypass.
   Special ES keystones, leech/recoup and conditional substitutions remain unimplemented.
   See [ES scope](../docs/protocol/20-damage.md#player-energy-shield-2026-10-25).
-  Not yet: penetration/exposure, added damage, increased/more support modifiers, ailment
-  application/duration and monster resistances ([20](../docs/protocol/20-damage.md)).
+  Maximum-mana added lightning has original-head native checks and resolved automated checks.
+  Not yet: exposure, aura-dependent penetration, other added damage,
+  increased/more support modifiers and outgoing ailment application/duration ([20](../docs/protocol/20-damage.md)).
+  Incoming ordinary monster basic-contact ailments now have runtime and Gateway coverage:
+  critical fire ignite, cold chill/freeze and critical lightning shock, with avoidance, expiry, immunity, lethal ignite/ES and freeze action cancellation.
+  Native checks verify real monster ignite/avoidance, lethal death-panel/checkpoint behavior and nonlethal RF.
+  Alternative ailments and hostile spell/projectile adapters remain unimplemented.
+  See [Gambler](../docs/game/gambler.md) for the exact bounded scope.
+  Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
+  attack-only variants, the cannot-penetrate flag; DoT and physical take none).
+  Player and skill contributions to the same raw penetration stat add without overwriting either source.
+  Nine native checks verified fixed 100-fire hits for 60 → 80 → 90 → 100 damage as penetration stacked,
+  the prohibition returning 60, cold penetration giving 120 against zero resistance, and chaos 75 → 105.
+  Each check read the actual native monster life after the authoritative update.
+  Those captures belong to original head `0d800d1`; resolved bow and target-modifier paths need native rechecking.
+  Target mods compose with base resistance before penetration; damage taken follows mitigation and rounds once.
+  Ten fresh composed native groups verify critical rounding, active overcap and default-attack mana lightning.
+  Actual mixed-hit Life losses are 160/220 before criticals, then 300 with ignore, 330 without and 240 prohibited.
+  Build versions and source hashes match `1366f48`; supported-gem, modifier and bow combinations remain automated.
 - Continuous life/mana recovery (2026-10-24): regeneration, flask recovery and self RF now share a 16 ms
   elapsed-game-time loop, replacing regeneration's 250 ms jumps; pool fractions and caps are preserved.
   Implemented with regression tests; real-client visual verification after Gateway restart is pending.
@@ -408,4 +717,3 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Effects that should be attached to bones (Righteous Fire's orbs, MiscAnimated RighteousFireOrb) are not sent;
   an effect object follows the player only by 0x1ba glides.
   Combat auras, Heralds and banners are not implemented; only the simple auras above use buffs.
-  Ruthless and SSF change nothing in game; towns are shared across leagues.

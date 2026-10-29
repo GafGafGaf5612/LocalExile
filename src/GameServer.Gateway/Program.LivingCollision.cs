@@ -28,65 +28,97 @@ partial class Program
 
     static void PublishPlayerPose(ClientState conn)
     {
-        if (conn.PeerTemplate is not { } template || !conn.PlayerSent || conn.Closed) return;
+        lock (conn.Monsters)
+        {
+            if (conn.Closed || conn.LeavingArea) { conn.Instance.RemovePlayer(conn.PeerId); return; }
+            if (conn.PeerTemplate is null || !conn.PlayerSent) return;
+            RefreshPeerScale(conn, CharacterPlayerStats(conn)[ActorScale.Final]);
+        }
+    }
+
+    // Called under the owner's lock. Replace only final scale in an immutable template, retaining creation stats,
+    // equipment and skills. Observers read published snapshots and never lock another connection's simulation.
+    static void RefreshPeerScale(ClientState conn, int scale)
+    {
+        if (conn.PeerTemplate is not { } template) return;
+        if ((template.Stats ?? []).SingleOrDefault(s => s.Key == ActorScale.Final).Value != scale)
+            conn.PeerTemplate = template = template with
+            { Stats = [.. (template.Stats ?? []).Where(s => s.Key != ActorScale.Final), (ActorScale.Final, scale)] };
+        if (!conn.PlayerSent || conn.Closed || conn.LeavingArea || conn.Instance is null) return;
         var p = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
-        conn.Instance.PublishPlayer(new(conn.PeerId, conn.PeerType, template, p.X, p.Y, conn.PlayerLife));
+        conn.Instance.PublishPlayer(new(conn.PeerId, conn.PeerType, template, p.X, p.Y, conn.PlayerLife, conn));
     }
 
     static async Task SyncInstancePlayers(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        var peers = conn.Instance.PlayersExcept(conn.PeerId);
-        var present = peers.Select(p => p.Id).ToHashSet();
-        foreach (uint id in conn.SeenPlayers.Keys.Where(id => !present.Contains(id)).ToArray())
-        {
-            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(id), $"player 0x{id:x} left instance");
-            conn.SeenPlayers.Remove(id);
-        }
-        foreach (var peer in peers)
-        {
-            bool exists = conn.SeenPlayers.TryGetValue(peer.Id, out var previous);
-            if (!exists || previous!.Life == 0 && peer.Life > 0)
+        var ids = conn.Instance.PlayersExcept(conn.PeerId).Select(p => p.Id)
+            .Concat(conn.SeenPlayers.Keys).Distinct().ToArray();
+        foreach (uint id in ids)
+            await Send(remote, stream, ciphers, [], null, atGate: () =>
             {
-                if (exists) await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(peer.Id), null);
-                var player = peer.Template with { GridX = peer.X, GridY = peer.Y, Life = peer.Life, Skills = [], QuestFlags = [], LeagueQuestFlags = [] };
-                await Send(remote, stream, ciphers, InstanceEntities.CreateObject(peer.Id, peer.Type, player.Blob()),
-                    $"create instance player {player.Name} 0x{peer.Id:x} at ({peer.X},{peer.Y})");
-                await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(peer.Id), null);
-            }
-            else
-            {
-                if ((previous!.X, previous.Y) != (peer.X, peer.Y))
-                    await Send(remote, stream, ciphers,
-                        Math.Max(Math.Abs(previous.X - peer.X), Math.Abs(previous.Y - peer.Y)) > 20
+                if (conn.Closed || conn.LeavingArea) return null;
+                var packets = new List<byte[]>();
+                // Read after waiting: queued creation/change must not restore an older scale or departed owner.
+                if (conn.Instance.Player(id) is not { } peer)
+                {
+                    if (conn.SeenPlayers.Remove(id)) packets.Add(InstanceProtocol.RemoveObject(id));
+                    return packets.SelectMany(p => p).ToArray();
+                }
+                bool exists = conn.SeenPlayers.TryGetValue(peer.Id, out var previous);
+                if (!exists || previous!.Life == 0 && peer.Life > 0)
+                {
+                    if (exists) packets.Add(InstanceProtocol.RemoveObject(peer.Id));
+                    var player = peer.Template with { GridX = peer.X, GridY = peer.Y, Life = peer.Life,
+                        Skills = [], QuestFlags = [], LeagueQuestFlags = [] };
+                    packets.Add(InstanceEntities.CreateObject(peer.Id, peer.Type, player.Blob()));
+                    packets.Add(InstanceProtocol.EnterWakeZone(peer.Id));
+                }
+                else
+                {
+                    if ((previous!.X, previous.Y) != (peer.X, peer.Y))
+                        packets.Add(Math.Max(Math.Abs(previous.X - peer.X), Math.Abs(previous.Y - peer.Y)) > 20
                             ? InstanceProtocol.Teleport(peer.Id, peer.X, peer.Y, 0x7fffffff)
-                            : InstanceProtocol.MoveTo(peer.Id, peer.X, peer.Y, .1f, 0x7fffffff), null);
-                if (previous.Life != peer.Life)
-                    await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(peer.Id, peer.Life), null);
-            }
-            conn.SeenPlayers[peer.Id] = peer;
-        }
+                            : InstanceProtocol.MoveTo(peer.Id, peer.X, peer.Y, .1f, 0x7fffffff));
+                    if (previous.Life != peer.Life)
+                        packets.Add(InstanceProtocol.LifeUpdate(peer.Id, peer.Life));
+                    int scale = (peer.Template.Stats ?? []).SingleOrDefault(s => s.Key == ActorScale.Final).Value;
+                    int before = (previous.Template.Stats ?? []).SingleOrDefault(s => s.Key == ActorScale.Final).Value;
+                    if (scale != before)
+                        packets.Add(InstanceEntities.StatsUpdate(peer.Id, [(ActorScale.Final, scale)]));
+                }
+                conn.SeenPlayers[peer.Id] = peer;
+                return packets.SelectMany(p => p).ToArray();
+            });
     }
 
-    static async Task CorrectMonsterCollisions(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
+    static Task CorrectMonsterCollisions(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
-        var corrections = new List<(uint Id, int X, int Y)>();
-        lock (conn.Monsters)
+        using (ProjectileMutation(conn))
         {
-            double now = conn.Clock.Elapsed.TotalSeconds;
+            double now = ProjectileWorldTime(conn);
+            var player = conn.Walk.Position(now);
+            var peers = conn.Instance.PlayersExcept(conn.PeerId).Where(p => p.Life > 0).ToArray();
+            // Every living body's cell and size once per frame (kept current as bodies are moved below), instead of
+            // recomputing each other monster's position for every monster: the overlap test was O(n²) walk queries.
+            var bodies = new List<(uint Id, int X, int Y, int Size)>(conn.Monsters.Count);
+            foreach (var (id, m) in conn.Monsters)
+                if (LivingCollision.Blocks(m)) { var p = m.Walk.Position(now); bodies.Add((id, p.X, p.Y, LivingCollision.Size(m))); }
+            int index = 0;
             foreach (var (id, m) in conn.Monsters)
             {
                 if (!LivingCollision.Blocks(m)) { m.CollisionPosition = null; continue; }
-                var current = m.Walk.Position(now);
+                int self = index++;
+                var current = (bodies[self].X, bodies[self].Y);
                 var previous = m.CollisionPosition ?? current;
-                var player = conn.Walk.Position(now);
-                int size = LivingCollision.Size(m);
+                int size = bodies[self].Size;
                 bool playerOverlap = conn.PlayerLife > 0 && !conn.Phasing
                     && Math.Max(Math.Abs(current.X - player.X), Math.Abs(current.Y - player.Y)) < size + 2;
-                bool peerOverlap = conn.Instance.PlayersExcept(conn.PeerId).Any(p => p.Life > 0
-                    && Math.Max(Math.Abs(current.X - p.X), Math.Abs(current.Y - p.Y)) < size + 2);
-                bool bodyOverlap = conn.Monsters.Any(pair => pair.Key < id && LivingCollision.Blocks(pair.Value)
-                    && ClientPathfinder.ObjectBlocks([new(pair.Value.Walk.Position(now).X, pair.Value.Walk.Position(now).Y,
-                        LivingCollision.Size(pair.Value))], current.X, current.Y, size + 1, size + 4));
+                bool peerOverlap = peers.Any(p => Math.Max(Math.Abs(current.X - p.X), Math.Abs(current.Y - p.Y)) < size + 2);
+                bool bodyOverlap = false;
+                foreach (var other in bodies)
+                    if (other.Id < id && Math.Max(Math.Abs(other.X - current.X), Math.Abs(other.Y - current.Y)) < other.Size + size + 1
+                        && ClientPathfinder.ObjectBlocks([new(other.X, other.Y, other.Size)],
+                        current.X, current.Y, size + 1, size + 4)) { bodyOverlap = true; break; }
                 if (current == previous && !playerOverlap && !peerOverlap && !bodyOverlap) continue;
                 var blockers = conn.MonsterBlockers(id, includePrevious: true);
                 bool Floor(int x, int y) => conn.Layout.WalkableFor(x, y, size) && !conn.Barrier.Contains((x, y));
@@ -95,18 +127,16 @@ partial class Program
                     stop = CollisionEscape.Find(stop, conn.Layout.GridW, conn.Layout.GridH, Floor, blockers, moverSize: size) ?? stop;
                 if (stop != current)
                 {
+                    // Only the server's estimate moves: the client paths every monster around the other bodies itself
+                    // and paths again when a walk ends short (07 §5), so an ActionEnded + Teleport here only made the
+                    // monster stop and jump on screen. Like the client, the estimate then paths again to the same target.
                     m.Walk.Teleport(stop.X, stop.Y, now);
-                    m.LastTarget = null;
-                    corrections.Add((id, stop.X, stop.Y));
+                    if (m.LastTarget is { } target) m.Walk.Order(target.X, target.Y, now);
+                    bodies[self] = (id, stop.X, stop.Y, size);
                 }
                 m.CollisionPosition = stop;
             }
         }
-        foreach (var p in corrections)
-        {
-            await Send(remote, stream, ciphers, InstanceProtocol.ActionEnded(p.Id), null);
-            await Send(remote, stream, ciphers, InstanceProtocol.Teleport(p.Id, p.X, p.Y, 0x7fffffff),
-                $"living collision stop 0x{p.Id:x} at ({p.X},{p.Y})");
-        }
+        return Task.CompletedTask;
     }
 }

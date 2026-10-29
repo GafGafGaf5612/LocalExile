@@ -134,12 +134,17 @@ compact uint n, n × (compact uint stat key, compact int value)
 
 ## 4. Commands (Gateway, `Program.Commands.cs` `Commands`)
 
+`/hit`, `/spellhit` and `/blockhit` are synthetic incoming enemy contacts for the
+[recent-hit armour model](../game/steel-willed-armour.md), including blocked and zero-damage results.
+They refuse paused, leaving, closed or dead owners before combat mutation.
+`/set_stat` can replace raw chance inputs 20680/8404; authoritative outputs 4534/12268 always come from contact history.
+
 | Command | Effect |
 |---|---|
 | `/commands [page \| name]`, `/com …` | lists the commands, 8 per page (`/com 2`, `/com 3`, …; after four blank lines a green header, then each command's syntax only), or the full usage of one command (`/com item`; otherwise every command whose name contains the text) |
 | `/raw <hex>` | sends the bytes as one S→C message (dev probe; spaces allowed) |
 | `/set_speed <percent>` | 0x1b3 `movement_velocity_+%` = percent − 100 on the player; the server's walk estimate uses 37 × percent / 100 cells/s |
-| `/set_stat <stat name or client key> <value>` | records the stat for the player, sends the player's stats (0x1b3) with the attack's recomputed final stats, and the skill again (0x2ba, [11](11-skills.md) §4). Names are Stats.dat Ids (key = row + 1). An attribute (`strength`, `dexterity`, `intelligence`) also sets the `virtual_*_for_requirements` value: the client's gear and gem requirement checks read those, not the attributes ([13](13-items.md) §2d) |
+| `/set_stat <stat name or client key> <value\|off>` | replaces a raw stat or removes its development replacement |
 | `/spawn_mob <row, Id or name>[@level] [friendly] [normal\|magic\|rare\|unique] [name]` | 0x20 + 0x2b9 + 0x1a9 for a MonsterVarieties row at a level (default 1), hostile unless `friendly`, with a rarity and an optional name, a few cells from the player (§5) |
 | `/set_level <1 to 100>` | sets the character's level in the account store (Auth control op `set_level`) and sends it in place: the level's experience to the Player component (0x2ba, [04](04-player-entity.md) §4.6; the client derives the level from it), the level's stats (0x1b3: level, life, mana, accuracy, …, [11](11-skills.md) §4), the skills again (0x2ba Actor) and full life (0x1b1) |
 | `/heal` | full life and mana for the player (0x1b1); from 0 it also revives |
@@ -151,7 +156,7 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/add_passive <PassiveSkillGraphId>` | allocates one passive node through the same checks as C→S 0x34, saved and sent back (0x33) |
 | `/reset_passives` | refunds every passive, saved, and sends the tree (0x33) |
 | `/resistances` | the character's uncapped and capped fire/cold/lightning/chaos resistance |
-| `/hit <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: damages the player through the resistance model (physical through armour, both with the additional damage reduction of Endurance Charges), showing the mitigation used and the life left |
+| `/hit <type> <damage>` | damages the player through resistance and enabled hit mitigation; see below |
 | `/accuracy [monster level]` | final accuracy rating and attack hit chance against a normal and an evasive monster of that level (default: your level; spells always hit) |
 | `/defences [monster level]` | armour, physical reduction and evasion with the chance to evade a monster of that level |
 | `/auras` | active auras, their flat/percent reservation, reserved and unreserved mana, reservation efficiency and aura effect ([11](11-skills.md) 13) |
@@ -175,9 +180,26 @@ compact uint n, n × (compact uint stat key, compact int value)
 | `/mob_tp [0x<id>]` | 0x1b7: teleports the monster next to the player |
 | `/mob_mods [id] [mod …\|pool]` | a monster's affixes and rare name; with mods, creates it again with those affixes; `pool`: what it could roll ([14](14-monster-packs.md) §5) |
 | `/npc <row, Id or name> [rotation°]`, `/npcs`, `/pos` | creates an NPC next to the player ([17](17-npcs.md)), lists the NPCs, prints the player's cell |
-| `/sockets [colours]` | the held item's sockets and links: R, G, B, W, linked within a word and unlinked between words (`/sockets RRGBBB` a 6-link, `/sockets RRG B` a 3-link and a single); without colours it shows the layout. Up to the base's socket capacity; gems stay in their sockets ([13](13-items.md) §7) |
+| `/sockets [colours]` | the held item's sockets and links: R, G, B, W, linked within a word and unlinked between words (`/sockets RRGBBB` a 6-link, `/sockets RRG B` a 3-link and a single); without colours it shows the layout. Up to the base's socket capacity; `Game_SOCKET_CAPACITY=1..6` (dev) replaces it, e.g. a 6-link wand; gems stay in their sockets ([13](13-items.md) §7) |
 | `/ai [on\|off]` | monster AI for this connection (on by default): monsters chase the player (below); emerge monsters rise either way |
 | `/cosmetic portal <name, number or part of a name>`, `/cosmetic list [filter]`, `/cosmetic off` | the shop's portal effects, as game data ([21](21-hideouts.md) §5). Several effects containing what was typed are listed with their numbers rather than the first being picked |
+
+`/set_stat` names are Stats.dat Ids (client key = row + 1).
+It sends player stats through 0x1b3 with recomputed attack stats, then skills through 0x2ba ([11](11-skills.md)).
+An attribute (`strength`, `dexterity`, `intelligence`) also sets its `virtual_*_for_requirements` value.
+The client's gear and gem checks read that value ([13](13-items.md) section 2d).
+`off` removes the development replacement, including that requirement alias for an attribute name.
+Supported raw critical, resistance and chaos-hit armour inputs rebuild their typed pools on replacement/removal.
+In particular, `/set_stat base_armour_applies_to_chaos_damage 0` overrides an allocated source with false;
+`off` restores the source's own value.
+
+`/hit` accepts fire, cold, lightning, chaos or physical.
+Physical takes armour plus additional physical reduction; elements take resistance plus elemental reduction.
+Chaos takes resistance and, when key 12064 is enabled, the existing armour model on the resisted damage.
+It receives no additional physical reduction.
+`/spellhit` and `/blockhit` share the same mitigation, preserving their suppression/block rules.
+All three apply Fortification before ordinary ES handling; chaos still bypasses ES.
+See [incoming chaos-hit armour](20-damage.md#2e-armour-against-incoming-chaos-hits).
 
 Every player can use every command; there are no permissions yet.
 
@@ -318,10 +340,14 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   animation, along the client's own path around walls, on the terrain height**. Alternatives: **0x1ba** (Positioned
   move) only slides it in a straight line through walls, at `duration = cell distance / value` (value ≈ cells per
   second; `0x141e30c90` → `0x141e34120`), keeping the old height; **0x1b7** teleports it.
-- **AI** (Gateway, `RunMonsterAi`; live 2026-10-17). Every 500 ms per connection: a monster within its MonsterVarieties
-  `MaxAgroRange` (taken as grid cells: 60 for Hungry Corpse, 105 for most) of the server's estimate of the player starts
-  chasing: a Move action (0x1ab, 0x2909) to the cell `ObjectSize + 1` from the player, re-sent when that cell moves by
-  3+ cells; beyond twice the range it gives up (a Move to where it stands). The server follows each monster's walk with
+- **AI** (Gateway, `RunMonsterAi`; live 2026-10-17). Every 100 ms (`MonsterAiTickMs`) per connection: a monster within
+  its MonsterVarieties `MaxAgroRange` (taken as grid cells: 60 for Hungry Corpse, 105 for most) of the server's estimate
+  of the player starts chasing: a Move action (0x1ab, 0x2909) to its own cell around the player, re-sent when that cell
+  moves by 3+ cells; beyond twice the range it gives up (a Move to where it stands). The cells come from
+  `MonsterSurround`: the nearest chasers choose first, each takes the free cell on the innermost ring (its size + 3
+  cells from the player) closest to its bearing, bodies never overlap, and a full ring sends the rest one ring out to
+  wait. A ring-0 slot is kept while it stays free and on the ring. Before, every monster aimed at the cell on the line
+  toward itself, so a pack from one side queued in a wedge and only the front ones attacked. The server follows each monster's walk with
   a `WalkEstimator` (A* on the walk map) at MonsterVarieties `MovementSpeed` cells/s (8 for Hungry Corpse, 44 for Haku)
   and reports that position as the action's start; live, the chase showed no snapping, so the estimate keeps up. All
   sends go through one lock per connection (the AI tick and the read loop share the Salsa20 stream).

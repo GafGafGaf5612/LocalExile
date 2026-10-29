@@ -7,6 +7,13 @@ locked (§4). Requirements are in §2; supports are still planned (Roadmap "Gems
 
 ## 1. The gem in the item data (SkillGem component)
 
+Family gem-level stats now raise effective active-skill levels in the common supported-skill calculation.
+The Herald/Vaal/Link families come from GemTags stat columns; Raise Zombie uses SkillGems' minion-level stat.
+Both skills of a Vaal gem share the gem's family bonus; support gems remain outside these active-only bonuses.
+Supported level bonuses and family sources sum before clamping to at least one.
+Actor skill records and skill stats use that same effective level without changing SkillGem experience or quality.
+Intrinsic requirements remain unchanged; see [scope and checks](../game/ascendancies.md#family-gem-levels).
+
 The SkillGem component's reader `0x14246eb00` (writer `0x14246ea40`) takes, in order:
 
 | Data | Stored at | Use |
@@ -49,9 +56,13 @@ The variant: the copy `0x14246fa50` checks +0x3c against the `GemVariants` count
 count in the 3.29 layout) and keeps 0 when it is outside the list. The u16: `0x14246fae3` and `0x1424732c3` look it up
 in `Data/IndexableSupportGems.dat` when it is not 0.
 
-The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`,
-`GemFlags`: 0, or 4 for a locked level); saves keep the experience, the variant and the flags (`GemExperience`,
-`GemVariant`, `GemFlags`).
+The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0` (`Item.Payload`, `GemVariant`).
+Serialization derives flag bit 5 (`0x20`) from a positive variant and clears a stale bit 5 for variant 0, including
+gems nested inside sockets. Level-lock and other flags are preserved; saves retain the original `GemFlags`.
+The network reader copies the raw flags byte into +0x10 (`0x14246eb46..0x14246eb5b`), without applying the native
+copy's bit-5 normalization (`0x14246fab8..0x14246fae3`). A variant index alone therefore leaves the native variant
+marker unset even though the server grants the correct variant skill. Wire regression tests cover both item paths;
+the transfigured item-name display still needs a native retest.
 
 ## 2. The game data
 
@@ -140,7 +151,8 @@ The server writes the component as `i32 experience, u32 variant, u8 flags, u16 0
   - **Cooldown:** the cooldown of the gem's level (GrantedEffectsPerLevel `Cooldown`, the auras' 1.2 s) is the one
     the server enforces and sends with the skill ([11](11-skills.md)); the server allows one use per cooldown even when
     `StoredUses` is higher.
-  - **Vaal skills** need their `VaalSouls`; souls are not gathered yet (Roadmap "Gems later"), so a Vaal skill is refused.
+  - **Vaal skills** have a soul collector and native budget payloads; unsupported Vaal executors remain refused.
+    See [27-vaal-souls.md](27-vaal-souls.md); collection does not enable casting.
 - **Not created** (`ItemCatalog.FindGem`, `/gem`): the "[DNT]" placeholder variants, the "[UNUSED] …", "[DNT] …" and
   "WIP …" gem rows, the awakened supports other than Awakened Empower, Enhance and Enlighten, and the Vaal variants
   whose base skill is only a placeholder's (Vaal Fireball has only its normal variant). A Vaal variant's name is "Vaal "
@@ -199,6 +211,30 @@ sets the offer's `QuestFlag` (the "taken" flag) in one save. The Gateway now off
 `Create` can build (level-1 items and normal flasks), instead of the hardcoded offers 0/1/2/8; unbuildable rows
 (level-8 magic armours, magic belts) are skipped, as are offers with no buildable choice. Checked live 2026-10-26 on
 offer 3 after `/quest_flag a1q4-PlacedGlyphs`: the six Witch gems, claim, flag and repeat refusal.
+
+**Local Nessa shop.** This checkout restores Nessa's full testing assortment independently of character class and
+quest completion (`NpcShops.Tabs`, `fullGemStock`). Every writable gem with a positive drop level and a creatable
+variant is included, including transfigured, Trarthan and creatable Vaal variants. Red/green/blue skill and support
+tabs stay separate; White Skills contains both white active and support gems. Full 12-by-12 pages continue as
+numbered tabs instead of dropping overflow. These colour tabs are permanent development tools: they must always
+contain the complete creatable assortment without quest or class gates, so command and mechanic development
+does not depend on completing the campaign.
+The separate Skills tab is the future gameplay shop: only ordinary gems unlocked by the character's quest flags
+and class through GemVendorStock.Stock, at the existing vendor prices. Without progression input it is empty;
+alternative variants are not unlocked implicitly. Active gems precede supports; each kind groups red, green, blue
+and white gems, then orders by drop level and name within each colour. Supports start at column zero of the next
+row, leaving the active row's remaining cells empty; if necessary they continue on the next page. It also paginates
+if needed. The distinction is documented in NpcShops.cs; opening the shop sends no development explanation to
+the player's chat. Keep progression restrictions confined to Skills when changing this shop.
+Gems on every Nessa tab, including Skills and Goods, have unlimited stock. Each successful purchase pays the normal
+price and receives a fresh player inventory ID; the shop template retains its ID, cell, price, quality and variant.
+A manager-1 remove/add refresh keeps it visible and available for another purchase without reopening the shop.
+An unpaid or failed purchase leaves the template available and grants nothing; payment and delivery remain atomic.
+Other vendors and Nessa's non-gem goods remain finite.
+Variant indices survive purchase and save/reload. Existing catalog exclusions still apply to placeholders and
+unsupported awakened rows. The client data does not provide the former Anomalous/Divergent/Phantasmal quality
+variants; those names are not fabricated. Automated stock/serialization tests cover this local assortment;
+its updated client display still needs a live check. Other vendors retain quest progression below.
 
 **Vendors.** The currency/flask/jewellery vendors that also sell gems (`GemVendorStock.Sells`: Nessa, Yeena,
 Clarissa, Petarus and Vanja, Lani, Lilly Roth, Siosa) give seven tabs - Red/Green/Blue Skills and Support, White

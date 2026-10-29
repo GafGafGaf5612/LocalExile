@@ -209,14 +209,20 @@ sealed partial class Program
     // What dying monsters drop (ItemDrops.cs).
     // Magic and rare items (ItemRolls.cs).
     internal static readonly ItemRolls Rolls = new(Items);
+    // Unique items the server can create (names/art from the client data, mods curated: UniqueCatalog).
+    internal static readonly UniqueCatalog Uniques = new(Items);
     internal static readonly EssenceCrafting Essences = new(Items, Rolls);
     internal static readonly BenchCrafting Bench = new(Items, Rolls);
+    internal static readonly HarvestCrafting Harvest = new(Items, Rolls);
     internal static readonly ItemDrops Drops = new(Items, Rolls);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
     internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);
     // The passive tree's nodes (PassiveSkills.dat by PassiveSkillGraphId).
     internal static readonly PassiveTree Passives = new();
+    internal static readonly OrdinaryPassiveRules OrdinaryPassives = new();
+    internal static readonly AscendancyCatalog Ascendancies = new();
+    internal static readonly AscendancyRules AscendancyRules = new(Ascendancies);
     // How close (cells) the player must be to a dying monster to gain its experience. Game_XP_RANGE overrides it.
     internal const int GodRegenPerSecond = 10_000;
     // /god regenerates 100% of maximum life per second (more than Righteous Fire's 90% burn).
@@ -242,6 +248,8 @@ sealed partial class Program
     internal const string RighteousFireRingAo = "Metadata/Effects/Spells/ri_fire/rifire.ao";
     // The projectiles' explosion (Fireball's, MiscAnimatedArtVariations fireball_standard variant 0).
     internal const string DefaultProjectileImpactAo = "Metadata/Effects/Spells/fireball/explode_new2.ao";
+    // Secondary KB explosion: kinetic_blast_small, distinct from the unscaled main-impact kinetic_blast_large art.
+    internal const string KineticBlastExplosionAo = "Metadata/Effects/Spells/cluster_burst/mini.ao";
     // The player's own tick (RunPlayerTick): regeneration and damage over time.
     internal const int PlayerTickMs = 250;
     // How often Righteous Fire's ring is moved to the player (RunRingFollow), and how far ahead it aims (our own number).

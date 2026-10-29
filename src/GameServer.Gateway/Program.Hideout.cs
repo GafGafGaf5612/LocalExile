@@ -13,6 +13,7 @@ partial class Program
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         if (conn.Closed || !PlayerActionCurrent(conn, action) || !PlayerWalk.InWalkUpRange(stop, conn.HorticraftingAt, conn.StationaryInteractionSize(conn.HorticraftingObject))) return;
         conn.BenchOpen = false;
+        conn.HarvestOpen = true;
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HorticraftingUi),
             "0x007b open Horticrafting Station recipe browser", still: () => PlayerActionCurrent(conn, action));
@@ -22,6 +23,7 @@ partial class Program
     static async Task OpenCraftingBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
+        if (conn.Ruthless) return;
         if (!TryBeginObjectWalk(conn, requestedAt, conn.CraftingBenchAt.X, conn.CraftingBenchAt.Y, conn.StationaryInteractionSize(conn.CraftingBenchObject), out var objectWalk)) return;
         var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 crafting bench ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
@@ -29,6 +31,7 @@ partial class Program
         if (conn.Closed || !PlayerActionCurrent(conn, action)
             || !PlayerWalk.InWalkUpRange(stop, conn.CraftingBenchAt, conn.StationaryInteractionSize(conn.CraftingBenchObject))) return;
         conn.BenchOpen = true;
+        conn.HarvestOpen = false;
         await RefreshBenchBalance(remote, stream, ciphers, conn);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.CraftingBenchUi),
             "0x007b open the crafting bench window (type 0)", still: () => PlayerActionCurrent(conn, action));
@@ -36,7 +39,7 @@ partial class Program
 
     static async Task CraftBench(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, (int Recipe, bool Replace) request)
     {
-        if (!conn.BenchOpen || HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
+        if (conn.Ruthless || !conn.BenchOpen || HideoutCatalog.ByArea(conn.Layout.Hash) is null) return;
         var items = ItemsOf(conn);
         var stash = PersonalStashOf(conn);
         var result = ItemMoves.CraftAtBench(items, stash, Bench, request.Recipe, request.Replace, Random.Shared);
@@ -60,6 +63,7 @@ partial class Program
 
     static async Task RefreshBenchBalance(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool clear = false)
     {
+        clear |= conn.Ruthless;
         if (clear && !conn.BenchBalanceSent) return;
         IReadOnlyList<InventoryItem> snapshot = clear ? [] : Saves.Atomically(() => BenchBalance.Snapshot(PersonalStashOf(conn), Items, Bench));
         byte[] packet;
@@ -80,6 +84,7 @@ partial class Program
     // switches back.
     static async Task OpenGuildStash(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceTransfer.UseSkillOnObject use, double requestedAt)
     {
+        if (conn.Ssf || conn.GuildStashObject == 0) return;
         if (!TryBeginObjectWalk(conn, requestedAt, conn.GuildStashAt.X, conn.GuildStashAt.Y, ClientState.StashBlockerSize, out var objectWalk)) return;
         var (action, now, here, stop, arrive) = objectWalk;
         Console.WriteLine($"[gateway] {remote} <= 0x0024 guild stash ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");

@@ -52,7 +52,7 @@ Item component vtables (slot 4 write / slot 5 read). The ones with a bare `ret` 
 | Charges | `0x143639a48` | `0x14249d4b0` | signed compact (`0x141e490e0`) |
 | Stack | `0x143634b10` | `0x1423f4b30` | u16 stack size (§4a) |
 | SkillGem | `0x143637298` | `0x14246eb00` | i32 experience (-1: one level over the cap), u32 +0x3c the variant, u8 +0x10 flags (bit 2: level locked), u16 +0x40 |
-| Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue (seen), 4 white (assumed) |
+| Sockets | `0x1435df9a0` | `0x1421e2e20` | u8 = bit0/bit1 (special: nothing more) \| socket count << 2 \| link group count << 5; per socket u8 colour << 1 \| has gem, then the gem's item data **without** the length prefix; then a u8 per link group (its socket count). Colours: 1 red, 2 green, 3 blue, 4 white (all seen live 2026-10-26) |
 | Armour | `0x14363ad40` | `0x1424affc0` | u8 0..0x20 (stored at +0x28; 0x20 also sets +0x2a) |
 | LocalStats, AttributeRequirements, Weapon, Usable, Flask, Quest, Shield, RenderItem | `0x14363ab88`, `0x1435dfb80` … | `ret` | nothing |
 
@@ -60,9 +60,11 @@ Minimal item the server sends: flags 0, Base with only the visual identity, Mods
 
 **Base defences:** an `ArmourTypes.dat` row is keyed by `BaseItemTypesKey` (the BaseItemTypes row) and gives
 `ArmourMin`/`ArmourMax` and `EvasionMin`/`EvasionMax`. The client interpolates between them with the item's base
-percentile; our items send the Armour component's default `0`, so the server uses the minimum for the character's
-armour and evasion. Only the base body armour, helmet, gloves and boots are counted for now; mods, quality, local
-defence rolls and shields are not.
+percentile; our items send the Armour component's default `0`, so the server uses the minimum. The equipped body
+armour, helmet, gloves, boots and shield count, and each piece adds its own local flat/increased defence mods and item
+quality (`ItemDefences`: `local_base_physical_damage_reduction_rating`, `local_base_evasion_rating`,
+`local_energy_shield`, `local_evasion_rating_and_energy_shield`, their `+%` forms and the combined ones; +1% per
+quality on armour, evasion and energy shield).
 
 ## 2a. Mods: rarity and mod lists
 
@@ -176,12 +178,16 @@ passives' stats (`CharacterStatSources`), so it reaches the pools (`PassiveBonus
 attributes, resistances, block, suppression, speeds, crit, accuracy …) and the stats the client shows (0x1b3), the same
 way a passive's would. They are sent again when equipment changes (`SendEquipment`).
 
-Local mods on the main hand (row 2, else 14) change the weapon profile: `local_critical_strike_chance_+%` scales the
-WeaponTypes base critical chance, `local_attack_speed_+%` multiplies the attack rate (like a more, before the global
-increases) and `local_accuracy_rating` adds flat accuracy. Weapon damage, armour, evasion and energy shield of items are
-not modelled yet, so their local mods change nothing. Verified live 2026-10-20: +20 maximum Life, +30% fire resistance
-and +25 strength on a ring, a local attack speed mod on the wand, and spell damage on the wand raising Fireball's
-damage (11-skills.md §9).
+Local mods on the main hand (row 2, else 14) change the weapon profile (`ItemWeapons`): `local_physical_damage_+%`,
+`local_minimum/maximum_added_physical_damage` and item quality on the weapon's physical damage (quality is a separate
+× (1 + quality/100) multiplier after the local increases, the post-3.25 rule; it does not touch the elemental/chaos
+added damage), `local_attack_speed_+%` on the attack rate (like a more, before the global increases),
+`local_critical_strike_chance_+%` on the WeaponTypes base critical chance, `local_accuracy_rating` as flat accuracy,
+and the local added elemental/chaos damage (`local_minimum/maximum_added_fire/cold/lightning/chaos_damage`, the
+elemental ones raised by `local_elemental_damage_+%` and `local_attacks_with_this_weapon_elemental_damage_+%`) in every
+hit the weapon makes. The armour, evasion and energy shield side is in "Base defences" above. Verified live 2026-10-20:
++20 maximum Life, +30% fire resistance and +25 strength on a ring, a local attack speed mod on the wand, and spell
+damage on the wand raising Fireball's damage (11-skills.md §9).
 
 ## 2d. Requirements and inactive items
 
@@ -209,6 +215,19 @@ off, a lower level) stays on but does nothing: no mod stats, no local weapon mod
 kept). After each change, items that fall short are switched off one at a time, counting the attributes of every
 active item including their own, until all active items are satisfied; an inactive item comes back when the character
 and the other active items meet its requirement without its own attributes.
+Requirements use the complete class/passive/active-equipment flat bucket scaled by the generic attribute increases.
+An inactive item's own flat and increased attributes are excluded when testing whether it can return.
+An active item may retain its own flat and increased attributes under the existing staged client policy.
+Each activation/removal step recomputes final attributes through `AttributeModifiers`;
+no final value becomes a raw source.
+Weapon swaps count only the hands' current rows, and raw attribute development overrides replace their own source key.
+Calculated zero attributes remain zero in the panel and requirement stats, including after pool record clones.
+Automated activation, retention, cascading removal, source clearing and swap checks pass.
+Historical controls at `60044ad` reduce and restore a Marauder's attributes while a Plate Vest remains equipped.
+Its 19 Armour disappears below the raw 12-Strength requirement and returns when the requirement is met again.
+Native all-zero requirement values, source clearing and relog are also verified.
+Own-item percentage retention, cascading equipment and weapon-set combinations retain automated coverage.
+See [attribute calculation and rounding model](11-skills.md#4-the-default-attack).
 
 A gem socketed in a worn item whose level or attribute requirement the character no longer meets makes that item
 inactive as well (`CharacterStatSources`: the gem's requirements are checked per socket with `GemRequirementsUnmet`),
@@ -226,6 +245,30 @@ red, the wand still in hand). Moving the item out of its row is the only way to 
 
 **Stale stats:** S→C 0x1b3 only sets the stats it lists, so every full player stats send also sends 0 for each stat
 sent before that is gone now (`PlayerStatsWithCleared`).
+
+## 2e. Unique items and Mageblood
+
+The client data has a unique's name (`Words` wordlist 6) and its artwork (`ItemVisualIdentity`, linked to the word by
+`UniqueStashLayout`), but **no table maps a unique name to its mods**: unique mods are ordinary Mods.dat rows with
+GenerationType 3 and an empty Name. The server therefore curates each unique's mod list (`UniqueCatalog`): base type,
+the mod rows and their value ranges, from the game's data (poedb for 3.29). `/item <unique name>` creates it with the
+name words and artwork, unique rarity and the fixed explicit mods; the base type's implicits are rolled as usual (for
+Mageblood the Heavy Belt's +25-35 Strength). Checked live 2026-10-26: the client shows the Mageblood name, unique art
+and full tooltip. Only Mageblood is defined so far; unique drops, chancing and the other uniques remain open (#60).
+
+**Mageblood's mechanic** (`Program.Mageblood`): while the belt is worn (and its requirements met), the leftmost N (2-4,
+from `num_magic_utility_flasks_always_apply`) magic utility flasks in the flask bar constantly apply their effects. The
+stats are added where a running utility flask's stats are added (pools, the client's stats, phasing), scaled like a use
+(the flask's own mods and the character's flask effect/duration), with no charges, timer or buff packets. Magic utility
+flasks cannot be used while it is worn: the client enforces the item mod and the server refuses the use as a backstop.
+The character's stats are re-sent when the flask bar changes while it is worn (`PlaceItem`, `HeldOntoItem`, `PickUpItem`)
+and on equipment changes. Live 2026-10-26: placed flasks applied at once, and a flask key did nothing.
+The running effects and the permanent ones are combined before the strongest-per-(effect, stat) pass: a flask that was
+already used when the belt went on counts once, not twice, while different effects still stack; the running effects keep
+their own duration and stay after the belt is removed.
+
+Not modelled yet: the flask buff icons/permanent durations, the "Magic Utility Flask Effects cannot be removed" backstop
+(the client enforces it), the Foulborn rightmost variant, and Enkindling/instilling.
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 
@@ -270,7 +313,7 @@ All senders sit together at `0x14215f300`… and queue through `0x14216e940`.
 | 0x16 | 5 + n | `0x1435bff00` / `0x141f91480` | a Commands.dat command: u8 command (row + 1), u16 byte count + UTF-8 argument. The town popup's Destroy sends **9** (row 8 DestroyCursorItem, `/destroy`) | 0xbf cursor (the item is gone) |
 | 0x2d | 8 | `0x1435c02b8` / `0x141f90340`, senders `0x14215f520` / `0x14215f570` | inventory request, not mapped: u8, u32, u8 flag (0 / 1 by sender) | not handled |
 | 0x58 | 10 | `0x1435bf8a8` / `0x141f926a0` | use an item that needs no target (right-click): u32 inventory id, u32 item id, both big-endian | an Orb of Regret loses one item and adds one refund point (0xbf the stack, 0x33 the tree) |
-| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20); the first inventory id is a stash tab (e.g. 2053) when the currency is right-clicked in the open stash (live 2026-10-23): one is taken off that tab's stack; the target inventory id can be a stash tab too, e.g. the currency tab's crafting slot (live 2026-10-23: currency in its slot used on the item in the crafting slot, both inventory ids 2053). `ItemMoves.UseAcross`: the currency and the target saved together, one 0xbf per place changed (one for both when they share it) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb gives every socket a new colour (`CurrencyEffects.Chromatic`: red / green / blue weighted by the base's strength / dexterity / intelligence requirement + 12, our own weights; never white, gems and links stay, always different from before; live 2026-10-21 the client sent it for boots and a helmet): 0xbf with the stack and the target |
+| 0x71 | 18 | not traced | use an item on an item (right-click it, then click the target): u32 inventory id, u32 item id of the used item, then of the target, all big-endian (live 2026-10-20); the first inventory id is a stash tab (e.g. 2053) when the currency is right-clicked in the open stash (live 2026-10-23): one is taken off that tab's stack; the target inventory id can be a stash tab too, e.g. the currency tab's crafting slot (live 2026-10-23: currency in its slot used on the item in the crafting slot, both inventory ids 2053). `ItemMoves.UseAcross`: the currency and the target saved together, one 0xbf per place changed (one for both when they share it) | a Scroll of Wisdom identifies the target (§2b); a Chromatic Orb uses the 3.29 rule (`CurrencyEffects.Chromatic`, below): one socket is forced non-white, the rest roll normally, gems and links stay: 0xbf with the stack and the target |
 | 0x72 | 23 | not traced | the held currency used again with **Shift** (the client keeps it on the cursor while the inventory has more, live 2026-10-21): u32 its BaseItemTypes HASH32 (the type, not an item), u32 inventory id and u32 item id of the target, all big-endian, then u32 0, u8 1, u8 0, u8 7, u16 2 (unknown) | as 0x71, with a stack of that type from the inventories (the main inventory first), then from the stash tabs |
 | 0x4a | 14 | `0x1435bf6d0` / `0x141fa08d0`, sender `0x14215f5c0` | the held item clicked **on an item** (§4a): u32 inventory id with HNC bits from bit 20 (mask `0xc00fffff`), u32 the clicked item's id, u8 flags (bit 2 = Shift; HNC bits 3-7), u8 (3), u16 (low byte first, differs every click, unknown) | a merge (0xbf the stack, 0xbf cursor), else a swap as 0x2a |
 | 0x7c | 17 | `0x1435bfdd8` / `0x141f90870`, sender `0x142165640` | split a stack (§4a): u32 inventory id, u32 item id, u32 amount, u8 (3), u16 (unknown); no HNC bits | 0xbf the stack (same id, smaller), 0xbf cursor (a new item with the amount) |
@@ -365,7 +408,8 @@ lost when the Gateway restarts.
 ### Jeweller's Orb (initial local implementation, 2026-10-21)
 
 `CurrencyRerollSocketNumbers` uses the existing 0x71 handler and the shared Shift 0x72 path. One successful use
-spends one orb and replaces the target through 0xbf, rerolling socket count, RGB colours and link groups. Equipped
+spends one orb and replaces the target through 0xbf, rerolling socket count and link groups. 3.29: sockets the reroll
+keeps retain their colours and only the added sockets are white (`SocketColours`, below). Equipped
 targets also refresh equipment. The existing character save stores the result. Verified live with the 3.29.3b client: repeated rolls on gloves, boots, a helmet, weapons and body armour; inventory updates and currency consumption are visible in the Gateway log.
 
 Requested local counts are **1, 2, 3, 4, 6** (five excluded). Class caps: body armour, bows and two-handed melee
@@ -375,16 +419,50 @@ refused. Items already at the base's capacity (class and dimensions, not the ite
 are refused without consuming currency; remove gems first. Live failure 2026-10-21: level-1 BootsStr1/GlovesStr1
 with two empty sockets were incorrectly refused at the level cap. They can now reroll between one and two sockets;
 the level cap limits the result, not eligibility. A regression test covers repeated use on both bases.
-The new count differs from the old count. Colours and links are independently rerolled and may repeat.
+The new count differs from the old count. Link groups are independently rerolled and may repeat.
 
 This is deliberately an initial local rule set, not exact 3.29 socket crafting: weights for counts 1/2/3/4/6 are
-50/120/100/30/1 (filtered by eligibility and old count), RGB uses attribute requirement + 12, each adjacent link has
-a 50% chance. Quality bonuses, white-socket 3.29 rules, special unique/mod socket overrides and corruption are not
-modelled. No new extracted data is needed.
+50/120/100/30/1 (filtered by eligibility and old count), each adjacent link has a 50% chance, and new sockets are
+white. Special unique/mod socket overrides and corruption are not modelled. No new extracted data is needed.
 
 C→S 0x72 is 23 bytes: u16 id, u32 currency BaseItemTypes HASH32, u32 target inventory, u32 target item,
 then nine currently uninterpreted bytes. All integer fields above are big-endian. The Gateway resolves a stack
 of that currency (main inventory first) and reuses the 0x71 handler.
+
+### Socket colours (3.29 rules, 2026-10-26)
+
+The 3.29.0 patch notes ("Gem Socket Changes"):
+
+- Item sockets are white by default, and a gem goes into any equipment socket whatever its colour (the client's own
+  check, §2d, only compares requirements and changed in 3.29 to allow this).
+- Each socket generated on an item has a small chance to be red, green or blue instead, in proportion to the item's
+  attribute requirements; the chance rises with item level.
+- A gem in a red, green or blue socket of its own colour gets +10% quality ([25](25-gem-supports.md), the support and
+  skill stats read it).
+- Chromatic Orbs and Tainted Chromatic Orbs force one of the item's sockets non-white and roll the rest normally;
+  higher item quality raises the chance of non-white sockets.
+- Currency that adds sockets (Jeweller's, Tainted Jeweller's, Orb of Binding) adds them white.
+- Vaal Orb corruption turns a white socket coloured; the Locus of Corruption turns all white sockets coloured.
+- The old single-colour bench crafts are gone. `CraftingBenchOptions` now has **At Least Two / Three / Four Non-White
+  Sockets** (`SocketColours` `NN`/`NNN`/`NNNN`), 5 / 20 / 75 Chromatic Orbs.
+
+The notes give no numeric probabilities. This server approximates them in `SocketColours`: 5% non-white at item level 1
+plus 0.25 points per item level (30% at 100), and +0.25 points per 1% item quality for Chromatic Orbs and the non-white
+bench crafts. A rolled colour weighs its attribute requirement + 12, so a strength base rolls mostly red. The curve is
+a placeholder to be fitted from live captures; the caps (2 sockets per generated item, socket counts, link rules) and
+the class capacities are unchanged (`CurrencyEffects.MaximumSockets`, `SocketCapacity`).
+
+Where it applies: `ItemCatalog.DefaultSockets` (used by `/item`, drops and NPC shops) rolls each of an item's two linked
+sockets; the start weapon gets two white linked sockets; `CurrencyEffects.Chromatic` forces one socket and rolls the
+rest; `Jewellers` and the bench's socket-count crafts add white sockets and keep the retained ones; `BenchCrafting`
+handles the `NN` crafts (rerolls the colours until the item has at least N non-white sockets, with the item's chance,
+then forces any missing ones); `CurrencyEffects.Vaal` colours one white socket.
+
+Not modelled: Tainted Chromatic and Tainted Jeweller's Orbs, the Orb of Binding, the Locus of Corruption and the
+bench's milestone reward (25 reforges keeping the most non-white sockets). Verified live 2026-10-26: white sockets are
+drawn and accepted, Chromatic leaves one socket non-white and the rest white, Jeweller's keeps retained colours and
+adds white ones, and the matching-colour +10% quality changes the gem's stats; the stat path is in
+`Program.GemSupports.cs` (`Quality`). The probabilities remain an approximation.
 
 ### Orb of Alchemy (2026-10-21, verified live)
 
@@ -596,7 +674,8 @@ gems must not be granted:** a support's effect in the list crashed the client in
 ## 7. Start kit, saves and dev command
 
 A new character gets Characters.dat StartSkillGem and StartSupportGem in the main inventory, and in the flask bar two
-Small Life Flasks (cells 0 and 1: flask keys 1 and 2) and a Small Mana Flask (cell 4: key 5). Its StartWeapons[0], with two linked sockets in the start gems' colours, is worn
+Small Life Flasks (cells 0 and 1: flask keys 1 and 2) and a Small Mana Flask (cell 4: key 5). Its StartWeapons[0], with
+two linked white sockets (3.29: a gem fits any colour), is worn
 in Weapon1. With `Game_START_WEAPON=ground` it lies on the ground instead, as on the real game's Twilight Strand: `PlayerInventories.StartWeapon` keeps it (in the save as
 `StartWeapon`) until it is picked up, and on entering an instance outside towns the Gateway puts it once per character, weapon
 and instance (`InstanceState.PlaceStartWeapon`) on the first walkable cell 6 to 20 cells from the spawn
@@ -625,12 +704,16 @@ not in the save ("Open"), so dropping one takes it out of the save, and a discon
 `tests/GameServer.Gateway.Tests`.
 
 `/item <BaseItemTypes row, Id or name> [count]` adds items to the main inventory; types with a Sockets component get two
-linked sockets in the colour of their highest attribute requirement (ComponentAttributeRequirements).
+linked sockets, mostly white with the item-level colour chance of "Socket colours (3.29)" above, in the colour
+proportional to their attribute requirements (ComponentAttributeRequirements).
 `/sockets [colours]` (`SocketLayout.cs`, verified live 2026-10-25) sets the held item's sockets and links.
 Letters R, G, B, W are linked within a word and unlinked between words: `/sockets RRGBBB` is a 6-link, `/sockets RRG B`
 a 3-link and a single (dashes are ignored, so `R-R-G-B` works too); without colours it shows the layout.
 It allows up to the base's `CurrencyEffects.SocketCapacity`, whatever the item level; rings, amulets and other classes
 without one are refused.
+`Game_SOCKET_CAPACITY=1..6` (dev, read by `/sockets`) replaces that capacity for socketable bases, ignoring class and
+dimensions: a 6-link wand (a wand's own capacity is 3) is possible with the flag, and a base without a Sockets
+component is still refused.
 Socketed gems stay in their sockets and take the new colour; a layout that would remove a socket holding a gem is
 refused.
 The cursor item is replaced through 0xbf like `/mod`.
@@ -645,10 +728,16 @@ The Gateway (`UseFlask`, `Flasks.cs`, `FlaskRecovery.cs`) takes the flask in tha
 11). Its base use comes from the tables (`ItemCatalog.FlaskOf`): Flasks.dat LifePerUse / ManaPerUse over RecoveryTime
 (tenths of a second) and ComponentCharges PerCharge of MaxCharges. Small Life Flask: 70 life over 3 s, 7 of 21 charges;
 Small Mana Flask: 50 mana over 3 s, 6 of 24. A use with fewer charges than it needs (§8b), or while dead, does nothing.
+Before spending charges, recovery flasks also need room in a pool they restore: life below maximum for life flasks,
+mana below the **unreserved** cap for mana flasks; a hybrid needs either of its pools below its cap.
+When those pools are full, the Gateway sends `0x263` result `0x4e2`, without spending/saving charges, adding a buff,
+restarting an existing recovery effect, or playing the drinking sound; the refusal carries the authoritative pool.
+The refusal result was captured from the official 3.29.3b client; the native UI suppresses its failure sound for `0x4e2`.
 Otherwise:
 
 1. The charges are spent and saved, and the flask goes to the client again (S→C 0xbf: the item removed and added with
-   its new Charges, same id).
+   its new Charges, same id). S→C `0x263` then confirms the successful use and triggers the native drinking
+   sound (details below).
 2. Its recovery (`FlaskRecovery.For`, as Path of Building's Item.lua and CalcPerform calcFlaskRecovery and poewiki's
    "Recovery from flasks"): base × (1 + quality) × (1 + increased amount recovered: `local_flask_amount_to_recover_+%`
    and the life / mana ones) × (1 + the character's `flask_life_to_recover_+%` / `flask_mana_to_recover_+%` and
@@ -709,14 +798,18 @@ RePoE 3.29.3.3 `base_items.json` give Quicksilver 6 s (duration 60), Ruby 8 s, I
 | Gold | flask_utility_rarity (131) | base_item_found_rarity_+% 30: rarer drops | 5 s, 60 of 80 |
 | Aquamarine | flask_utility_aquamarine (126) | base_frozen_effect_on_self_+% −60: character panel only | 8 s, 20 of 50 |
 | Corundum | flask_utility_stun_protection (1888) | stun_threshold_+% 30: character panel only | 7.5 s, 20 of 50 |
-| Iron | flask_utility_ward (132) | base_ward 200: waits for Ward (PR #206) | 4 s, 40 of 60 |
+| Iron | flask_utility_ward (132) | base_ward 200; paid use restores Ward immediately | 4 s, 40 of 60 |
 
 The Silver Flask's buff has no stats, only the flag `silver_flask_display_onslaught`; the Gateway also puts `onslaught`
 (row 215) on the player with the values of BuffTemplates `MapModPlayerOnslaught` (20, 20, 20). How each buff stat counts
 is `UtilityFlasks.SupportOf`: modelled (the pools, the walk, drops, damage), only the character panel (ailments, stun
-and curses on the player: monsters here only hit physically, so nothing freezes, stuns or curses the player), or Ward,
-which PR #206 brings (`UtilityFlasks.Ward` is where its Bonus.Ward / WardPct take Iron Flask's base_ward and the Ward
-suffix once both are merged). Every utility flask spends its charges and shows its buff and bar.
+and unsupported curse/ailment effects), or Ward.
+Ward flat/increased bonuses feed the authoritative pool through `UtilityFlasks.Apply`.
+After a successful charge payment and effect start, `local_flask_restore_ward` restores broken Ward immediately.
+Stat projection, refused uses and ordinary effect refresh never restore Ward.
+Native selected Antiquarian spent 40 charges and restored 502 Ward, returning to 22 after the four-second effect.
+See [the Ward model and native evidence](../game/antiquarian.md).
+Every utility flask spends its charges and shows its buff and bar.
 
 A use:
 
@@ -760,7 +853,7 @@ stat), each value rounded down (PoB ModStore.ScaleAddMod: to two decimals, then 
 
 The "during effect" suffixes (`UtilityFlasks.DuringEffect`) count while the flask runs, scaled by its effect: increased
 armour (`local_flask_armour_+%_while_healing` → `physical_damage_reduction_rating_+%`), increased evasion, movement
-speed, additional elemental resistances and increased critical strike chance; increased Ward waits for #206; the
+speed, additional elemental resistances, increased critical strike chance and increased Ward; the
 ailment, stun and curse ones (avoid, reduced effect or duration on you, immunities, "chance to Freeze, Shock and
 Ignite", stun recovery) reach the character panel only; life and energy shield leech are not applied (leech is not
 modelled).
@@ -808,6 +901,10 @@ Quicksilver at once and a use while dead was refused; `/goto 1_1_town` during Ru
 off the bar ended its effect at once. Not seen live: the client actually walking faster or phasing through monsters (the
 bridge cannot make it walk), the tooltip's duration with quality.
 
+**Mageblood:** while the unique belt is worn, the leftmost magic utility flasks apply their effects permanently without
+charges or a duration (`Program.Mageblood`, §2e); using them is refused, and the character's stats are re-sent when the
+bar changes.
+
 ## 8b. Flask charges
 
 `FlaskCharges.cs`, `Program.FlaskCharges.cs`; poewiki (Flask, "Flask charges").
@@ -851,12 +948,70 @@ Diamond its roll (20 → 21), the second only the sure charge (15 → 16); a Sma
 Recovery Amount" used below full life added 28 more life over 10 s (a 3250-life character). Not seen live: charges when
 hit and every 3 seconds (tests only).
 
+### Use confirmation and drinking sound (S→C 0x263)
+
+Updating charges and adding the recovery buff do not play the drinking sound.
+The server must also send the item-use result, only after a successful use:
+
+| Wire field | Meaning |
+|---|---|
+| u16 BE `0x263` | Message id |
+| u32 BE | Used item's BaseItemTypes HASH32 |
+| u32 BE | Inventory id (`12` for the flask bar, not its row `11`) |
+| u32 BE | Item id, not its flask-bar cell |
+| u16 BE `0` | Empty string (no sound override) |
+| u32 BE | Result: `0` success, `0x4e2` full recovery pools |
+
+Evidence: official 3.28 captures in the older project's `out/capture_stream.jsonl` contain
+`0263403b9b3b0000000c00000002000000000000` (life) and
+`026393c8c37f0000000c00000004000000000000` (mana).
+The current 3.29.3b reader `0x1421aded0` confirms the same layout, including the **four-byte** wire result
+which it truncates into the message's u16 field at `+0x40`.
+Dispatcher case `0xc6` at `0x14215391b` fires the instance's `+0x3c78` listeners through `0x142171890`.
+UI callbacks `0x140d95a70` / `0x140ddcd60` use the type hash to look up BaseItemTypes and its use sound.
+With an empty override and result zero, the sound comes from the base row's `+0x58` reference, then its `+0x10` path.
+A nonzero result takes the failure branch instead; `0x4e2` is used for full-pool refusals without a drinking sound.
+
+Live verification on 3.29.3b: normal C→S `0x70` requests for Small Life and Small Mana Flasks reached
+`0x140ddcd60`, selected `Audio/Sound Effects/ItemSounds/flaskdrink.ogg`, and submitted it to audio `0x140ff6320`.
+The read-only probe is `scripts/re/frida/trace-flask-use.js` (load after `common.js`).
+Tests compare `InstanceItems.ItemUsed` against both official capture payloads.
+
+Listening checks initially raised doubt about `flaskdrink.ogg`.
+A fresh read-only capture from the user's official 3.29.3b Steam client confirmed the same path on successful
+Small Life Flask use: `0x263`, hash `0x403b9b3b`, inventory `12`, item `8`, empty override, result `0`.
+The native callback selected `Audio/Sound Effects/ItemSounds/flaskdrink.ogg`; the user also reported it sounded alike.
+Other captured uses returned `0x4e2`; no successful mana use was captured in this official session.
+`SoundEffects` row `Flask` is not a substitute: its UI path `flask.ogg2d` was identified by the user as inventory
+placement; substituting its other path `flask.ogg` into the UI callback was silent.
+All temporary substitutions and the official-client capture were detached; native default selection remains unchanged.
+
+Full-pool gate verified live locally: life `85/85` and mana `63/63` produce `0x263` result `0x4e2` plus the
+authoritative `0x1b1` of that pool (so the orb matches the server), with no inventory charge update, no recovery buff
+and no drinking audio submission.
+After `/hit chaos 20`, life-flask use spends charges, adds its buff, recovers life and plays `flaskdrink.ogg`;
+after `/heal`, another use is refused again.
+`FlasksTests` cover full pools, one-point deficits, irrelevant missing resources, reservation caps and hybrids.
+
+### The client pays for attack-moves the server only walks
+
+A read-only probe of a real input session (2026-10-26) showed the **client** spending the attack skill's mana on every
+attack-move use (Holy Strike: 6 mana per attack time), while the Gateway's attack-move branch only walks the player:
+the client's orb fell to 20/63 while the server still held 63, so every mana-flask press came back `0x4e2`.
+The Gateway now answers each attack-move with the authoritative mana (S→C `0x1b1`, at most four a second because the
+client repeats the use every frame while the button is held), giving the predicted cost back.
+A point within the weapon's reach is a swing at the ground instead of an attack-move, so standing and swinging costs
+the skill's mana as on the client (live 2026-10-26: it used to cost nothing).
+A full-pool refusal carries the authoritative pool too, so the orb and the next press agree.
+Probe: `scripts/re/frida/trace-flask-mana.js` (load alone, no `common.js`); test: `ManaCostTests` pins Holy Strike's
+6 mana at level 1.
+
 ## Open
 
 - Flasks: fewer kill charges in acts 6 to 10 and maps (the amount is not in the tables), single monsters' own flask
   charge stats, partial charges across connections (not saved), hybrid flasks' buffs (a hybrid flask recovers both pools
   but shows only the life buff), the effects across an area change (they end), the "during any flask effect" passives.
-  Utility flasks: Ward (Iron Flask, the Ward suffix) until PR #206 is in; ailments, stun and curses on the player
+  Utility flasks: unsupported ailments, stun modifiers and curses on the player
   (Aquamarine's freeze effect, Corundum, the ailment suffixes: panel only); Aquamarine's chilled ground; the smoke
   cloud's art; which objects phasing lets the player through besides monsters; how long the grounds last; whether taking
   a flask off the bar ends its effect (it does here, `UtilityFlasks.EndsWhenFlaskLeavesItsCell`); leech suffixes.

@@ -50,16 +50,21 @@ static class AuraCatalog
         ["Envy"] = 828,
     };
 
-    public static bool Supported(string effectId) => BuffRows.ContainsKey(effectId);
+    public static string Family(string effectId) => effectId switch
+    {
+        "GraceHardMode" => "Grace", "DeterminationHardMode" => "Determination", _ => effectId,
+    };
 
-    public static ushort BuffRow(string effectId) => BuffRows[effectId];
+    public static bool Supported(string effectId) => BuffRows.ContainsKey(Family(effectId));
+
+    public static ushort BuffRow(string effectId) => BuffRows[Family(effectId)];
 
     public static IReadOnlyList<Aura> Restore(IEnumerable<string> saved, IEnumerable<Aura> available, CharacterStats.Pools pools, bool inTown = false)
     {
         if (inTown) return [];
-        var gems = available.Where(a => Supported(a.EffectId)).GroupBy(a => a.EffectId).ToDictionary(g => g.Key, g => g.First());
+        var gems = available.Where(a => Supported(a.EffectId)).GroupBy(a => Family(a.EffectId)).ToDictionary(g => g.Key, g => g.First());
         var restored = new List<Aura>();
-        foreach (string effect in saved.Distinct())
+        foreach (string effect in saved.Select(Family).Distinct())
             if (gems.TryGetValue(effect, out var aura))
                 restored.Add(aura);
         return restored;
@@ -100,7 +105,7 @@ static class AuraCatalog
         int armour = 0, evasion = 0, armourMore = 0, evasionMore = 0, spellCrit = 0;
         foreach (var aura in auras)
         {
-            switch (aura.EffectId)
+            switch (Family(aura.EffectId))
             {
                 case "Determination":
                     armour += Value(skills, stats, aura, "base_physical_damage_reduction_rating", auraEffectPct);
@@ -151,6 +156,25 @@ static class AuraCatalog
             ArmourMorePct: armourMore, EvasionMorePct: evasionMore);
     }
 
+    /// <summary>The raw keys behind Purity's resistance and maximum bonuses, for per-key dev replacements.
+    /// Keep these separate from RawStats: resistance presentation already reads the completed pools.</summary>
+    public static IEnumerable<(uint Key, int Value)> ResistanceStats(IEnumerable<Aura> auras, int auraEffectPct,
+        SkillCatalog skills, StatCatalog stats)
+    {
+        foreach (var aura in auras)
+        {
+            string? element = aura.EffectId switch
+            {
+                "PurityOfFire" => "fire", "PurityOfIce" => "cold", "PurityOfLightning" => "lightning", _ => null,
+            };
+            string[] names = aura.EffectId == "PurityOfElements" ? ["base_resist_all_elements_%"]
+                : element is not null ? [$"base_{element}_damage_resistance_%", $"base_maximum_{element}_damage_resistance_%"]
+                : [];
+            foreach (string name in names)
+                if (stats.Key(name) is uint key) yield return (key, Value(skills, stats, aura, name, auraEffectPct));
+        }
+    }
+
     /// <summary>The flat stat bonuses from the active auras (regeneration and Haste's cast speed), scaled by aura effect.</summary>
     public static IEnumerable<(uint Key, int Value)> RawStats(IEnumerable<Aura> auras, int auraEffectPct,
         SkillCatalog skills, StatCatalog stats)
@@ -199,6 +223,19 @@ static class AuraCatalog
                 case "Haste":
                     Add("cast_speed_+%", "cast_speed_+%_granted_from_skill");
                     break;
+            }
+
+            // Only size inputs compose here; this does not activate or add any aura.
+            var effectStats = skills.EffectStats(aura.Effect, aura.Level, aura.Quality);
+            foreach (string name in ActorScale.Inputs)
+            {
+                if (stats.Key(name) is not uint key) continue;
+                var source = effectStats.FirstOrDefault(s => s.Item1 == key);
+                if (source.Item1 != key) continue; // Preserve present zero limits as well as nonzero size sources.
+                int raw = source.Item2;
+                int value = (int)Math.Clamp(Math.Round(raw * Math.Max(0L, 100L + auraEffectPct) / 100.0,
+                    MidpointRounding.AwayFromZero), int.MinValue, int.MaxValue);
+                result[key] = ActorScale.Add(key, result.GetValueOrDefault(key), value);
             }
 
             void Add(string name, string? source = null)

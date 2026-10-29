@@ -63,17 +63,30 @@ static class NpcShops
         ("Blue Skills", 3, false), ("Blue Support", 3, true), ("White Skills", 4, false),
     ];
 
+    // Development shop policy: Skills is the future gameplay tab, restricted by quests and character class.
+    // The colour tabs must always offer every creatable gem and variant so server/command development does not
+    // require campaign progression. White Skills combines white active and support gems. These notes belong
+    // in source documentation; opening Buy must not print development explanations into the player's chat.
+
     static readonly HashSet<string> SellsMaps = new(StringComparer.OrdinalIgnoreCase) { "Metadata/NPC/Act1/Nessa" };
+
+    /// <summary>All Nessa gem offers are permanent templates, independent of their tab or purchase gesture.</summary>
+    public static bool ReplenishesGem(string npcId, Item item) =>
+        npcId.Equals("Metadata/NPC/Act1/Nessa", StringComparison.OrdinalIgnoreCase)
+        && item.Components.Contains("SkillGem");
 
     /// <summary>The NPC's tabs: its stock (<see cref="Stock"/>) in the first, then the gem tabs of a gem vendor
     /// (<see cref="GemVendorStock.Sells"/>), each laid out from the first free cell row by row, with item ids from
     /// <paramref name="nextId"/>. <paramref name="gemStock"/> restricts the gem tabs to those BaseItemTypes rows (a gem
-    /// vendor's unlocked gems); null means every shop gem, which is only for the tests and tooling. Unknown or unwritable
-    /// item types and items without room are skipped and named in <paramref name="notes"/>.</summary>
+    /// vendor's unlocked gems); null means every ordinary shop gem. The local <paramref name="fullGemStock"/> mode
+    /// bypasses that filter and includes every creatable variant. Full gem pages continue in numbered tabs.
+    /// Unknown, unwritable or oversized item types are skipped and named in <paramref name="notes"/>.</summary>
     public static List<ShopTab> Tabs(string npcId, ItemCatalog items, Func<uint> nextId, List<string> notes,
         string dataFolder = "data", IReadOnlyCollection<int>? gemStock = null,
-        Func<ItemCatalog.BaseType, (string Currency, int Amount)>? gemPrice = null)
+        Func<ItemCatalog.BaseType, (string Currency, int Amount)>? gemPrice = null, bool fullGemStock = false, bool ruthless = false)
     {
+        fullGemStock &= !ruthless;
+        var ruthlessPrices = ruthless ? new RuthlessShopPrices(items, dataFolder) : null;
         var currency = items.Find(Currency);
         if (currency is null) notes.Add($"no item type {Currency}: the stock has no prices");
         Item Priced(Item item) => currency is null ? item : item with { Price = [(currency.Hash, (uint)PriceInCurrency)] };
@@ -94,35 +107,71 @@ static class NpcShops
             if (items.Find(name) is { Supported: true } type && type.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) stock.Add((type, count, null));
             else notes.Add($"no writable item type {name}");
         }
-        if (SellsMaps.Contains(npcId))
+        if (!ruthless && SellsMaps.Contains(npcId))
             stock.AddRange(NessaMapStock.Build(items, dataFolder).Select(m => (m.Type, 1, (Item?)m.Item)));
+        if (ruthless)
+            stock.RemoveAll(s => s.Type.Components.Contains("SkillGem") || s.Type.Class is "Ring" or "Amulet" or "Belt"
+                || ruthlessPrices!.For(s.Type) is null);
         // Goods, then Goods2, Goods3 … for what does not fit.
         for (int page = 1; stock.Count > 0 || page == 1; page++)
-            tabs.Add(new(page == 1 ? "Goods" : $"Goods{page}", Lay(stock, items, (_, item) => Priced(item), nextId, notes)));
-        if (GemVendorStock.Sells(npcId))
-            foreach (var (name, colour, support) in GemTabs)
+            tabs.Add(new(page == 1 ? "Goods" : $"Goods{page}", Lay(stock, items,
+                (type, item) => ruthlessPrices?.For(type) is { } price ? item with { Price = [price] } : Priced(item), nextId, notes)));
+        if (GemVendorStock.Sells(npcId) && (!ruthless || npcId.EndsWith("/Siosa", StringComparison.OrdinalIgnoreCase)))
+        {
+            // Future progression shop, deliberately separate from the complete development assortment.
+            // Missing progression input must never unlock everything in this tab.
+            if (fullGemStock)
             {
-                var gems = items.ShopGems(colour, support)
-                    .Where(t => gemStock is null || gemStock.Contains(t.Row))
+                var unlocked = new[] { false, true }.SelectMany(support => new[] { 1, 2, 3, 4 }
+                        .SelectMany(colour => items.ShopGems(colour, support)))
+                    .Where(t => gemStock?.Contains(t.Row) == true).DistinctBy(t => t.Row)
+                    .OrderBy(t => items.Gem(t)!.IsSupport).ThenBy(t => items.Gem(t)!.Colour)
+                    .ThenBy(t => t.DropLevel).ThenBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
                     .Select(t => (t, 1, (Item?)null)).ToList();
-                tabs.Add(new(name, Lay(gems, items, PricedGem, nextId, notes)));
-                notes.AddRange(gems.Select(g => $"no room in {name} for {g.t.Name}"));
+                for (int page = 1; unlocked.Count > 0 || page == 1; page++)
+                    tabs.Add(new(page == 1 ? "Skills" : $"Skills {page}",
+                        Lay(unlocked, items, PricedGem, nextId, notes, separateGemKinds: true)));
             }
+            foreach (var (name, colour, support) in GemTabs.Where(g => !ruthless || !g.Support))
+            {
+                var gems = fullGemStock
+                    ? items.FullShopGems(colour, support)
+                        .Concat(colour == 4 ? items.FullShopGems(4, true) : [])
+                        .Select(g => (g.Type, 1,
+                        (Item?)(ItemCatalog.Create(g.Type) with { GemVariant = g.Variant.Index }))).ToList()
+                    : items.ShopGems(colour, support)
+                        .Where(t => (gemStock is null ? !ruthless : gemStock.Contains(t.Row))
+                            && (!ruthless || (!support && ruthlessPrices!.For(t) is not null)))
+                        .Select(t => (t, 1, (Item?)null)).ToList();
+                for (int page = 1; gems.Count > 0 || page == 1; page++)
+                    tabs.Add(new(page == 1 ? name : $"{name} {page}", Lay(gems, items,
+                        (type, item) => ruthlessPrices?.For(type) is { } price ? item with { Price = [price] } : PricedGem(type, item), nextId, notes)));
+            }
+        }
         return tabs;
     }
 
     /// <summary>Lays <paramref name="stock"/> out in one tab and takes what it placed out of the list: what is left did not
     /// fit (the caller puts it in the next tab).</summary>
     static List<InventoryItem> Lay(List<(ItemCatalog.BaseType Type, int Count, Item? Template)> stock, ItemCatalog items,
-        Func<ItemCatalog.BaseType, Item, Item> priced, Func<uint> nextId, List<string> notes)
+        Func<ItemCatalog.BaseType, Item, Item> priced, Func<uint> nextId, List<string> notes, bool separateGemKinds = false)
     {
         var placed = new List<(InventoryItem Item, byte W, byte H)>();
         var left = new List<(ItemCatalog.BaseType Type, int Count, Item? Template)>();
+        int firstRow = 0;
+        bool supportStarted = false;
         foreach (var (type, count, template) in stock)
         {
+            if (separateGemKinds && !supportStarted && items.Gem(type) is { IsSupport: true })
+            {
+                // Keep the unused end of the active gems' last row empty. If that was the final row,
+                // support gems stay in stock and begin on the next page rather than backfilling the gap.
+                firstRow = placed.Count == 0 ? 0 : placed.Max(p => p.Item.Y + p.H);
+                supportStarted = true;
+            }
             var (sockets, links) = items.DefaultSockets(type);
             int i = 0;
-            for (; i < count && FreeCell(placed, type.Width, type.Height) is { } cell; i++)
+            for (; i < count && FreeCell(placed, type.Width, type.Height, firstRow) is { } cell; i++)
                 placed.Add((new InventoryItem(nextId(), cell.X, cell.Y, priced(type, template ?? ItemCatalog.Create(type, sockets, links))), type.Width, type.Height));
             if (i < count) left.Add((type, count - i, template));
         }
@@ -133,10 +182,10 @@ static class NpcShops
         return [.. placed.Select(p => p.Item)];
     }
 
-    static (byte X, byte Y)? FreeCell(List<(InventoryItem Item, byte W, byte H)> placed, byte width, byte height)
+    static (byte X, byte Y)? FreeCell(List<(InventoryItem Item, byte W, byte H)> placed, byte width, byte height, int firstRow = 0)
     {
         // Row by row: the first row fills left to right, then the next.
-        for (int y = 0; y + height <= Tab.Height; y++)
+        for (int y = firstRow; y + height <= Tab.Height; y++)
             for (int x = 0; x + width <= Tab.Width; x++)
                 if (!placed.Any(p => p.Item.X < x + width && x < p.Item.X + p.W && p.Item.Y < y + height && y < p.Item.Y + p.H))
                     return ((byte)x, (byte)y);

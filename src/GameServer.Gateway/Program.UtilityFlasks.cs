@@ -11,11 +11,18 @@ partial class Program
     static async Task UseUtilityFlask(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint slot,
         InventoryItem flask, ItemCatalog.BaseType type, UtilityFlasks.Utility utility)
     {
+        // Mageblood: its magic utility flasks are always on and cannot be used (the client enforces the mod; this is the
+        // server backstop).
+        if (MagebloodBlocksFlaskUse(conn, flask.Item))
+        {
+            Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): refused, Mageblood's magic utility flasks cannot be used");
+            return;
+        }
         // The character's flask stats (passives and gear: increased flask effect, duration and charges used) and the
         // flask's own mods.
         var character = CharacterPlayerStats(conn);
         int Get(string name) => Stats.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;
-        var local = ItemModStats.Local(flask.Item, Items.Mods);
+        var local = ItemModStats.Local(flask.Item, ItemsFor(conn).Mods);
         var charges = FlaskCharges.Of(utility.Charges, local, Get);
         if (UtilityFlasks.Refusal(conn.PlayerLife == 0, conn.UtilityFlaskEffects.Of(flask.Id), flask.Item, charges,
                 conn.Clock.Elapsed.TotalSeconds) is { } refused)
@@ -37,6 +44,10 @@ partial class Program
         }
         var effect = new UtilityFlasks.Active(flask.Id, (byte)slot, type.Name, utility, buff, extra, stats, now, now + seconds);
         var ticker = UtilityFlasks.Start(conn, effect, () => RecomputePoolsAndSpeed(conn));
+        lock (conn.Monsters)
+            if (!conn.Closed && !conn.LeavingArea && conn.PlayerLife > 0
+                && UtilityFlasks.RestoreWardAfterPaidUse(conn.Ward, name => local.GetValueOrDefault(name), conn.Clock.Elapsed.TotalSeconds))
+                Console.WriteLine($"[gateway] Ward restored on paid {type.Name}: {conn.Ward.Current}/{conn.Ward.Maximum}");
         // The ticker starts before anything is sent: a failed send must not leave an effect without one to end it.
         if (ticker is int ticket) _ = RunUtilityFlasks(remote, stream, ciphers, conn, ticket);
         Console.WriteLine($"[gateway] {remote} <= 0x0070 use flask {slot} ({type.Name}): {utility.BuffId} for {seconds:0.##} s: " +
@@ -62,7 +73,11 @@ partial class Program
     {
         conn.Pools = PoolsFor(conn, conn.Pools.Level);
         conn.ApplyMovementSpeed();
-        conn.Phasing = UtilityFlasks.Phasing(conn.UtilityFlaskEffects.Stats());
+        var stats = CharacterPlayerStats(conn);
+        int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
+        conn.Phasing = UtilityFlasks.Phasing(UtilityStats(conn, Get));
+        conn.ElementalAilments.Reconcile(Get);
+        conn.ApplyMovementSpeed();
     }
 
     // Ends the utility flask effects whose time is up (by the connection clock: a pause holds them), whose flask left its

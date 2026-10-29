@@ -1,12 +1,16 @@
 """Pure protocol/transport checks; no client attach, login, or saves are touched."""
 import contextlib
 import io
+from itertools import chain, repeat
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import Mock, call, patch
 
-from client_control import chat_packet, collect_replies, flask_packet, log_mark, normalize, read_replies, run_request, tp_text
+from client_control import (
+    ClientControl, chat_packet, collect_replies, flask_packet, log_mark, normalize, read_replies, run_request, tp_text,
+)
 
 
 class ClientControlTests(unittest.TestCase):
@@ -78,6 +82,63 @@ class ClientControlTests(unittest.TestCase):
             self.assertEqual(collect_replies(start, wait=0.3, quiet=0.05, path=log), lines)
             self.assertIsNone(collect_replies(None))
             self.assertIsNone(log_mark(Path(folder) / "missing.log"))
+
+
+class ClientControlLoginTests(unittest.TestCase):
+    def setUp(self):
+        # Keep execute/ready/status/wait real without constructing a Frida device or attaching.
+        self.control = ClientControl.__new__(ClientControl)
+        self.control.script = object()
+        self.control.rpc = Mock()
+        self.elapsed = 0.0
+        clock = patch("client_control.time.monotonic", side_effect=lambda: self.elapsed)
+        clock.start()
+        self.addCleanup(clock.stop)
+        sleep = patch("client_control.time.sleep", side_effect=self.advance_time)
+        self.sleep = sleep.start()
+        self.addCleanup(sleep.stop)
+
+    def advance_time(self, seconds):
+        self.elapsed += seconds
+
+    def execute_login(self, statuses):
+        self.control.rpc.side_effect = chain([
+            {"screen": "login", "loginState": 0},  # ready
+            {},  # connect
+            {"screen": "login", "loginState": 2, "lastLoginResult": None},  # handshake
+            {},  # login
+        ], statuses)
+        return self.control.execute({"command": "login", "account": "test-only", "password": "test-only"})
+
+    def test_login_success_before_authenticated_state_waits_for_character_selection(self):
+        pending = {"screen": "login", "loginState": 2, "lastLoginResult": 0}
+        authenticated = {**pending, "loginState": 3}
+        characters = {**authenticated, "screen": "characters"}
+
+        result = self.execute_login([pending, authenticated, authenticated, characters])
+
+        self.assertEqual(result, {"running": True, **characters})
+        self.assertEqual(self.sleep.call_args_list, [call(0.05), call(0.05)])
+        self.assertEqual([c.args[0] for c in self.control.rpc.call_args_list],
+                         ["status", "connect", "status", "login", "status", "status", "status", "status"])
+
+    def test_login_nonzero_result_rejects_without_another_poll(self):
+        with self.assertRaisesRegex(RuntimeError, r"^Local login rejected \(result 6\)$"):
+            self.execute_login([{"screen": "login", "loginState": 2, "lastLoginResult": 6}])
+
+        self.sleep.assert_not_called()
+        self.assertEqual(self.control.rpc.call_count, 5)
+
+    def test_login_without_authenticated_state_keeps_existing_timeout(self):
+        for login_result in (None, 0):
+            with self.subTest(lastLoginResult=login_result):
+                self.elapsed = 0.0
+                pending = {"screen": "login", "loginState": 2, "lastLoginResult": login_result}
+                with self.assertRaisesRegex(TimeoutError, "Timed out waiting for login result;"):
+                    self.execute_login(repeat(pending))
+
+                self.assertGreaterEqual(self.elapsed, 15)
+                self.assertLess(self.elapsed, 15.1)
 
 
 if __name__ == "__main__":

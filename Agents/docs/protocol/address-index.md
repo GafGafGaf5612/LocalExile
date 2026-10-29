@@ -103,6 +103,11 @@ G = global / static data.
 | `0x1435dd4e8` / `0x1421c2f40` | Vt / Fn | comp1 (stats-like) |
 | `0x14359f5f8` / `0x141e114d0` | Vt / Fn | comp3 |
 | `0x1435a7340` / `0x141e6c2f0` (pool `0x141e6be70`, flags `0x141e6c270`) | Vt / Fn | Life |
+| `0x141e254f0` / `0x141e25645` | Fn / Insn | Life type constructor / default `+e4..e7 = 00 00 00 01` (corpse usable true) |
+| `0x141e67720` / `0x1435a8920` | Fn / Str | Life boolean parser / `corpse_usable` → config `+e7` |
+| `0x141e66ec0` / `0x141e66f86` | Fn / Insn | Life type finalizer / sets `+e6` corpse-use veto when `Player` exists |
+| `0x141e67110` / `0x141e678d0` | Fn | Life factory / runtime constructor copies corpse and sinking config to `+26a/+26b` |
+| `0x141e6c610` | Fn | Corpse predicate: usability, Player veto, life, spectre restriction and stat-9525 fallback |
 | `0x1435a5030` / `0x141e56a80` | Vt / Fn | Animated |
 | `0x143466450` / `0x141e7dc10` | Vt / Fn | Player (xp setter `0x141e7f6b0`) |
 | `0x14359e078` / `0x1415d8cb0` → `0x141e1ee30` | Vt / Fn | Inventories component |
@@ -119,6 +124,28 @@ G = global / static data.
 | `0x141ee0ba0` | Fn | blob task lookup by u16 task type (registry), used by the tasks reader `0x141ee00f0` |
 | `0x142f496a0` | G | static initializer table entry (Positioned) |
 | `0x1445bb240`, `0x1445bb6f0`, `0x1445bbe50`, `0x1445bbd60`, `0x1445bb760`, `0x1445bbd10`, `0x1445ba850`, `0x1445bc610` | G | component pools (Positioned, Stats, Pathfinding, Life, Animated, Player, Inventories, Actor) |
+
+### Player Actor scale ([04](04-player-entity.md#41a-player-actor-scale-299))
+
+| Address | Kind | What |
+|---|---|---|
+| `0x1421c2f40` | Fn | Creation Stats pairs reach the network setter |
+| `0x1424cfa40` | Fn | Network stat override getter; upstream fallback only when absent |
+| `0x1424cfaf0` | Fn | Insert/replace one raw pair, notifying only that key |
+| `0x1424cfd00` | Fn | Stat change notification to registered listeners |
+| `0x141fe1350` | Fn | 0x1b3 reader; world handler `0x142187480` uses the same setter |
+| `0x1400caf90` | Fn | Register final1973 evaluator `0x1427ecc30` |
+| `0x1427ecc30` | Fn | final1973 formula: raw720, capped1974, permyriad10778, optional limit1975 |
+| `0x141e9ca20` | Fn | Actor setup reads1973 at `0x141e9ccfd` and applies scale |
+| `0x141e9cf90` | Fn | Actor change observer compares key1973 at `0x141e9d031` |
+| `0x141e9ce80` | Fn | Scale applicator writes Positioned +0x2b0 at `0x141e9cf6f` |
+| `0x14013d9f0` | Fn | Monster-specific optional scale coefficient lookup |
+| `0x1415f4710` | Fn | Render typeScale * uniform * independent stretch; interpolation at +0x358 |
+| `0x1415f70a0` | Fn | Render cached scale axes at +0x380/+0x384/+0x388 |
+| `0x141e361b0` | Fn | Local-to-world transform uses the same scale axes |
+| `0x141c9ba55` | Code | Native melee range scales only when separate flag9807 is set |
+| `0x141c9bb0a` | Code | Second native melee range consumer with the same flag9807 guard |
+| `0x141e61540` | Fn | Blocking uses signed Positioned size +0x1e3, independently of uniform scale |
 
 ## Chat ([10](10-chat-and-commands.md) §1, §2)
 | Address | Kind | What |
@@ -197,6 +224,9 @@ G = global / static data.
 | `0x1421f5680` | Fn | inventory item entry read (u32 id, u8 x, u8 y, item) |
 | `0x1435dbd28` (ctor `0x1421a37b0`, write `0x1421a37f0`, read `0x1421a3880`) | Cls | S→C 0xbf inventory change (`0x1425079a0` / `0x142507bf0`) |
 | `0x141d62550` → `0x1421f5160` | Fn | 0xbf handler → apply removals, additions, revision |
+| `0x1435dca20` (read `0x1421aded0`, write `0x1421addf0`) | Cls | S→C 0x263 item-use result; successful flask use triggers the drinking sound ([13](13-items.md) §8) |
+| `0x14215391b` → `0x142171890` | Fn | 0x263 dispatch (case 0xc6) → instance +0x3c78 item-use listeners |
+| `0x140d95a70` / `0x140ddcd60` → `0x140ff6320` | Fn | item-use UI callbacks → native audio submission (BaseItemTypes use sound when override is empty) |
 | `0x1435c0898`, `0x1435dc660` | Cls | S→C 0xc1 remove inventory, 0xc2 inventory permissions |
 | `0x1435bf5f0` (write `0x141fa0d00`, sender `0x14215f300`) | Cls | C→S 0x28 pick up item |
 | `0x1435bf710` (write `0x141f8feb0`, sender `0x14215f400`) | Cls | C→S 0x2a place held item |
@@ -345,10 +375,30 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x14190faf0` | Fn | config `networking_type` → network mode (0 predictive, 2 lockstep, 3 auto) |
 
 
+## Fixed instance-message writers ([02](02-instance-connection.md))
+
+| Address | Kind | What |
+|---|---|---|
+| `0x140e29080` / `0x14345ef10` | Fn/VT | C→S 0x020a writer / vtable: u16 opcode and one byte |
+| `0x141f935a0` / `0x1435bfe78` | Fn/VT | C→S 0x0059 writer / vtable: 16 bytes including opcode |
+| `0x142160020` | Fn | C→S 0x0059 sender; fixed 4/2/2/4/1/1-byte fields |
+
 ## Skills ([11](11-skills.md))
 
 | Address | Kind | What |
 |---|---|---|
+| `0x1400dd340` | Fn | registers own-aura virtual 11075 with dependencies 21148/11881 |
+| `0x14289a420` | Fn | 11075: signed-nonzero 21148 OR 11881 |
+| `0x1400e4f60` | Fn | registers aura-skill virtual 15801 |
+| `0x1428cf720` | Fn | 15801: 3004 OR (2730 AND 2532) |
+| `0x1400e4fc0` | Fn | registers skill-disabled virtual 15798 |
+| `0x1428cf770` | Fn | 15798: aura branch checks skill 15801 and caster 11075; other restrictions separate |
+| `0x1428b0750` | Fn | virtual double-armour chance 12268; [model/evidence](../game/steel-willed-armour.md) |
+| `0x1428b0854` | Code | reads Steel Willed per-recent-enemy-hit input 20680 |
+| `0x1428b08eb` | Code | reads recent enemy-hit counter 4534 |
+| `0x1428b0962` | Code | multiplies per-hit input by recent count |
+| `0x1428b0c24..0x1428b0c36` | Code | caps the per-hit contribution at 30 |
+| `0x1428b0be3` / `0x1428b0c3f` | Code | reads generic chance 8404 / adds it after the contribution cap |
 | `0x1435db980` | VT | ActiveSkillManager (Actor +0x598; skills at +0x158, sorted by instance +0x40) |
 | `0x141eea6a0` | Fn | ActiveSkillManager::SkillInstanceAdded (manager slot 7) |
 | `0x141eea440` | Fn | find/create skill cooldown record (requires virtual cooldown count) |
@@ -375,11 +425,22 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x142198d40` | Fn | AddSkill(manager, ActionTypes HASH16): basic action |
 | `0x1421932b0` | Fn | Actor slot 20 reader (f0 0x40 skill list, 0x20 skill update, …) |
 | `0x14246f900` | Fn | SkillGem: the level from the experience (thresholds from ItemExperiencePerLevel) |
-| `0x142197b10` | Fn | Actor f0 0x40: skill list |
-| `0x142198800` | Fn | Actor f0 0x20: skill update (add records, remove ids) |
+| `0x142197b10` | Fn | Actor 0x40: skills, soul row/capacity/current, cooldown trailer |
+| `0x142198800` | Fn | Actor 0x20: skills/removes, soul seeds, current/new-capacity updates |
+| `0x142199a80` | Fn | Sorted soul-entry upsert at skill manager +0x188, stride 0x20 |
+| `0x141eea5b0` | Fn | Soul payload lookup through GrantedEffects ActiveSkills pointer |
+| `0x141ee8720` | Fn | Effective required souls: no-souls flag, selected multiplier, final percent |
+| `0x141eea3a0` | Fn | Availability: required souls <= current |
+| `0x141eea350` | Code | Native soul subtraction and dirty flag inside 0x141ee9d30 |
+| `0x140acfbb0` | Fn | Soul icon uses/fill; divisions guarded by nonzero required souls |
+| `0x140ad7fb0` | Fn | Soul current/capacity text |
+| `0x140826070` | Fn | Soul current/capacity text |
 | `0x142198560` | Fn | Actor f0 0x20: remove u16 skill ids from the skill manager |
 | `0x1421981d0` | Fn | read n skill records into the manager |
 | `0x142196ce0` | Fn | skill record reader |
+| `0x1421975f0..0x142197610` | Code | Clear wire bit1 and nonzero raw stored uses set constructor disable bit |
+| `0x1421976e8..0x1421976f6` | Code | Constructor parameter13 = (wire bit2 * 2) or dil |
+| `0x141ee7571..0x141ee75ba` | Code | Parameter13 bit0 zeros soul inputs; otherwise copies GEPL +0x28/+0x2c |
 | `0x1424a0dc0` | Fn | GrantedEffectsPerLevel reference reader |
 | `0x1424a0990` | Fn | GrantedEffectStatSetsPerLevel reference reader |
 | `0x141ee73d0` | Fn | ActiveSkillInstance ctor (action id from GEPL → GrantedEffect → ActiveSkill → ActionType) |

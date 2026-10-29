@@ -15,13 +15,19 @@ Part of [Status](../Status.md); what to build next in this area is in
   instant, low life, other-pool costs, mana at the end, not removed at full, extra life), as Path of Building does.
   Several recovery flasks queue, the highest rate first (poewiki).
   Checked live: the base recovery and the extra-life suffix; the other mods and queueing by tests.
+  A successful use also sends S→C `0x263`; the native UI then looks the base type up and plays its use sound,
+  `Audio/Sound Effects/ItemSounds/flaskdrink.ogg` (traced on the official 3.29.3b client and captured from it).
+  Full pools refuse the flask before any charge or buff, with silent `0x263` result `0x4e2` and the authoritative pool;
+  mana fullness uses the unreserved cap (full-pool refusals verified live locally).
+  The client also pays the attack skill's mana for attack-moves the server only walks; the Gateway answers with the
+  authoritative mana so the orb and the flasks agree (probe 2026-10-26).
   Code: `Flasks.cs`, `FlaskRecovery.cs`, Gateway (`UseFlask`, `RunResourceRecovery`).
   Docs: [13](../docs/protocol/13-items.md) §8.
 - Flask charges: kills give 1 / 3.5 / 6 / 11 charges by rarity (Mods.dat monster rarity mods, poewiki), increased
   flask charges gained and charge recovery multiply, partial charges are kept.
   Charges on dealing a critical strike (one 0.132 s cooldown), when hit and every 3 seconds; charges used and maximum
   charges with mods.
-  Towns, hideouts and resurrection fill every flask; a flask put on the bar in a hostile area starts empty.
+  Ordinary-mode towns, hideouts and resurrection fill every flask; a flask put on the bar in a hostile area starts empty.
   `Game_FLASK_CHARGES=full` brings back "every kill fills every flask".
   Not yet: fewer charges in acts 6 to 10 and maps; charges on taking a critical strike (monsters deal none) and at
   maximum frenzy charges (none here).
@@ -39,7 +45,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   phases through monsters, Gold raises the rarity of drops, Silver gives Onslaught.
   Checked live: every flask's use, stats on the client, bars, pause, death, area change; not the client walking faster
   or phasing (the control bridge cannot make it walk).
-  Not yet: Iron Flask's Ward (PR #206), ailments, stun and curses on the player (Aquamarine, Corundum and the ailment
+  Iron Flask now contributes to the authoritative Ward pool and restores broken Ward only after paid use.
+  A native Antiquarian check spent 40 charges, restored 502 Ward immediately and returned to 22 after expiry.
+  See [Ward and native evidence](../docs/game/antiquarian.md).
+  Not yet: ailments, stun and curses on the player (Aquamarine, Corundum and the ailment
   suffixes reach the panel only), Aquamarine's chilled ground, the smoke cloud's art, leech suffixes.
   Code: `UtilityFlasks.cs`, `FlaskGrounds.cs`, Gateway (`UseUtilityFlask`, `RunUtilityFlasks`, `RunFlaskGrounds`).
   Docs: [13](../docs/protocol/13-items.md) §8a.
@@ -59,13 +68,17 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Item mods: rarity (normal, magic, rare, unique), identified, and the implicit, explicit, enchant, scourge and hidden
   mod lists in the Mods component; new items roll their BaseItemTypes implicits (Driftwood Wand 8-12% increased Spell
   Damage); magic names come from the affixes; rarity and mods are saved with the item (characters and stash);
-  `/mod`, `/mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item.
+  `/mod`, `/mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item;
+  `Game_SOCKET_CAPACITY=1..6` (dev) lets `/sockets` give any socketable base that many, e.g. a 6-link wand (its own
+  capacity is 3).
   Magic and rare items: affixes rolled from Mods.dat by domain, item level, the item's tags and families, rare names
   from Words.dat; equipment drops magic / rare and unidentified; a Scroll of Wisdom identifies (C→S 0x71);
   `/item <type> magic|rare`, `/roll`.
   Equipped items' mods count on the character: global stats like a passive's (life, resistances, attributes, spell
-  damage …), the main hand's local crit, attack speed and accuracy on the weapon.
-  Not yet: local weapon damage and defence mods, uniques and special mods (#60).
+  damage …), the main hand's local crit, attack speed and accuracy, its local physical damage and quality and its local
+  added elemental/chaos damage (`ItemWeapons`), and the armour pieces' and shield's local flat/increased armour,
+  evasion and energy shield mods and quality (`ItemDefences`, [13](../docs/protocol/13-items.md) §2c).
+  Not yet: uniques and special mods (#60).
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
   `ItemCatalog.cs`, `CharacterSaves.cs`).
   Docs: [13](../docs/protocol/13-items.md) §2a-§2c.
@@ -83,6 +96,23 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- **Unique items and Mageblood (verified live 2026-10-26).** The client data links a unique's name (`Words` wordlist 6)
+  and artwork (`UniqueStashLayout` → `ItemVisualIdentity`), but not its mods, so `UniqueCatalog` curates each definition.
+  `/item Mageblood` creates the Heavy Belt unique with its name, artwork and fixed mods (the Strength is the base
+  implicit); the client shows the unique tooltip.
+  While Mageblood is worn, the leftmost 2–4 magic utility flasks in the flask bar apply their effects permanently without
+  charges or a timer, and using them is refused (client mod, server backstop); the stats refresh when the belt or the
+  flask bar changes.
+  Not yet: other uniques, unique drops/chancing, the permanent flask buff icons, the "effects cannot be removed"
+  backstop, the Foulborn rightmost variant and Enkindling (`UniqueCatalog`, `Program.Mageblood`;
+  [13](../docs/protocol/13-items.md) §2e, §8a).
+
+- Ruthless uses native mod/flask alternatives, reduced tunable drops and vendor returns, and refuses bench crafting.
+  Entering town or a hideout does not refill its pools/flasks; supported vendors refill them instead.
+  Active utility flasks cannot gain charges, and native Ruthless durations/Onslaught values apply.
+  Automated pool-restoration and session-ownership checks cover area changes, reconnects and vendor refill persistence.
+  Drop, recipe, bench and flask-rule calculations have automated coverage; full retail balance remains partial.
+  See [league modes](../docs/game/league-modes.md).
 - Essence crafting (2026-10-25, automated verification; real-client use pending): all 105 craftable essences resolve
   their exact class-specific guaranteed mod from Essences.dat, including tier-8 and Desolation.
   Normal/rare eligibility, random-mod level caps, fractures, metamod refusal and repeated consumption from the Essence
@@ -91,18 +121,25 @@ Part of [Status](../Status.md); what to build next in this area is in
   See [13](../docs/protocol/13-items.md).
 - Quiver eligibility fix (2026-10-25, awaiting client confirmation): active bows now publish `main_hand_weapon_type =
   9`, required by the client's inventory gate; see [13](../docs/protocol/13-items.md).
-- **Jeweller's Orb: initial local implementation verified live (2026-10-21).** Normal use and Shift share the currency
-  handler; rerolls counts 1/2/3/4/6, RGB colours and link groups, limited by class, dimensions and item level.
+- **Jeweller's Orb: verified live (2026-10-21).** Normal use and Shift share the currency handler; rerolls counts
+  1/2/3/4/6 and link groups, limited by class, dimensions and item level, and consumes one orb.
+  3.29: sockets the reroll keeps retain their colours and only the added sockets are white.
   Socketed gems, unsupported targets and maximum base capacity are refused without spending an orb.
   The live-found refusal of level-1 boots/gloves with two sockets is fixed and verified live.
-  Probabilities are approximate; quality and special socket overrides are not modelled.
+  Count and link probabilities are approximate; special socket overrides are not modelled.
   See [13](../docs/protocol/13-items.md), "Jeweller's Orb".
-- **Jeweller's Orb (2026-10-21).** Initial implementation verified live: normal and Shift use rerolls empty sockets,
-  colours and links, consumes one orb, updates inventory and saves the result.
-  Class, dimensions and item level limit socket rolls; only base capacity blocks further use.
-  Local counts are 1/2/3/4/6.
-  Probabilities are approximate; quality, white-socket 3.29 rules and special item overrides remain open.
-  See protocol/13-items.md, Jeweller's Orb.
+- **Socket colours (3.29; verified live 2026-10-26).** Item sockets generate white and may roll a
+  colour in proportion to the base's attribute requirements, with the chance rising with item level; a gem in a
+  matching red/green/blue socket gets +10% quality (the stat path is in [25](../docs/protocol/25-gem-supports.md)).
+  Chromatic Orbs force one socket non-white and roll the rest, with item quality raising their chance; the bench's
+  "At Least Two/Three/Four Non-White Sockets" crafts (`NN`/`NNN`/`NNNN`) reroll until they guarantee that many; Vaal
+  corruption colours one white socket. `/item`, drops and shops use the same generator, and the start weapon's two
+  linked sockets are white.
+  The probabilities are an approximation (5% non-white at item level 1, +0.25 points per level up to 30% at 100, and
+  +0.25 points per 1% quality for Chromatic/bench); `SocketColours`, [13](../docs/protocol/13-items.md),
+  "Socket colours (3.29)".
+  Not modelled: Tainted Chromatic/Jeweller's Orbs, Orb of Binding, the Locus of Corruption, the 25-roll bench reward,
+  special item overrides.
 - **Orb of Alchemy, Chaos Orb, Divine Orb (verified live, 2026-10-21):** Alchemy makes a normal item an identified
   rare with 4-6 random affixes and a rare name; Chaos rerolls all of a rare item's affixes (4-6, new tiers);
   Divine keeps the affixes, tiers and order and rerolls only values.
@@ -155,7 +192,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- Uniques and special mods (#60), items' base damage and defences;
+- Most uniques and special mods (#60), and unique drops/chancing; only Mageblood has a definition so far;
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
   Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble,

@@ -102,30 +102,50 @@ partial class Program
         ChargeEffects.DamageMore(name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0, spell);
 
     // The player's additional physical and elemental damage reduction (Endurance Charges, passives) for hits taken.
-    static (int Physical, int Elemental) PlayerDamageReduction(ClientState conn)
+    static (int Physical, int Elemental) PlayerDamageReduction(ClientState conn,
+        IReadOnlyDictionary<uint, int>? stats = null)
     {
-        var stats = CharacterPlayerStats(conn);
+        stats ??= CharacterPlayerStats(conn);
         return ChargeEffects.Reduction(name => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0);
     }
 
     // A hit's damage taken after the player's mitigation (the dev /hit commands, MonsterSwing's rules): physical through
-    // armour plus the additional physical damage reduction, the other types through resistance, and the elemental ones
-    // through the additional elemental damage reduction after it.
+    // armour plus additional physical reduction; the other types take resistance before the shared hit-only pass.
     static int MitigateTaken(ClientState conn, DamageType type, int amount, int resistance, int maxResistance)
     {
-        var reduction = PlayerDamageReduction(conn);
-        if (type == DamageType.Physical) return DamageModel.MitigatePhysical(amount, conn.Pools.Armour, reduction.Physical);
-        int resisted = DamageModel.Mitigate(amount, resistance, maxResistance);
-        return DamageTypes.IsElemental(type) ? DamageModel.Reduce(resisted, reduction.Elemental) : resisted;
+        lock (conn.Monsters)
+        {
+            int priorContacts = conn.RecentEnemyHits.Count(conn.Clock.Elapsed.TotalSeconds);
+            var stats = CharacterPlayerStats(conn);
+            bool relevant = amount > 0 && (type == DamageType.Physical
+                || type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage
+                    && DamageModel.Mitigate(amount, resistance, maxResistance) > 0);
+            var armour = IncomingArmourLocked(conn, relevant, priorContacts, stats);
+            return MitigateTakenWithArmour(conn, type, amount, resistance, maxResistance, armour.EffectiveArmour, stats);
+        }
+    }
+
+    static int MitigateTakenWithArmour(ClientState conn, DamageType type, int amount, int resistance, int maxResistance,
+        int effectiveArmour, IReadOnlyDictionary<uint, int> stats)
+    {
+        var reduction = PlayerDamageReduction(conn, stats);
+        int resisted = type == DamageType.Physical ? amount : DamageModel.Mitigate(amount, resistance, maxResistance);
+        return FortificationDamageTaken(conn, (int)Math.Round(PlayerHitMitigation.AfterResistance(conn.Pools, type, resisted,
+            reduction.Physical, reduction.Elemental, effectiveArmour)
+            * conn.ElementalAilments.DamageTakenFactor(conn.Clock.Elapsed.TotalSeconds)));
     }
 
     // What MitigateTaken applied, for the dev commands' replies: armour or resistance, and the additional reduction.
-    static string MitigationLabel(ClientState conn, DamageType type, int amount, int resistance, int maxResistance)
+    static string MitigationLabel(ClientState conn, DamageType type, int amount, int resistance, int maxResistance,
+        int effectiveArmour, IReadOnlyDictionary<uint, int> stats)
     {
-        var (physical, elemental) = PlayerDamageReduction(conn);
+        var (physical, elemental) = PlayerDamageReduction(conn, stats);
         if (type == DamageType.Physical)
-            return $"{DamageModel.ArmourReduction(conn.Pools.Armour, amount)}% armour" + (physical > 0 ? $" + {physical}% physical damage reduction" : "");
+            return $"{DamageModel.ArmourReduction(effectiveArmour, amount)}% armour" + (physical > 0 ? $" + {physical}% physical damage reduction" : "");
         return $"{DamageModel.Capped(resistance, maxResistance)}% resistance" +
+            (type == DamageType.Chaos && conn.Pools.ArmourAppliesToChaosDamage
+                ? $" + {DamageModel.ArmourReduction(effectiveArmour, DamageModel.Mitigate(amount, resistance, maxResistance))}% armour"
+                : "") +
             (DamageTypes.IsElemental(type) && elemental > 0 ? $" + {elemental}% elemental damage reduction" : "");
     }
 
@@ -134,31 +154,48 @@ partial class Program
     // (Path of Building: 60, grown by area of effect; power 1 normal, 2 magic, 10 rare, 20 unique), when its cast is over.
     // True when the skill was one of these.
     static bool UseChargeSkill(ClientState conn, int effect, int level, int quality, (int X, int Y) at)
+        => UseChargeSkillCore(conn, effect, Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2));
+
+    static bool UseChargeSkillInstance(ClientState conn, ushort skillId, int effect, int level, int quality, (int X, int Y) at)
+        => Skills.EffectId(effect) == "EnduringCry" && UseChargeSkillCore(conn, effect, SupportedSkill(conn, skillId).Stats);
+
+    static bool UseChargeSkillCore(ClientState conn, int effect, IReadOnlyDictionary<uint, int> own)
     {
         if (Skills.EffectId(effect) != "EnduringCry") return false;
-        var own = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
         int Own(string name) => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
         int per = Own("endurance_charge_granted_per_X_monster_power_during_endurance_warcry");
         // The warcry cannot be cancelled before its contact point (cannot_cancel_skill_before_contact_point), so a later
-        // action does not stop it. Warcry speed is the player's and the gem's.
+        // action does not stop it. Admission checks the actor restriction before this accepted release is scheduled;
+        // changing its source later does not cancel this continuation. Warcry speed is the player's and the gem's.
         var player = AreaPlayerStats(conn);
         int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
         double castSeconds = Skills.CastTimeMs(effect) / 1000.0 / Math.Max(0.01, 1 + (Player("warcry_speed_+%") + Own("warcry_speed_+%")) / 100.0);
         double until = conn.Clock.Elapsed.TotalSeconds + castSeconds;
+        int epoch = conn.ProjectileEpoch;
+        double duration = SkillDurationModifiers.Seconds(Own("base_skill_effect_duration"), Player, Own);
+        double buffEffect = Math.Max(0, 1 + ((long)Player("warcry_buff_effect_+%") + Own("warcry_buff_effect_+%")) / 100d);
         _ = Task.Run(async () =>
         {
             // The game clock: a pause holds the cry.
             while (!conn.Closed && conn.Clock.Elapsed.TotalSeconds < until) await Task.Delay(16);
-            if (conn.Closed || conn.PlayerLife == 0) return;
+            if (!conn.ProjectileActive(epoch) || conn.PlayerLife == 0) return;
             foreach (var (k, v) in own) player[k] = v;
             int radius = SkillArea.Radius(EnduringCryRadius, name => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0, spell: false);
             double now = conn.Clock.Elapsed.TotalSeconds;
             int power;
             lock (conn.Monsters)
             {
+                if (!conn.ProjectileActive(epoch) || conn.PlayerLife == 0) return;
                 var here = conn.Walk.Position(now);
                 power = conn.Monsters.Values.Where(m => m.Hostile && !m.Dead && m.Life > 0 && Dist(m.Walk.Position(now), here) <= radius)
                     .Sum(m => WarcryPower(m.Rarity));
+                // The target's stat description caps regeneration at 25 Power. Charge generation retains its own rule.
+                double percentPerMinute = Math.Min(25, power) / 5d
+                    * Own("enduring_cry_life_regeneration_rate_per_minute_%_per_5_power_up_to_cap")
+                    * buffEffect;
+                conn.EnduringCryRecovery.Begin(now, duration, conn.PlayerMaxLife * percentPerMinute / 6000d);
+                Console.WriteLine($"[gateway] Enduring Cry recovery: {power} power, {duration:0.###} seconds, "
+                    + $"{percentPerMinute:0.###}% Life/min (Whaletooth included)");
             }
             int charges = per > 0 ? power / per : 0;
             Console.WriteLine($"[gateway] Enduring Cry: {power} power within {radius} cells, {charges} endurance charge(s)");
@@ -212,11 +249,17 @@ partial class Program
                 double now = conn.Clock.Elapsed.TotalSeconds;
                 ChargeSession.StepResult step;
                 List<ChargeSession.BuffChange> buffs;
-                lock (conn.Monsters)
+                using (ProjectileMutation(conn))
                 {
+                    now = ProjectileWorldTime(conn);
                     step = session.Step(now, stats, () => weapon, alive: conn.PlayerLife > 0, moving: now < conn.Walk.ArrivesAt,
                         inTown: InTown(conn), Random.Shared);
                     buffs = session.Presentation(now, () => conn.NextBuff++);
+                    if (step.CountsChanged)
+                    {
+                        conn.Pools = PoolsFor(conn, conn.Pools.Level);
+                        conn.ApplyMovementSpeed();
+                    }
                 }
                 foreach (string line in step.Log) Console.WriteLine($"[gateway] {remote} {line} (t={now:0.000})");
                 foreach (var change in buffs)
@@ -224,11 +267,6 @@ partial class Program
                         await Send(remote, stream, ciphers, packet, label);
                 if (step.CountsChanged)
                 {
-                    lock (conn.Monsters)
-                    {
-                        conn.Pools = PoolsFor(conn, conn.Pools.Level);
-                        conn.ApplyMovementSpeed();
-                    }
                     await SendChargeStats(remote, stream, ciphers, conn,
                         string.Join(", ", Charges.Types.Select(t => $"{session.Effective(t)} {Charges.Name(t)}")));
                 }
@@ -252,8 +290,10 @@ partial class Program
             await SendCharacterStats(remote, stream, ciphers, conn, $"charges {why}");
             return;
         }
-        await Send(remote, stream, ciphers, InstanceEntities.StatsUpdate(PlayerId, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
-        await Send(remote, stream, ciphers, InstanceEntities.PlayerSkillsChange(PlayerId, skills, []),
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => PlayerStatsUpdateAtGate(conn, PlayerStatsWithCleared(conn)), $"0x01b3 player stats (charges {why})");
+        await SendPlayerStatSnapshot(remote, stream, ciphers, conn,
+            () => InstanceEntities.PlayerSkillsChange(PlayerId, PlayerSkills(conn), []),
             $"0x02ba player Actor: {skills.Count} skill(s), charge stats");
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
     }

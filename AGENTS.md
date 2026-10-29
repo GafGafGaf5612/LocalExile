@@ -16,6 +16,20 @@ All agent and contributor documentation is in [Agents/](Agents/). Read these fir
 - **Start the client only through `scripts/dev/live.ps1`, and only one at a time.** Any other launch contacts the
   official patch servers and can update the client, which breaks the setup.
 - **Run commands from the repository root.**
+- **Keep production game-data paths relative to the repository root (`data/`).** Do not add parent-directory
+  searching, an absolute `DataFolder`, or catalog-path changes to accommodate tests or one machine.
+  Gateway tests use the shared `tests/GameServer.Gateway.Tests/TestEnvironment.cs` module initializer.
+  Do not change the process working directory in individual tests; fix the shared test setup if it fails.
+- **Write all commit messages and pull request titles and descriptions in English.**
+- **Verify the current integration base before declaring a PR ready.** Fetch the latest `main` and update the
+  branch using the requested repository workflow; resolve shared code by preserving both mechanics.
+  Re-run the solution build and all three required test suites, including regressions for the combined behavior.
+  A PR merging into an old base, or GitHub reporting it mergeable alone, is not evidence for a proposed merge block.
+  If related PRs share code or behavior, test their exact heads and intended order in a disposable integration checkout.
+  Keep unrelated PRs out of the published feature branch; report any remaining integration conflict or untested order.
+  Record the tested base/head revisions and repeat affected checks when those inputs change.
+- **Do not add automatic client-archive writes to standard startup.** Feature-specific client data changes need
+  separate maintainer review; keep read-only extraction separate from any explicit client maintenance tool.
 - **Never commit game files or third-party programs:** `Client/`, `data/` (except `data/schema/`), Ghidra, the JDK,
   `Tools/ghidra-projects`, `Tools/re/out` (decompiled client code). `.gitignore` keeps them out; do not force-add.
 - **Never commit secrets:** generated keys (`data/login-keys.json`, `data/instance-secret.bin`), accounts, or

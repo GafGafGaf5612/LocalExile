@@ -9,6 +9,15 @@ Nothing yet.
 
 ## Partly working
 
+- Ruthless gems use native primary/companion effect alternatives, requirements and skill rows.
+  Deterministic support rewards are disabled; eligible active gems use Siosa's Uncarved Gemstone exchange.
+  Gem XP receives the configured Ruthless multiplier.
+  Ruthless availability excludes the 13 original movement gems, Venom Gyre and Item Rarity Support.
+  Drops, vendor stock and runtime use enforce those exclusions; Quickstep remains permitted.
+  An alternate Frostblink hardmode row does not make that unavailable gem playable.
+  Automated mode catalog, acquisition and runtime checks pass.
+  Ruthless Nessa, Siosa and unavailable-gem cases have automated coverage.
+  See [league modes](../docs/game/league-modes.md).
 - **Gem quest rewards (verified live 2026-10-26).** Every `QuestRewardOffers` row whose items the server can build is
   offered by the NPC's QuestReward dialogue row, with the `Characters` class filter and the offer's taken flag;
   unbuildable rows (level-8 magic armours, magic belts) are skipped instead of an allow list excluding whole offers.
@@ -28,8 +37,19 @@ Nothing yet.
   Live: rare monsters dropped normal skill and support gems. The first attempt used the data's ShopTag gems, which
   include the item-granted/legacy rows, so the pool was narrowed to the quest/starting/exceptional sets.
 
-- **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).** The currency/flask/jewellery vendors
-  that also sell gems give seven tabs of level-1 gems, priced by their level-1 requirement tier (1–7 Scroll of Wisdom,
+- **Gem vendors (verified live 2026-10-26 on Nessa; Lilly/Siosa unit-tested).**
+  In this local checkout Nessa additionally has the complete creatable gem assortment, independent of quests/class,
+  with alternative variants, colour/kind tabs and numbered overflow pages; White Skills combines both white kinds.
+  A separate Skills tab preserves quest/class-restricted ordinary stock as the future gameplay shop.
+  Skills lists active gems before supports, grouped red/green/blue/white; supports begin on a new row.
+  Colour tabs remain complete development tools regardless of progression; NpcShops.cs documents the distinction
+  without adding development messages to the player's chat when the shop opens.
+  Every Nessa gem is unlimited stock on every tab: paid copies get fresh IDs and the original offer remains available.
+  Network purchase tests cover repeats, variant/quality persistence, insufficient funds and save rollback.
+  Other vendors retain progression.
+  Automated full-stock, variant persistence and pagination checks cover the override; updated native display is pending.
+  See [19](../docs/protocol/19-gems.md) §5, "Local Nessa shop".
+  The currency/flask/jewellery vendors that also sell gems give seven tabs of level-1 gems, priced by their level-1 requirement tier (1–7 Scroll of Wisdom,
   8–15 Orb of Transmutation, 16–27 Orb of Alteration, 28–37 Orb of Chance, 38+ Orb of Alchemy). The stock
   is the gems of every
   completed quest offer (reward shown or taken), filtered to the character's class and to the client's shop list;
@@ -54,8 +74,12 @@ Nothing yet.
   one aura of a kind runs at a time (`GemSkillIds.cs`; [19](../docs/protocol/19-gems.md) §3).
 - **Gem levels (tested, level 1 → 2 checked with the real client).** A gem's level comes from its experience up to its
   experience type's cap; its skill uses that level's cost, damage, reservation and cooldown, and its quality stats;
-  transfigured and Trarthan gems grant their own skill, Vaal gems their Vaal skill and their base skill (refused
-  without Vaal souls, which are not gathered yet); the variant is sent in the SkillGem data and saved;
+  transfigured and Trarthan gems grant their own skill; Vaal gems grant their Vaal skill and base skill.
+  Vaal soul collection/native budget payloads are implemented, pending native acceptance.
+  Unsupported Vaal casts remain refused even with souls; see [27](../docs/protocol/27-vaal-souls.md).
+  The variant is sent in the SkillGem data and saved.
+  Item serialization also derives the native variant flag for standalone and socketed gems, preserving level-lock
+  and saved flags. Wire regressions cover the flag; transfigured item names still need a native retest;
   `/gem <name> [level] [quality]` (`ItemCatalog.cs`, `SkillCatalog.cs`; [19](../docs/protocol/19-gems.md) §1, §3).
   Not yet: corruption.
 - **Gem requirements (tested, checked with the real client).** A gem's level requirement is the character level of its

@@ -9,6 +9,13 @@ static class SocketLayout
 {
     public const int MaximumSockets = 6;
 
+    /// <summary>Game_SOCKET_CAPACITY=1..6 (dev): /sockets may give any socketable base that many sockets, ignoring its
+    /// class and dimensions, e.g. a 6-link wand (a wand's own capacity is 3). 0 when unset, so the base's capacity
+    /// applies as before. Read on every use: the flag only changes the dev command's own limit.</summary>
+    public static int CapacityOverride =>
+        int.TryParse(Environment.GetEnvironmentVariable("Game_SOCKET_CAPACITY"), out int sockets) && sockets > 0
+            ? Math.Clamp(sockets, 1, MaximumSockets) : 0;
+
     /// <summary>The colours and link groups of the words, or an error.</summary>
     public static (IReadOnlyList<SocketColour> Colours, IReadOnlyList<byte> Links)? Parse(IEnumerable<string> words, out string? error)
     {
@@ -39,12 +46,16 @@ static class SocketLayout
     /// <summary>
     /// The item with these sockets and links. Socketed gems stay in their sockets (the socket takes the new colour); a
     /// layout that would drop a socket holding a gem is refused, as is one over the base's capacity
-    /// (<see cref="CurrencyEffects.SocketCapacity"/>; the item level does not limit it).
+    /// (<see cref="CurrencyEffects.SocketCapacity"/>; the item level does not limit it). A positive
+    /// <paramref name="capacityOverride"/> replaces that capacity (the dev flag, <see cref="CapacityOverride"/>): a
+    /// socketable base takes up to that many sockets whatever its class and dimensions.
     /// </summary>
-    public static Item? Apply(Item item, ItemCatalog.BaseType type, IReadOnlyList<SocketColour> colours, IReadOnlyList<byte> links, out string? error)
+    public static Item? Apply(Item item, ItemCatalog.BaseType type, IReadOnlyList<SocketColour> colours, IReadOnlyList<byte> links,
+        out string? error, int capacityOverride = 0)
     {
         int capacity = CurrencyEffects.SocketCapacity(item, type);
         if (capacity == 0) { error = $"{type.Name} can't have sockets"; return null; }
+        if (capacityOverride > 0) capacity = Math.Min(capacityOverride, MaximumSockets);
         if (colours.Count > capacity) { error = $"{type.Name} has room for at most {capacity} sockets"; return null; }
         if (item.Sockets.Skip(colours.Count).Any(s => s.Gem is not null)) { error = "take out the gems of the sockets that would go first"; return null; }
         error = null;

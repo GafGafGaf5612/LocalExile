@@ -3,7 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\GameServer.Core\GameServer.Core.csproj" />
     <ProjectReference Include="..\GameServer.Storage\GameServer.Storage.csproj" />
-    <!-- Server-side level generation (ServerLevels.cs): the generator port and the game files. -->
+    <!-- The game files and the level generator port (ServerLevels.cs). -->
     <ProjectReference Include="..\GameServer.Data\GameServer.Data.csproj" />
     <Compile Include="..\..\scripts\re\ggdump\NodeOodleDecoder.cs" Link="NodeOodleDecoder.cs" />
   </ItemGroup>

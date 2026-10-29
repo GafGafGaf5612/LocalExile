@@ -10,7 +10,8 @@ using GameServer.Core.Protocol.Instance;
 sealed class PlayerInventories
 {
     public const byte MainInventory = 0, BodyArmour = 1, Weapon1 = 2, Offhand1 = 3, Helmet = 4, Gloves = 8,
-        Boots = 9, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, CraftingBench = 16, Cursor = InstanceInventories.CursorRow;
+        Boots = 9, Belt = 10, Flask = 11, MapDevice = 13, Weapon2 = 14, Offhand2 = 15, CraftingBench = 16,
+        HarvestCrafting = 43, Cursor = InstanceInventories.CursorRow;
 
     private static readonly ConcurrentDictionary<string, PlayerInventories> ByCharacter = new(StringComparer.OrdinalIgnoreCase);
 
@@ -344,6 +345,14 @@ sealed class PlayerInventories
 
     /// <summary><see cref="SocketedGems"/> with the id of the item each gem is in.</summary>
     public IReadOnlyList<(uint ItemId, Item Gem)> SocketedGemsByItem() => [.. SocketedGemPlaces().Select(g => (g.ItemId, g.Gem))];
+
+    // Immutable item records from ONE inventory read, including attribute gear and all active socket hosts.
+    internal IReadOnlyList<(byte Row, InventoryItem Item)> EquipmentSnapshot()
+    {
+        lock (_lock)
+            return [.. ItemModStats.EquipmentRows.SelectMany(row =>
+                (_items.TryGetValue(row, out var items) ? items : []).Select(item => (row, item)))];
+    }
 
     public Item? SocketHost(uint id)
     {
@@ -946,6 +955,45 @@ sealed class PlayerInventories
         return result;
     }
 
+    /// <summary>Whether <paramref name="received"/> fits the main inventory once every offered item is gone (a player
+    /// trade checks both sides before either changes). Nothing changes.</summary>
+    public bool CanExchange(IReadOnlyList<Item> received, Func<Item, Shape?> shapeOf)
+    {
+        lock (_lock)
+        {
+            uint probe = _nextItemId;
+            var after = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
+            foreach (var item in received)
+                if (item.StackSize > 0 && StackInto(MainInventory, after, item, shapeOf, ref probe).Left > 0) return false;
+            return true;
+        }
+    }
+
+    /// <summary>A player trade completed: every offered item is gone and <paramref name="received"/> goes into the main
+    /// inventory, in one save. Unlike <see cref="Sell(IReadOnlyList{Item}, Func{Item, Shape?})"/> either side may be
+    /// empty. Null (nothing changes) when the received items do not fit.</summary>
+    public Stacking? Exchange(IReadOnlyList<Item> received, Func<Item, Shape?> shapeOf)
+    {
+        Stacking result;
+        lock (_lock)
+        {
+            uint probe = _nextItemId;
+            var before = ItemsIn(MainInventory).Where(i => !_offered.ContainsKey(i.Id)).ToList();
+            var after = before.ToList();
+            foreach (var item in received)
+                if (item.StackSize > 0 && StackInto(MainInventory, after, item, shapeOf, ref probe).Left > 0) return null;
+            foreach (var items in _items.Values) items.RemoveAll(i => _offered.ContainsKey(i.Id));
+            _offered.Clear();
+            _items[MainInventory] = after;
+            _nextItemId = probe;
+            var old = before.ToDictionary(i => i.Id);
+            result = new([.. after.Where(i => old.TryGetValue(i.Id, out var previous) && previous != i)],
+                [.. after.Where(i => !old.ContainsKey(i.Id))], 0);
+        }
+        Persist();
+        return result;
+    }
+
     /// <summary>
     /// The class's opening kit from Characters.dat: its start weapon waits on the Strand's ground, while the
     /// skill and support gems are saved as pending tutorial rewards (the biting zombie and large chest).
@@ -973,20 +1021,11 @@ sealed class PlayerInventories
         ItemCatalog.BaseType? Gem(string column) =>
             row.GetProperty(column) is { ValueKind: JsonValueKind.Number } k
                 ? catalog.Row(g.RootElement[k.GetInt32()].GetProperty("BaseItemTypesKey").GetInt32()) : null;
-        // A gem's socket colour: its largest attribute requirement (SkillGems Strength/Dexterity/IntelligenceRequirementPercent).
-        SocketColour Colour(string column)
-        {
-            if (row.GetProperty(column) is not { ValueKind: JsonValueKind.Number } k) return SocketColour.Blue;
-            var gem = g.RootElement[k.GetInt32()];
-            int str = gem.GetProperty("StrengthRequirementPercent").GetInt32(), dex = gem.GetProperty("DexterityRequirementPercent").GetInt32(),
-                @int = gem.GetProperty("IntelligenceRequirementPercent").GetInt32();
-            return str >= dex && str >= @int ? SocketColour.Red : dex >= @int ? SocketColour.Green : SocketColour.Blue;
-        }
-        // The start weapon with two linked sockets in the start gems' colours (the Witch: blue, blue), empty, for its gems.
+        // The start weapon with two linked white sockets (3.29: gems fit any colour), empty, for its gems.
         if (row.GetProperty("StartWeapons").EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Number } w &&
             catalog.Row(w.GetInt32()) is { Supported: true } weapon)
         {
-            var item = ItemCatalog.Create(weapon, [new(Colour("StartSkillGem")), new(Colour("StartSupportGem"))], [2]);
+            var item = ItemCatalog.Create(weapon, [new(SocketColour.White), new(SocketColour.White)], [2]);
             // Pending until the character picks it up from the beach.
             inv._startWeapon = item;
         }

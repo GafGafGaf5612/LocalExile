@@ -16,6 +16,8 @@ sealed class MonsterCatalog(string folder = "data")
         int MovementSpeed = 30, int ObjectSize = 3, int AggroRange = 60, IReadOnlyList<int>? GrantedEffects = null,
         int AttackMs = 1500, int AttackRange = 8, int DamageMultiplier = 100, int ExperienceMultiplier = 100, bool BossHealthBar = false)
     {
+        public MonsterLifeData LifeData { get; init; } = new(null, null, null);
+        public bool RangedWeapon { get; init; }
         public IReadOnlyList<string> ComponentsOrBase => Components ?? MonsterObject.BaseComponents;
         public bool Supported => MonsterObject.CanSerialize(ComponentsOrBase, StateMachine is not null);
         public override string ToString() => $"{Name} ({Id}, row {Row})";
@@ -23,9 +25,14 @@ sealed class MonsterCatalog(string folder = "data")
 
     private readonly Lazy<(List<Variety> Rows, string? Error)> _rows = new(() => Load(folder));
     private readonly Lazy<LifeTables?> _life = new(() => LifeTables.Load(folder));
+    private readonly MonsterResistanceCatalog _resistance = new(folder);
     private readonly Lazy<Dictionary<string, HitAnimation[]>> _takeHit = new(() => LoadTakeHit(folder));
 
     public string? Error => _rows.Value.Error;
+
+    /// <summary>The variety's elemental/chaos base resistance at this level, before spawned monster modifiers.</summary>
+    public int? BaseResistance(Variety variety, int level, GameServer.Core.World.DamageType type) =>
+        _resistance.BaseResistance(variety.MonsterType, level, type);
 
     /// <summary>
     /// The variety's TakeHit clips: their indexes in its rig's animation list and their lengths
@@ -198,6 +205,7 @@ sealed class MonsterCatalog(string folder = "data")
         var components = new Dictionary<string, IReadOnlyList<string>>();
         var stateMachines = new Dictionary<string, StateMachineData>();
         var transitionStates = new Dictionary<string, byte>();
+        var lifeData = new Dictionary<string, MonsterLifeData>();
         string types = Path.Combine(folder, "object-types.json");
         if (File.Exists(types))
         {
@@ -213,8 +221,18 @@ sealed class MonsterCatalog(string folder = "data")
                         [.. ss.EnumerateArray().Select(e => e[0].GetString() ?? "")]);
                 if (t.TryGetProperty("transitionable", out var tr) && tr.TryGetProperty("num_states", out var ns))
                     transitionStates[type] = (byte)Math.Clamp(ns.GetInt32(), 1, 127);
+                if (t.TryGetProperty("life", out var life) && life.ValueKind == JsonValueKind.Object)
+                {
+                    bool? Flag(string name) => life.TryGetProperty(name, out var value)
+                        && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : null;
+                    lifeData[type] = new(Flag("corpse_usable"), Flag("prevent_corpse_sinking"), Flag("corpse_use_veto"));
+                }
             }
         }
+        var rangedVisuals = RangedWeaponVisuals(folder);
+        bool RangedWeapon(JsonElement row) => new[] { "Weapon1_ItemVisualIdentityKeys", "Weapon2_ItemVisualIdentityKeys" }
+            .Any(name => row.TryGetProperty(name, out var values) && values.ValueKind == JsonValueKind.Array
+                && values.EnumerateArray().Any(value => value.ValueKind == JsonValueKind.Number && rangedVisuals.Contains(value.GetInt32())));
         var rows = new List<Variety>();
         using (var doc = JsonDocument.Parse(File.ReadAllBytes(varieties)))
         {
@@ -232,12 +250,29 @@ sealed class MonsterCatalog(string folder = "data")
                     [.. r.GetProperty("GrantedEffectsKeys").EnumerateArray().Select(e => e.GetInt32())],
                     r.GetProperty("AttackSpeed").GetInt32(), r.GetProperty("MaximumAttackDistance").GetInt32(),
                     r.GetProperty("DamageMultiplier").GetInt32(), r.GetProperty("ExperienceMultiplier").GetInt32(),
-                    r.TryGetProperty("BossHealthBar", out var bar) && bar.ValueKind == JsonValueKind.True));
+                    r.TryGetProperty("BossHealthBar", out var bar) && bar.ValueKind == JsonValueKind.True)
+                    { LifeData = lifeData.GetValueOrDefault(baseType) ?? new(null, null, null), RangedWeapon = RangedWeapon(r) });
             }
         }
         // With object-types.json, a type missing from it has no .ot: do not guess.
         if (components.Count > 0)
             rows = [.. rows.Select(v => v.Components is null ? v with { Components = [] } : v)];
         return (rows, null);
+    }
+
+    static HashSet<int> RangedWeaponVisuals(string folder)
+    {
+        string classes = Path.Combine(folder, "tables", "ItemClasses.json");
+        string bases = Path.Combine(folder, "tables", "BaseItemTypes.json");
+        if (!File.Exists(classes) || !File.Exists(bases)) return [];
+        using var c = JsonDocument.Parse(File.ReadAllBytes(classes));
+        using var b = JsonDocument.Parse(File.ReadAllBytes(bases));
+        var rangedClasses = c.RootElement.EnumerateArray().Select((row, index) => (row, index))
+            .Where(p => p.row.GetProperty("Id").GetString() is "Bow" or "Wand").Select(p => p.index).ToHashSet();
+        return b.RootElement.EnumerateArray()
+            .Where(row => row.TryGetProperty("ItemClassesKey", out var k) && k.ValueKind == JsonValueKind.Number
+                && rangedClasses.Contains(k.GetInt32()) && row.TryGetProperty("ItemVisualIdentity", out var v)
+                && v.ValueKind == JsonValueKind.Number)
+            .Select(row => row.GetProperty("ItemVisualIdentity").GetInt32()).ToHashSet();
     }
 }

@@ -46,6 +46,19 @@ partial class Program
         Console.WriteLine($"[gateway] {remote} <= 0x0024 npc {npc.Npc} ({use}) from ({here.X}, {here.Y}): reached at ({stop.X}, {stop.Y}) in {arrive - now:0.00} s");
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         if (!PlayerActionCurrent(conn, action)) return;
+        if (conn.Ruthless && CanRefillRuthless(npc.Npc.Id))
+        {
+            lock (conn.Monsters)
+            {
+                if (conn.PlayerLife == 0 || conn.HardcoreDeathRecorded) return;
+                conn.PlayerLife = conn.PlayerMaxLife;
+                conn.PlayerMana = (uint)UnreservedMana(conn);
+            }
+            await GainFlaskCharges(remote, stream, ciphers, conn, int.MaxValue, "Ruthless flask vendor refill");
+            PersistRuthlessVitals(conn);
+            await Send(remote, stream, ciphers, InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), "Ruthless vendor restores life");
+            await SendPlayerMana(remote, stream, ciphers, conn, "Ruthless vendor restores mana");
+        }
         uint id;
         lock (conn.Npcs) id = conn.Npcs.FirstOrDefault(n => ReferenceEquals(n.Value, npc)).Key;
         conn.TalkingTo = id;
@@ -117,16 +130,17 @@ partial class Program
                     talk.OpensGuildHideouts ? 1u : 0u), $"0x007b open hideout selection ({(talk.OpensGuildHideouts ? "guild" : "character")})");
                 break;
             case "QuestReward" when talk.RewardOffer is { } offer:
-                var rewardCatalog = QuestRewardCatalog.Load();
+                var rewardCatalog = QuestRewardCatalog.Load(ruthless: conn.Ruthless);
                 var rewardItems = rewardCatalog.Choices(offer, conn.ClassRow)
-                    .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, Items))).Where(c => c.Item is not null).ToArray();
+                    .Select(c => (Choice: c, Item: QuestRewardCatalog.Create(c, ItemsFor(conn), conn.Ruthless ? RollsFor(conn) : null)))
+                    .Where(c => c.Item is not null).ToArray();
                 if (rewardCatalog.Find(offer) is not { } rewardOffer || conn.QuestFlags.Contains(rewardOffer.TakenFlag)
                     || rewardItems.Length == 0) break;
                 conn.InNpcTalk = false;
                 conn.NpcRewardOffer = offer;
                 conn.NpcRewardItems = rewardItems.ToDictionary(c => c.Choice.Id, c => c.Item!);
                 await Send(remote, stream, ciphers, InstanceInventories.AddInventory(0x600, NpcShops.Tab, NpcShops.Manager,
-                    [.. rewardItems.Select((c, i) => new InventoryItem(c.Choice.Id, (byte)(i % 12), (byte)(i / 12), c.Item!))]),
+                    QuestRewardCatalog.Arrange(rewardItems.Select(c => (c.Choice.Id, c.Item!)), ItemsFor(conn))),
                     $"0x00c0 quest reward inventory: offer {offer}, {rewardItems.Length} choices");
                 await Send(remote, stream, ciphers, InstanceNpcs.OpenQuestReward(0x600, checked((ushort)offer)),
                     $"0x0087 reward inventory 0x600: quest reward offer {offer}");
@@ -200,9 +214,9 @@ partial class Program
         await Send(remote, stream, ciphers, InstanceNpcs.Talk(conn.TalkingTo), $"0x0084 npc 0x{conn.TalkingTo:x}: options again");
     }
 
-    // C→S 0x88: an item bought from the open shop tab. The client picked the free cell; the item leaves the tab (0xbf on
-    // manager 1) and enters the inventory (0xbf), keeping its id. Free for now: prices are not charged yet.
-    static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.Buy buy)
+    // C→S 0x88: finite goods move with their id. Nessa's gems are permanent shop templates: each paid purchase
+    // creates a fresh inventory id, while a manager-1 update refreshes the original template in its shop cell.
+    internal static async Task BuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.Buy buy)
     {
         if (conn.NpcRewardOffer is not null)
         {
@@ -213,10 +227,16 @@ partial class Program
         OpenShop? shop;
         uint tab = 0;
         InventoryItem? item = null;
+        bool replenish = false;
         lock (conn.Npcs)
         {
             shop = conn.Shop;
-            if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) (tab, item) = found;
+            if (shop is not null && shop.Items.TryGetValue(buy.ItemId, out var found))
+            {
+                (tab, item) = found;
+                replenish = NpcShops.ReplenishesGem(shop.Npc.Npc.Id, item.Item);
+                if (!replenish) shop.Items.Remove(buy.ItemId);
+            }
         }
         if (shop is null || item is null || PlayerInventories.Row(buy.InventoryId) is not byte row)
         {
@@ -229,7 +249,21 @@ partial class Program
         // The price: the item's price list (its first entry), paid from the main inventory and then the stash, together with
         // the item's arrival (one transaction). Not enough: nothing happens (the client shows the price in red).
         (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
-        if (ItemMoves.Buy(items, stash, row, item with { X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] } }, price) is not var (paid, bought))
+        (ItemMoves.Price? Paid, InventoryItem Bought)? purchase;
+        try
+        {
+            purchase = ItemMoves.Buy(items, stash, row, item with
+            {
+                Id = replenish ? items.NewItemId() : item.Id,
+                X = buy.X, Y = buy.Y, Item = item.Item with { Price = [] }
+            }, price);
+        }
+        catch
+        {
+            lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
+            throw;
+        }
+        if (purchase is not var (paid, bought))
         {
             lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
             Console.WriteLine($"[gateway] {remote} <= 0x0088 buy item {item.Id}: costs {price!.Value.Amount} × {Items.ByHash(price.Value.Currency)?.Name ?? $"0x{price.Value.Currency:x8}"}, not enough in the inventory and the stash");
@@ -240,10 +274,11 @@ partial class Program
                 items.NextRevision(PlayerInventories.MainInventory), [.. fromInventory.Removed, .. fromInventory.Changed.Select(c => c.Id)], fromInventory.Changed),
                 $"0x00bf inventory 1: paid (stacks emptied [{string.Join(", ", fromInventory.Removed)}], changed [{string.Join(", ", fromInventory.Changed.Select(c => $"{c.Id}={c.Item.StackSize}"))}])");
         await SendStashPayment(remote, stream, ciphers, conn, stash, paid?.Stash);
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(tab, shop.NextRevision(tab), [item.Id], [], NpcShops.Manager),
-            $"0x00bf shop tab {tab}: item {item.Id} sold");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(tab, shop.NextRevision(tab), [item.Id],
+                replenish ? [item] : [], NpcShops.Manager),
+            $"0x00bf shop tab {tab}: item {item.Id} {(replenish ? "replenished" : "sold")}");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(buy.InventoryId, items.NextRevision(row), [], [bought]),
-            $"0x00bf inventory {buy.InventoryId}: bought item {item.Id} from {shop.Npc.Npc.Name} at ({buy.X}, {buy.Y}) ({buy})");
+            $"0x00bf inventory {buy.InventoryId}: bought item {bought.Id} from {shop.Npc.Npc.Name}, offer {item.Id}, at ({buy.X}, {buy.Y}) ({buy})");
     }
 
     static async Task ClaimNpcReward(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint itemId)
@@ -252,7 +287,7 @@ partial class Program
         SpawnedNpc? npc;
         lock (conn.Npcs) npc = conn.Npcs.GetValueOrDefault(conn.TalkingTo);
         if (npc is null || !Npcs.Value.HasAvailableReward(npc.Npc, offer, Quests.Names(PlayerQuestFlags(conn)))) return;
-        var catalog = QuestRewardCatalog.Load();
+        var catalog = QuestRewardCatalog.Load(ruthless: conn.Ruthless);
         if (catalog.Find(offer) is not { } data) return;
         var items = ItemsOf(conn);
         var claimed = QuestRewardCatalog.Claim(CharacterName(conn), data.TakenFlag, items, reward, ShapeOf);
@@ -281,7 +316,7 @@ partial class Program
     // C→S 0x8a: Ctrl + click on an item in the open shop tab: bought into the main inventory (a stack onto stacks of its type,
     // then the first free cell), the price paid from the inventory and then the stash in the same transaction
     // (ItemMoves.BuyToInventory). Without room or enough to pay, nothing happens.
-    static async Task CtrlBuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.CtrlBuy buy)
+    internal static async Task CtrlBuyFromShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, InstanceNpcs.CtrlBuy buy)
     {
         if (conn.NpcRewardOffer is not null)
         {
@@ -291,10 +326,16 @@ partial class Program
         OpenShop? shop;
         uint tab = 0;
         InventoryItem? item = null;
+        bool replenish = false;
         lock (conn.Npcs)
         {
             shop = conn.Shop;
-            if (shop is not null && shop.Items.Remove(buy.ItemId, out var found)) (tab, item) = found;
+            if (shop is not null && shop.Items.TryGetValue(buy.ItemId, out var found))
+            {
+                (tab, item) = found;
+                replenish = NpcShops.ReplenishesGem(shop.Npc.Npc.Id, item.Item);
+                if (!replenish) shop.Items.Remove(buy.ItemId);
+            }
         }
         if (shop is null || item is null)
         {
@@ -304,7 +345,18 @@ partial class Program
         var items = ItemsOf(conn);
         var stash = StashOf(conn);
         (uint Currency, int Amount)? price = item.Item.Price is [var (currency, amount), ..] ? (currency, (int)amount) : null;
-        if (ItemMoves.BuyToInventory(items, stash, item.Item with { Price = [] }, price, ShapeOf, out string why) is not var (paid, into))
+        (ItemMoves.Price? Paid, PlayerInventories.Stacking Into)? purchase;
+        string why;
+        try
+        {
+            purchase = ItemMoves.BuyToInventory(items, stash, item.Item with { Price = [] }, price, ShapeOf, out why);
+        }
+        catch
+        {
+            lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
+            throw;
+        }
+        if (purchase is not var (paid, into))
         {
             lock (conn.Npcs) shop.Items[item.Id] = (tab, item);
             Console.WriteLine($"[gateway] {remote} <= 0x008a Ctrl + click buy item {item.Id}: refused ({why})");
@@ -317,8 +369,9 @@ partial class Program
         foreach (var i in (IEnumerable<InventoryItem>)[.. fromInventory?.Changed ?? [], .. into.Changed, .. into.Added]) now[i.Id] = i;
         foreach (var removed in fromInventory?.Removed ?? []) now.Remove(removed);
         await SendStashPayment(remote, stream, ciphers, conn, stash, paid?.Stash);
-        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(tab, shop.NextRevision(tab), [item.Id], [], NpcShops.Manager),
-            $"0x00bf shop tab {tab}: item {item.Id} sold");
+        await Send(remote, stream, ciphers, InstanceItems.InventoryChange(tab, shop.NextRevision(tab), [item.Id],
+                replenish ? [item] : [], NpcShops.Manager),
+            $"0x00bf shop tab {tab}: item {item.Id} {(replenish ? "replenished" : "sold")}");
         await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
             items.NextRevision(PlayerInventories.MainInventory), [.. gone.Distinct()], [.. now.Values]),
             $"0x00bf inventory 1: bought item {item.Id} from {shop.Npc.Npc.Name} with Ctrl + click" + (price is var (_, a) ? $" for {a}" : ""));
@@ -369,7 +422,8 @@ partial class Program
         var offered = items.Offered().OrderBy(i => i.Id).ToList();
         sale.QuoteError = null;
         VendorRecipes.Quote quote;
-        try { quote = VendorSales.Value.Evaluate(offered); }
+        try { quote = VendorSales.Value.Evaluate(offered,
+            ruthlessRewardMultiplier: conn.Ruthless ? RuthlessSettings.Current.VendorRewardMultiplier : null); }
         catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
         {
             sale.QuoteError = ex.Message;
@@ -495,23 +549,28 @@ partial class Program
     }
 
     // Purchase Items: the NPC's stock as one shop tab (S→C 0xc0, inventory manager 1), then S→C 0x8c opens the buy window on it.
-    static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint npcObject, SpawnedNpc npc)
+    internal static async Task OpenNpcShop(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint npcObject, SpawnedNpc npc)
     {
         if (conn.Sale is not null) await CloseSale(remote, stream, ciphers, conn, accepted: false);
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         conn.BenchOpen = false;
+        conn.HarvestOpen = false;
         if (Items.Error is { } error) { Console.WriteLine($"[gateway] {remote} shop: {error}"); return; }
         var notes = new List<string>();
         var items = ItemsOf(conn);
         // A gem vendor's stock follows the character's completed quests, class and Siosa/Lilly (GemVendorStock), and its
-        // gems cost the currency of their level-1 requirement tier.
+        // gems cost the currency of their level-1 requirement tier. The local Nessa shop overrides progression
+        // with the complete creatable assortment, including variants in ordinary mode; other vendors retain normal progression.
+        var catalog = ItemsFor(conn);
         var gemVendor = GemVendorStock.Sells(npc.Npc.Id)
-            ? new GemVendorStock(Items, QuestRewardCatalog.Load(), Npcs.Value, Skills)
+            ? new GemVendorStock(catalog, QuestRewardCatalog.Load(ruthless: conn.Ruthless), Npcs.Value, SkillsFor(conn))
             : null;
-        var gemStock = gemVendor?.Stock(npc.Npc.Id, conn.ClassRow, conn.QuestFlagsSnapshot());
-        var tabs = NpcShops.Tabs(npc.Npc.Id, Items, items.NewItemId, notes, gemStock: gemStock,
-            gemPrice: gemVendor is null ? null : gemVendor.Price);
-        int shopRow = Npcs.Value.TalkSource(npc.Npc).ShopRow;
+        var gemStock = gemVendor?.Stock(npc.Npc.Id, conn.ClassRow, conn.QuestFlagsSnapshot(), conn.Ruthless, conn.Pools.Level);
+        var tabs = NpcShops.Tabs(npc.Npc.Id, catalog, items.NewItemId, notes, gemStock: gemStock,
+            gemPrice: gemVendor is null ? null : gemVendor.Price, ruthless: conn.Ruthless,
+            fullGemStock: !conn.Ruthless && npc.Npc.Id.Equals("Metadata/NPC/Act1/Nessa", StringComparison.OrdinalIgnoreCase));
+        var shopSource = Npcs.Value.TalkSource(npc.Npc);
+        int shopRow = conn.Ruthless ? shopSource.RuthlessShopRow : shopSource.ShopRow;
         foreach (var n in notes) Console.WriteLine($"[gateway] {remote} shop {npc.Npc.Name}: {n}");
         // One manager-1 inventory per tab (S→C 0xc0), then 0x8c lists them with their names.
         var ids = tabs.Select((_, i) => NpcShops.FirstTabId + (uint)i).ToList();
@@ -526,4 +585,11 @@ partial class Program
             [.. tabs.Select((t, i) => new InstanceNpcs.Choice(i, t.Name))]),
             $"0x008c open the buy window of {npc.Npc.Name} (NPCShop row {shopRow}) with tabs {string.Join(", ", tabs.Select(t => t.Name))}");
     }
+
+    internal static bool CanRefillRuthless(string npcId) =>
+        (GemVendorStock.Sells(npcId) && !npcId.EndsWith("/Siosa", StringComparison.OrdinalIgnoreCase)
+            && !npcId.EndsWith("/Lilly", StringComparison.OrdinalIgnoreCase)
+            && !npcId.EndsWith("/Lilly2", StringComparison.OrdinalIgnoreCase))
+        || npcId == "Metadata/NPC/Missions/Hideout/Helena"
+        || npcId.Contains("/Delve/DelveMiner", StringComparison.Ordinal);
 }

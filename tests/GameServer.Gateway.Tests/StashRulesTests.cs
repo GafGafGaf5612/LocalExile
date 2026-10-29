@@ -210,7 +210,7 @@ public class StashRulesTests : IDisposable
 
         Assert.True(rules.Loaded);
         Assert.Equal(1, rules.SlotOf(StashRules.Currency, scroll.Hash));
-        Assert.Equal(StashRules.SlotStack, rules.MaxStack(StashRules.Currency, scroll.Hash));
+        Assert.Equal<ushort?>(10000, rules.MaxStack(StashRules.Currency, scroll.Hash));
         Assert.False(rules.Holds(StashRules.Map, scroll.Hash));
         Assert.True(rules.Holds(0, scroll.Hash));
     }

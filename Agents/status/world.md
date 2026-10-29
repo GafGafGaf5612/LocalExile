@@ -67,11 +67,26 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `InstancePause.cs`, Gateway (`SetPaused`).
   Docs: [22](../docs/protocol/22-pause.md).
 
+- Instance framing retains split 0x020a and 0x0059 messages at their primary-writer lengths of 3 and 16 bytes.
+  Every-split and coalesced tick/chat regressions pass; integrated native transfers preserve subsequent commands.
+  Unknown message layouts and existing 0x0099 handling remain unchanged.
+  Docs: [instance framing](../docs/protocol/02-instance-connection.md#fixed-message-boundaries-across-tcp-reads).
+
 ## Partly working
 
+- League isolation is enforced by full league for towns and instance selection.
+  SSF wilderness instances and Gateway ground-item state additionally belong to the stable character ID.
+  Another character, including one reusing a deleted name, cannot inherit or join that state.
+  Automated league/SSF instance checks pass.
+  Shared peer presence preserves SSF town visibility while mutable world state remains private.
+  Multi-client world joining and pickup boundaries remain covered by automated checks.
+  See [league modes](../docs/game/league-modes.md).
 - **Predictive actor collision.** Player paths include living monsters and published players in the same instance.
   Monster paths use their `MonsterVarieties.ObjectSize` clearance and avoid other living bodies, including friendlies.
-  A 50 ms correction loop sweeps monster movement and separates overlaps; death/removal releases the occupied space.
+  A 50 ms correction loop sweeps monster movement and separates overlaps in the server's estimate only (no packets:
+  the client paths around bodies itself); death releases the occupied space and the corpse stays in the area.
+  Chasers spread around the player on rings (`MonsterSurround`); the AI decides every 100 ms.
+  A player boxed in by estimated bodies follows the client through them instead of being pulled back.
   Native-client checks cover a normal zombie, unique Hillock and an injected remote player object.
   Two authenticated clients in the same instance still need an end-to-end check.
   Remote player creation, movement, life and departure are replicated; party formation and shared combat remain open.

@@ -32,6 +32,7 @@ partial class Program
         if (arrive > now) await Task.Delay(TimeSpan.FromSeconds(arrive - now));
         if (conn.Closed || conn.ActionCount != action || !PlayerWalk.InWalkUpRange(stop, conn.HeistLockerAt, conn.StationaryInteractionSize(conn.HeistLockerObject))) return;
         conn.BenchOpen = false;
+        conn.HarvestOpen = false;
         await RefreshBenchBalance(remote, stream, ciphers, conn, clear: true);
         await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.HeistLockerUi),
             "0x007b open native Heist Locker (HeistStashOpen)");

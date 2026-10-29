@@ -49,4 +49,10 @@ static class StatKeys
     // "Increased damage" stats that apply to an unarmed melee attack's physical damage (damage × (1 + sum / 100)):
     // damage_+%, physical_damage_+%, melee_damage_+%, melee_physical_damage_+% (strength's 1% per 5).
     public const uint DamagePct = 0x19, PhysicalDamagePct = 0x1b, MeleeDamagePct = 0x558, MeleePhysicalDamagePct = 0x1ed;
+    // 3.29.3b Stats.dat rows 25 and 11810; Whisperer node 50932 enables the fixed 150% transfer.
+    public const uint SpellDamagePct = 26, SpellDamageIncreasesApplyToAttacks150 = 11811;
+    // 3.29.3b Stats.dat row 5340; Rampager node 49937 supplies 1 on the caster.
+    public const uint SpellSkillsDealNoDamage = 5341;
+    // 3.29.3b Stats.dat row 2654: generic increased attack damage, including final-armour-derived contributions.
+    public const uint AttackDamagePct = 2655;
 }

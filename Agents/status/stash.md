@@ -20,22 +20,41 @@ Part of [Status](../Status.md); what to build next in this area is in
   S→C 0x21; each tab's contents come on the client's request (C→S 0xc7 → 0xc0 row 26 + 0xc8);
   items go into and out of tabs by click (0x28 / 0x2a) and Ctrl + click (C→S 0xe0 in, 0xe3 out, stacks onto stacks);
   special tabs hold only their own items (the map tab nothing yet), the currency, essence and fragment tabs each item
-  in its own slot (currency up to 10 000), from the game data's stash tables (18 §7);
+  in its own slot, from the game data's stash tables (18 §7);
+  currency-tab limits come from `CurrencyItems.CurrencyTab_StackSize` (generally 10 000; lifeforce 50 000).
+  Earlier real-client verification and Gateway logs show yellow lifeforce merging into one 50 000 stack in slot 99.
+  Automated tests cover manual and quick merges, Harvest types, overflow and save reloads;
   Ctrl + click on currency goes to its affinity tab's slot (C→S 0xe1, live 2026-10-20) and a plain click on a currency
   slot picks up the stack; the tab settings' affinities (0xd3) are saved;
   the stash reopens on the account's last tab after a relog (0x7b affinity on the first open per connection) and keeps
   the panel's own tab while the connection lasts; tabs and items are account-wide (the account's row in
   `data/saves.db`).
-  Verified live with normal and premium tabs; the special tabs load but their slots are not checked.
+  Verified live with normal, premium and the currency lifeforce slot; other special-tab slots need further checks.
   Guild stash: a second object in every hideout opens the guild stash panel (0x7b kind 2) with its own tabs (manager
   2), one per account until there are guilds (verified live).
   Code: `AccountStash.cs`, `StashCatalog.cs`, `InstanceStash.cs`, Gateway (`OpenStash`, `SendStashTab`).
   Docs: [18](../docs/protocol/18-stash.md).
+- **Dev tab fill (`/item_tab <tab name> <count>`).** On a currency, essence, fragment, delve, blight, delirium or divination tab it
+  adds up to `count` more, at most 1000 per command, of every item type that has its own slot, as far as each slot holds.
+  Divination cards are filled to complete sets, which is what that tab shows.
+  On a gem tab it adds one of every creatable gem variant not already there, as far as its 500 cells go.
+  Tabs without a slot per type are refused with the reason.
+  Blight, Delirium, Divination, Ultimatum and Breach tabs now publish their StashType sizes; the 12 × 12 default made the
+  oils draw over the blight tab.
+  Verified in the real client (2026-10-28): blight oils, all divination cards in both rows of the tab, and the gem tab's
+  colour sub-tabs. Automated tests cover caps, in-place growth, reloads, refused tabs, tab lookup, cell fill and every
+  real layout against its published size. Map and unique tabs remain open (roadmap).
 
 ## Partly working
 
-- **Lifeforce and crafting cells.** Currency-tab lifeforce slots hold 65,535 each without wrapping.
-  Delve crafting cells accept equipment, support swaps and retain their contents after reload.
+- Personal stash and gold are shared only within the same account and full league, including mode combinations.
+  Guild stash storage is also league-scoped; Standard retains the legacy bank and other leagues use separate banks.
+  SSF refuses guild opening, tab requests and inventory moves.
+  Automated checks cover SSF guild-stash exclusion and ordinary guild-stash access.
+  Stash sharing, forged requests and dropped-item isolation are covered by automated checks.
+  Shared SSF town player presence remains separate from private dropped items.
+  See [league modes](../docs/game/league-modes.md).
+- **Crafting cells.** Delve crafting cells accept equipment, support swaps and retain their contents after reload.
   Lioneye's Watch now creates a guild stash beside its personal stash.
   Persistence checks pass; the real client opened the city guild stash and loaded its guild tab.
 
@@ -43,5 +62,5 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 - Stash: a switch to an already loaded tab sends nothing, so it is missed if the player logs out without reopening the
   stash or moving an item; the special tabs' slot rules, tab folders (the tab order, names and colours are kept,
-  2026-10-22), real guilds for the guild stash, per-league stashes and stashes in other towns
+  2026-10-22), real guilds for the guild stash and stashes in other towns
   ([18](../docs/protocol/18-stash.md) "Open").

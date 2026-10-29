@@ -152,9 +152,10 @@ static class AreaLayouts
     public static void Announce(AreaLayout layout, uint seed)
     {
         if (!Recording) return;
+        // A read-only data folder (a container image) has no recorder to tell; stop instead of waiting on every entry.
+        if (!folderWritable.Value) return;
         try
         {
-            Directory.CreateDirectory(Folder);
             string json = JsonSerializer.Serialize(new
             {
                 id = layout.Id, seed, hash = layout.Hash, written = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
@@ -165,6 +166,23 @@ static class AreaLayouts
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
+
+    // A fresh file name nobody else holds, so a denial means the folder itself is not writable.
+    static readonly Lazy<bool> folderWritable = new(() =>
+    {
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            using (new FileStream(Path.Combine(Folder, $"probe.{Guid.NewGuid():N}.tmp"), FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
+            return true;
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException)
+        {
+            Console.WriteLine($"[gateway] {Folder} is not writable ({e.Message}): the walk-map recorder is not told about areas");
+            return false;
+        }
+    });
 
     /// <summary>When the client reports the area generated (0x7d): the walk map scripts/walkmaps saved meanwhile, if
     /// any. Waits up to 2 s for the file.</summary>

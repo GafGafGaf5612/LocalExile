@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GameServer.Core.Accounts;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Saves;
 using GameServer.Core.World;
@@ -48,8 +49,10 @@ static class CharacterSaves
         List<string>? QuestFlags = null, ushort? ExtraPassivePoints = null,
         Dictionary<ushort, ushort>? MasteryEffects = null, uint? Gold = null, ushort? RefundPoints = null,
         SavedItem? StartWeapon = null, ushort? PortalCosmetic = null, Dictionary<byte, SavedCosmetic>? Cosmetics = null,
-        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null, OpeningTutorial? Tutorial = null,
-        Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null)
+        Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null,
+        OpeningTutorial? Tutorial = null, AscendancyProgress? MainAscendancy = null,
+        Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null,
+        uint? Life = null, uint? Mana = null, VitalsSession? VitalsOwner = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -91,12 +94,54 @@ static class CharacterSaves
 
     public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
 
+    /// <summary>A Ruthless resource writer. Retired transfer owners retain their token so only that exact failed
+    /// transfer can resume; a newer area's token can never be reclaimed by the old connection.</summary>
+    public sealed record VitalsSession(Guid CharacterId, Guid SessionId, bool Retired = false);
+
+    public static (uint Life, uint Mana) BeginVitalsSession(string character, Guid characterId, Guid sessionId,
+        string? league, Func<Save?, (uint Life, uint Mana)> initialize) => Saves.Atomically(() =>
+    {
+        if (!VitalsCharacterMatches(character, characterId, league))
+            throw new InvalidOperationException("The resource owner is no longer the admitted character");
+        var save = Load(character);
+        // A reused name must not inherit a prior identity's pools, even if an older server retained that save.
+        var initial = initialize(save?.VitalsOwner is { } owner && owner.CharacterId != characterId ? null : save);
+        Write(character, (save ?? new Save([])) with
+        {
+            Life = initial.Life, Mana = initial.Mana, VitalsOwner = new(characterId, sessionId),
+        });
+        return initial;
+    });
+
+    /// <summary>Only the currently admitted UUID/session may save pools, including its ordinary logout save.</summary>
+    public static bool SaveVitals(string character, Guid characterId, Guid sessionId, string? league,
+        uint life, uint mana, bool retire = false) => ChangeVitalsSession(character, characterId, sessionId, league,
+            life, mana, wasRetired: false, retired: retire);
+
+    public static bool ResumeVitalsSession(string character, Guid characterId, Guid sessionId, string? league,
+        uint life, uint mana) => ChangeVitalsSession(character, characterId, sessionId, league,
+            life, mana, wasRetired: true, retired: false);
+
+    static bool ChangeVitalsSession(string character, Guid characterId, Guid sessionId, string? league,
+        uint life, uint mana, bool wasRetired, bool retired) => Saves.Atomically(() =>
+    {
+        if (!VitalsCharacterMatches(character, characterId, league) || Load(character) is not { } save
+            || save.VitalsOwner != new VitalsSession(characterId, sessionId, wasRetired)) return false;
+        Write(character, save with { Life = life, Mana = mana, VitalsOwner = new(characterId, sessionId, retired) });
+        return true;
+    });
+
+    static bool VitalsCharacterMatches(string character, Guid characterId, string? league) =>
+        new SqliteAccountStore(Saves.Db).FindCharacter(character) is { } current
+        && HardcoreDeathRules.TicketMatches(current, characterId, league);
+
     public static void ClearActiveAuras(string character) => Update(character, save => save with { ActiveAuras = [] });
 
-    /// <summary>Persist aura intent by stable GrantedEffects Id, never by a connection's skill or buff id.</summary>
+    /// <summary>Persist aura intent by stable GrantedEffects Id, replacing any alias of the same aura family.</summary>
     public static void SetAuraActive(string character, string effect, bool active) => Update(character, save =>
     {
-        var auras = (save.ActiveAuras ?? []).Where(id => id != effect).ToList();
+        string family = AuraCatalog.Family(effect);
+        var auras = (save.ActiveAuras ?? []).Where(id => AuraCatalog.Family(id) != family).ToList();
         if (active) auras.Add(effect);
         return save with { ActiveAuras = auras };
     });
@@ -201,12 +246,17 @@ static class CharacterSaves
     /// <summary>Saves the character's unsaved experience, if any. A character with no save any more (deleted) only drops it.</summary>
     public static void SaveExperience(string character)
     {
-        if (!UnsavedExperience.TryGetValue(character, out uint xp)) return;
+        if (!UnsavedExperience.ContainsKey(character)) return;
+        uint? flushed = null;
         Saves.Atomically(() =>
         {
+            // Sample inside the write transaction: a queued flush must not restore XP captured before a level reset.
+            if (!UnsavedExperience.TryGetValue(character, out uint xp)) return;
             if (Saves.Load<Save>(SaveDatabase.Table.Characters, character, Opts) is { } save) Write(character, save with { Experience = xp });
+            flushed = xp;
         });
-        UnsavedExperience.TryRemove(new KeyValuePair<string, uint>(character, xp));   // a gain meanwhile waits for the next save
+        if (flushed is { } saved)
+            UnsavedExperience.TryRemove(new KeyValuePair<string, uint>(character, saved)); // a later gain waits for the next save
     }
 
     /// <summary>Saves every character's unsaved experience (the Gateway's timer, its shutdown). One that can't be saved
@@ -235,6 +285,75 @@ static class CharacterSaves
     /// the refund points when given, in one write.</summary>
     public static void SetPassives(string character, IEnumerable<ushort> nodes, IReadOnlyDictionary<ushort, ushort> effects, ushort? refundPoints = null) =>
         Update(character, s => s with { Passives = [.. nodes], MasteryEffects = new(effects), RefundPoints = refundPoints ?? s.RefundPoints });
+
+    /// <summary>
+    /// Main ascendancy identity, its own nodes/point awards and any associated ordinary-node/refund changes commit in
+    /// one transaction. Callers validate first and publish runtime state only after the outermost transaction commits.
+    /// Unrelated saved fields (including fields from newer builds) are retained.
+    /// </summary>
+    public static void SetMainAscendancy(string character, AscendancyProgress progress, IEnumerable<ushort>? passives = null,
+        IReadOnlyDictionary<ushort, ushort>? effects = null, ushort? refundPoints = null, PassiveProgressSnapshot? expected = null) => Update(character, s =>
+    {
+        if (expected is not null && !expected.Matches(s)) throw new PassiveProgressConflictException();
+        return s with
+        {
+            MainAscendancy = progress with { Nodes = progress.Allocated.ToArray(), Awards = progress.EarnedAwards.ToArray() },
+            Passives = passives is null ? s.Passives : [.. passives],
+            MasteryEffects = effects is null ? s.MasteryEffects : new(effects),
+            RefundPoints = refundPoints ?? s.RefundPoints,
+        };
+    });
+
+    /// <summary>
+    /// The passive state a connection based its mutation on. Captured copies are compared inside the write transaction,
+    /// so an old area cannot replace a newer area's choices, allocations or refund payment. Unrelated fields are merged.
+    /// </summary>
+    public sealed class PassiveProgressSnapshot
+    {
+        readonly string _ascendancy;
+        readonly ushort[] _passives;
+        readonly Dictionary<ushort, ushort> _masteries;
+        readonly ushort _refundPoints;
+
+        public PassiveProgressSnapshot(AscendancyProgress? ascendancy, IEnumerable<ushort>? passives,
+            IReadOnlyDictionary<ushort, ushort>? masteries, ushort refundPoints)
+        {
+            _ascendancy = AscendancyJson(ascendancy);
+            _passives = passives?.ToArray() ?? [];
+            _masteries = masteries is null ? [] : new(masteries);
+            _refundPoints = refundPoints;
+        }
+
+        public static PassiveProgressSnapshot From(Save? save) =>
+            new(save?.MainAscendancy, save?.Passives, save?.MasteryEffects, save?.RefundPoints ?? 0);
+
+        internal bool Matches(Save save) => _refundPoints == (save.RefundPoints ?? 0) &&
+            _passives.SequenceEqual(save.Passives ?? []) &&
+            _masteries.Count == (save.MasteryEffects?.Count ?? 0) &&
+            _masteries.All(kv => save.MasteryEffects is not null && save.MasteryEffects.TryGetValue(kv.Key, out ushort value) && value == kv.Value) &&
+            _ascendancy == AscendancyJson(save.MainAscendancy);
+
+        static string AscendancyJson(AscendancyProgress? progress)
+        {
+            progress ??= new();
+            return JsonSerializer.Serialize(progress with { Nodes = progress.Allocated.ToArray(), Awards = progress.EarnedAwards.ToArray() }, Opts);
+        }
+    }
+
+    /// <summary>
+    /// Changes a selection/point award from the latest durable state, not an old area's connection copy. In particular,
+    /// simultaneous completion/retry of two Labyrinth tiers cannot overwrite one another's awards. The returned state
+    /// may be published after the outermost transaction commits; a failed write returns nothing.
+    /// </summary>
+    public static AscendancyProgress ChangeMainAscendancy(string character, Func<AscendancyProgress, AscendancyProgress> change) =>
+        Saves.Atomically(() =>
+        {
+            var save = Load(character) ?? new Save([]);
+            var progress = change(save.MainAscendancy ?? new());
+            progress = progress with { Nodes = progress.Allocated.ToArray(), Awards = progress.EarnedAwards.ToArray() };
+            Write(character, save with { MainAscendancy = progress });
+            return progress;
+        });
 
     /// <summary>Records the extra passive skill points from /add_passive_points.</summary>
     public static void SetExtraPassivePoints(string character, ushort points) =>
