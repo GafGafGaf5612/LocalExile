@@ -47,6 +47,8 @@ partial class Program
         return stats;
     }
 
+    const string LowestAttributeDamage = "damage_+%_per_5_of_your_lowest_attribute";
+
     static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
     {
         var stats = CharacterPlayerStats(conn);
@@ -177,6 +179,10 @@ partial class Program
         if (Stats.Key(SkillDurationModifiers.IncreasedDuration) is uint durationKey && !devSet.Contains(durationKey))
             stats[durationKey] = SkillDurationModifiers.Total(Get(SkillDurationModifiers.IncreasedDuration),
                 Get("strength"), Get(SkillDurationModifiers.PerTenStrength));
+        // Dreadful Attitude: increased damage per complete 5 of the lowest final attribute, from this snapshot only.
+        if (Get(LowestAttributeDamage) is int perFive and not 0 && Stats.Key("damage_+%") is uint damageKey && !devSet.Contains(damageKey))
+            stats[damageKey] = (int)Math.Clamp(Get("damage_+%") + (long)perFive
+                * (Math.Min(Get("strength"), Math.Min(Get("dexterity"), Get("intelligence"))) / 5), int.MinValue, int.MaxValue);
         // The Offence tab's per-hand damage rows (issue #75): the hit the default attack actually swings with, so the panel
         // agrees with the damage the server applies. Only the main hand: the server attacks with it. Those rows are gated by
         // skill_uses_main_hand, which nothing sent before, so the numbers alone would leave them blank.
@@ -557,9 +563,10 @@ partial class Program
     {
         int level = Math.Clamp(ItemsFor(conn).GemLevel(gem), 1, Math.Max(1, type.MaxLevel));
         int needs = SkillsFor(conn).PlayerLevelReq(effect, level);
-        return (SkillCatalog.GemAttributeRequirement(type.StrengthPercent, needs, type.IsSupport),
-            SkillCatalog.GemAttributeRequirement(type.DexterityPercent, needs, type.IsSupport),
-            SkillCatalog.GemAttributeRequirement(type.IntelligencePercent, needs, type.IsSupport));
+        int pct = AttributeRequirementsPct(conn);
+        return (ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.StrengthPercent, needs, type.IsSupport), pct),
+            ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.DexterityPercent, needs, type.IsSupport), pct),
+            ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.IntelligencePercent, needs, type.IsSupport), pct));
     }
 
     // The value the client's requirement checks compare (virtual_*_for_requirements, 13-items.md §2d): what /set_stat set,

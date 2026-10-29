@@ -31,7 +31,15 @@ sealed class PlayerElementalAilments
 
     static string Name(Kind kind) => kind.ToString().ToLowerInvariant();
     static bool Immune(Kind kind, Func<string, int> get) => get($"immune_to_{Name(kind)}") != 0
-        || get($"cannot_be_{kind switch { Kind.Ignite => "ignited", Kind.Chill => "chilled", Kind.Freeze => "frozen", _ => "shocked" }}") != 0;
+        || get($"cannot_be_{kind switch { Kind.Ignite => "ignited", Kind.Chill => "chilled", Kind.Freeze => "frozen", _ => "shocked" }}") != 0
+        // Aristocrat: immune while one final attribute is strictly higher than another.
+        || kind switch
+        {
+            Kind.Ignite => get("cannot_be_ignited_with_strength_higher_than_dex") != 0 && get("strength") > get("dexterity"),
+            Kind.Freeze => get("cannot_be_frozen_with_dex_higher_than_int") != 0 && get("dexterity") > get("intelligence"),
+            Kind.Shock => get("cannot_be_shocked_with_int_higher_than_strength") != 0 && get("intelligence") > get("strength"),
+            _ => false,
+        };
 
     public void Reconcile(Func<string, int> get)
     {
