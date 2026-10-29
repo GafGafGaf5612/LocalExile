@@ -116,6 +116,7 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public bool SoulKillProcessed;
     public (int X, int Y)? CollisionPosition;
     public (int X, int Y)? LastTarget;
+    public double NextChaseRetryAt;
     // A boss's stage (BossFights) and whether a hit has started it.
     public BossFights.Stage? Stage { get; init; }
     public bool StageTaken, StageRunning;
@@ -165,6 +166,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // The character's class: its Characters.dat row (the Witch: 1).
     public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+    public readonly ConnectionPerformance Performance = new();
     // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
     public bool Paused => !Clock.IsRunning;
     // A transfer invalidates flights even during the gap after PendingTransfer is consumed by Transfer.
@@ -295,7 +297,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         var l = Layout;
         Func<int, int, bool>? walkable = l.Walkable is { } w ? (cx, cy) => w(cx, cy) && !Barrier.Contains((cx, cy)) : null;
         return new(l.SpawnX, l.SpawnY, Program.WalkSpeed, walkable, l.GridW > 0 ? l.GridW : 4096, l.GridH > 0 ? l.GridH : 4096,
-            () => Blockers, stationary: () => StationaryBlockers);
+            () => Blockers, stationary: CrowdEscapeBlockers);
     }
     public bool PlayerSent;
     // Server frames ended so far (0x2b5).
@@ -534,6 +536,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public (uint Id, int X, int Y)? BackPortal;
     /// <summary>The gem skill being channelled (Cyclone: C→S 0x197 until 0x199), 0 for none, and when it next hits.</summary>
     public ushort ChannelSkill;
+    public int ChannelGeneration;
     /// <summary>The last passive and equipment stat sum and its inputs (CharacterStatSources).</summary>
     public volatile Program.StatSourcesResult? StatSourcesCache;
     /// <summary>The channelled skill's action sequence, so its 0x1af hit result names the action it belongs to.</summary>

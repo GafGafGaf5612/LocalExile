@@ -132,10 +132,12 @@ partial class Program
             return raw;
         }
         int god = conn.God ? 1000 : 0;
+        int requirementsPct = Stats.Key(AttributeRequirementsStat) is uint reqKey ? dev.GetValueOrDefault(reqKey, passives.GetValueOrDefault(reqKey)) : 0;
+        int Req(int value) => ScaledRequirement(value, requirementsPct);
         var wornItems = worn
             .Select(i => (i, t: ItemsFor(conn).ByHash(i.Item.TypeHash)))
             .Select(x => x.t is { } t
-                ? new ItemModStats.Worn(x.i.Id, x.i.Item, ItemsFor(conn).Requirements(t).Str, ItemsFor(conn).Requirements(t).Dex, ItemsFor(conn).Requirements(t).Int,
+                ? new ItemModStats.Worn(x.i.Id, x.i.Item, Req(ItemsFor(conn).Requirements(t).Str), Req(ItemsFor(conn).Requirements(t).Dex), Req(ItemsFor(conn).Requirements(t).Int),
                     ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, ItemsFor(conn).Mods))
                 : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
         var (inactive, active) = ItemModStats.ResolveEquipment(wornItems, level ?? conn.Pools.Level,
@@ -150,6 +152,26 @@ partial class Program
         var attributes = AttributeInputs(rawAttributes, dev);
         conn.StatSourcesCache = new(sourcesKey with { Before = inactive }, new(sources), attributes, inactive, wornItems);
         return (sources, attributes, inactive, wornItems);
+    }
+
+    // "Items and Gems have X% increased/reduced Attribute Requirements", rounded down (PoB CalcPerform m_floor).
+    // shortcut: only passives (and /set_stat) count, not an item's own global mod, which would decide its own activation.
+    internal const string AttributeRequirementsStat = "global_item_attribute_requirements_+%";
+    internal static int ScaledRequirement(int requirement, int increasedPct) =>
+        requirement <= 0 ? requirement : (int)Math.Max(0, (long)requirement * (100 + increasedPct) / 100);
+
+    static int AttributeRequirementsPct(ClientState conn)
+    {
+        if (Stats.Key(AttributeRequirementsStat) is not uint key) return 0;
+        ushort[] nodes;
+        IReadOnlyDictionary<ushort, ushort> masteries;
+        lock (conn.Monsters)
+        {
+            if (conn.PlayerStats.TryGetValue(key, out int set)) return set;
+            nodes = [.. conn.Passives.Concat(conn.MainAscendancy.Allocated)];
+            masteries = conn.MasteryEffects;
+        }
+        return PassivesFor(conn).Stats(nodes, masteries).GetValueOrDefault(key);
     }
 
     /// <summary>The inputs of CharacterStatSources' passive and equipment sum, compared by value (items by reference).</summary>
