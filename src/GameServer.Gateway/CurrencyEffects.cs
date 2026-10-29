@@ -39,11 +39,10 @@ static class CurrencyEffects
     /// the inventory handler spends an orb.</summary>
     public static Item? Augmentation(Item item, ItemRolls rolls, Random random) => rolls.Augment(item, random);
 
-    /// <summary>Orb of Alteration (as the official one): a magic item with mods gets new affixes, 1-2 with at most one
-    /// prefix and one suffix, each tier drawn by weight. Anything else is refused.</summary>
-    public static Item? Alteration(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
+    /// <summary>Orb of Alteration: a modifiable magic item gets new affixes, 1-2 with at most one prefix and one
+    /// suffix, each tier drawn by weight. Unknown/unmodifiable bases, non-magic items and empty pools are refused
+    /// before the inventory handler spends an orb.</summary>
+    public static Item? Alteration(Item item, ItemRolls rolls, Random random) => rolls.Alter(item, random);
 
     /// <summary>Orb of Transmutation: a modifiable normal item becomes identified magic, with 1-2 weighted affixes.
     /// Admission and the ordinary pool are validated before the inventory handler spends an orb.</summary>

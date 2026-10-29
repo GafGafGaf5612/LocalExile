@@ -513,11 +513,16 @@ Framed real-client 0x71 upgrade/refusal and relog checks passed on 2026-10-29; S
 production-dispatch coverage, not fresh native acceptance.
 See [the source comparison and evidence limits](../re/transmutation-coe.md).
 
-### Orb of Alteration (2026-10-21, verified live)
+### Orb of Alteration (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyRerollMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Alteration` rerolls a magic item's
-affixes as the official orb: 1-2, at most one prefix and one suffix, each tier drawn by weight (`ItemRolls.Roll`).
-Anything but a magic item with mods is refused, nothing spent.
+`CurrencyRerollMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Alteration` delegates to
+`ItemRolls.Alter`: a modifiable magic item rerolls its explicit affixes as the official orb, 1-2 with at most one
+prefix and one suffix, each tier drawn by weight (`ItemRolls.Roll`, metamod locks respected).
+The base must be known, serializable, with Mods and not `Unmodifiable`; corrupted/mirrored, non-magic and empty-pool
+targets are refused before spending.
+The empty-pool refusal is LocalExile safety policy: otherwise a missing-data target would lose all affixes for an orb.
+CoE beta's 300-applies count distribution and flask pool agree; see
+[the source comparison](../re/alteration-coe.md).
 
 ### Orb of Augmentation (2026-10-21, verified live; CoE-checked 2026-10-30)
 

@@ -153,9 +153,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   Framed native wand/flask upgrades, repeat/unmodifiable refusal and relog passed on 2026-10-29.
   Fresh native Shift/stash and manual currency UI checks remain separate.
   See [13](../docs/protocol/13-items.md), "Orb of Transmutation", and [evidence](../docs/re/transmutation-coe.md).
-- **Orb of Alteration (verified live, 2026-10-21):** a magic item gets 1-2 new affixes (one prefix, one suffix at
-  most).
-  See [13](../docs/protocol/13-items.md), "Orb of Alteration".
+- **Orb of Alteration:** a modifiable magic item gets 1-2 new weighted affixes (one prefix, one suffix at most),
+  with the same admission as the other affix currencies: unknown/unsupported/`Unmodifiable` bases, corrupted/mirrored
+  items and empty pools are refused before spending.
+  CoE count/flask checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  The old live check (2026-10-21) predates these admission rules; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Orb of Alteration", and [evidence](../docs/re/alteration-coe.md).
 - **Orb of Augmentation:** +1 weighted affix on a magic item, up to one prefix and one suffix, with the same admission
   checks as Transmutation: a known, serializable, non-`Unmodifiable` base with Mods; corrupted/mirrored, full items
   and open sides without ordinary affixes are refused before spending.

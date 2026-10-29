@@ -61,6 +61,16 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = RareName(type, random) };
     }
 
+    /// <summary>Alteration's validated magic reroll: 1-2 new affixes, at most one of each side, each drawn by weight.
+    /// Refused targets return null before rolling or spending: no unknown/unmodifiable bases and no empty ordinary
+    /// pool (which would otherwise leave a magic item with no affixes).</summary>
+    public Item? Alter(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Magic || !TryModifiable(item, out var type) ||
+            Pool(type, item.ItemLevel).Count == 0) return null;
+        return Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
+    }
+
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.
