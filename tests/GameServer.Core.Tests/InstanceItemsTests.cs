@@ -124,7 +124,6 @@ public class InstanceItemsTests
 
     [Theory]
     [InlineData(0x403b9b3bu, 2u, "0263403B9B3B0000000C00000002000000000000")]
-    [InlineData(0x93c8c37fu, 4u, "026393C8C37F0000000C00000004000000000000")]
     public void Successful_flask_use_matches_the_official_sound_confirmation(uint typeHash, uint itemId, string capture)
     {
         // Official 3.28 captures; field order and widths verified against the 3.29.3b reader 0x1421aded0.

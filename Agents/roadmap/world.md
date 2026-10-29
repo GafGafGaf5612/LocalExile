@@ -41,8 +41,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   `/tour <file>` with `live.ps1 -Walkmaps` records new (area, seed) loads; `levelgen tourlist` writes the lists.
 - **Start:** the supported areas get random seeds, and a 5-seed tour of them found 4 loads the port gets wrong
   (1_2_15 at `0x14211532d`, 1_2_14_2 at `0x142031e88`, [re/011](../docs/re/011-level-generation.md) §8 Random seeds)
-  and 202 seeds it cannot generate; a new instance at such a seed gets a layout the client may fail on (pick another
-  seed when the port fails).
+  and 202 seeds it cannot generate (the Gateway plays a new instance at such a seed at a replacement seed it can,
+  `ServerLevels.PlayableSeed`; fixing the generator errors gives those seeds back).
 - **To be implemented with their leagues (out of scope for now):** the 202 areas whose level the client builds from
   data the server sends (`data/areas-unavailable.txt`). They come with each league's server side, not with the
   generator:

@@ -85,6 +85,35 @@ static class ServerLevels
         }
     }
 
+    /// <summary>The seed an instance of a supported area is played at: its own, unless the port cannot generate it (a
+    /// few random seeds per area, e.g. 1_1_2 at 32124476: "Mismatching ground types"), then the first of
+    /// <see cref="Replacements"/> it can. Without a level the Gateway would have no walk map, area transitions or
+    /// waypoint while the client still builds the map. The replacement depends only on the seed, so everyone entering
+    /// the instance gets the same one. Kept as it is for the capture tour (<see cref="AreaLayouts.Recording"/>) and
+    /// Game_SEED, which ask for that seed's trace.</summary>
+    public static uint PlayableSeed(string areaId, uint seed)
+    {
+        if (seed == 1 || AreaLayouts.Recording || Environment.GetEnvironmentVariable("Game_SEED") is { Length: > 0 }
+            || !IsSupported(areaId) || For(areaId, seed) is not null) return seed;
+        foreach (uint other in Replacements(seed))
+            if (For(areaId, other) is not null)
+            {
+                Console.WriteLine($"[gateway] server levels: {areaId} seed {seed} not generated; played at seed {other}");
+                return other;
+            }
+        return seed;
+    }
+
+    /// <summary>The seeds tried in place of one the port cannot generate, in order (1 … int.MaxValue, as Auth's).</summary>
+    internal static IEnumerable<uint> Replacements(uint seed)
+    {
+        for (uint k = 1; k <= 8; k++)
+        {
+            uint other = unchecked(seed * 0x9e3779b1u + k * 0x85ebca77u) & 0x7fffffff;
+            yield return other is 0 or 1 ? k + 1 : other;
+        }
+    }
+
     /// <summary>The generated layout of (area, seed) standing in for a capture missing from <paramref name="folder"/>:
     /// only for the Gateway's own capture folder (data/walkability), never for a test's.</summary>
     public static Level? InPlaceOf(string folder, string areaId, uint seed) =>
@@ -104,6 +133,8 @@ static class ServerLevels
             doodads.Run(result.Records);
             var heights = CellHeights.Build(result.Grid, t => files.Walk(t.Path));
             var objects = AreaObjects.Transitions(files, result);
+            // A room's waypoint line when no tile places one (The Ledge).
+            if (!objects.Any(o => o.Type == GameServer.Core.Protocol.Instance.WaypointObject.MetadataPath)) objects.AddRange(AreaObjects.RoomWaypoints(result));
             Console.WriteLine($"[gateway] server levels: generated {areaId} seed {seed} ({walk.Width}x{walk.Height} cells, " +
                 $"{objects.Count} tile object(s), {doodads.Placed.Count} doodads) in {clock.ElapsedMilliseconds} ms");
             return new Level(walk.Width, walk.Height, walk.Walk, heights, objects, doodads.Placed, AreaObjects.Rooms(result),
