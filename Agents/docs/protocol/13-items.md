@@ -294,7 +294,7 @@ u8   1 → 4 × u32 follow (the 0xc0 flag-bit-4 block)
 ```
 
 Removal runs before addition, so "remove id N, add id N" replaces an item in place (sockets). The other inventory
-messages: 0xc1 removes an inventory ("…inventory set remove…", class `0x1435c0898`: u8 manager, u32 id), 0xc2 sets
+messages: 0xc1 removes an inventory ("…inventory set remove…", class `0x1435c0898`: u8 manager, u32 id; the Gateway unloads stash tabs with it, [18](18-stash.md) §3), 0xc2 sets
 +0x160/+0x161 ("…permissions change…", class `0x1435dc660`: u8, u32, u8, u8).
 
 ## 4. Moving items (C→S)
