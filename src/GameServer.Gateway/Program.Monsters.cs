@@ -541,9 +541,15 @@ partial class Program
                 Console.WriteLine($"[gateway] Turtle Shell hit ineligible: block={blocked}, ranged={a.Ranged}, "
                     + $"alive={life > 0}, types={string.Join(',', a.Damage.Components.Select(c => c.Type))}");
             RageWhenHitLocked(conn);
-            return InstanceProtocol.ActionHit(id, 0xffff, PlayerId, flags: 0x4601, kind: 0x02, u34: 450,
+            // The hit packet carries this outcome's presentation and is processed at once (kind 3): 0x4000 particles,
+            // 0x0200 main hand, 0x0001 blood, 0x0040 blocked, 0x0020 critical, code = the largest damage component.
+            // The 3.29.3b decode (action-hit-packet-3.29.3b.md §§1–4) shows kind 2 only queues the package until an
+            // action with that sequence consumes it, which 0xffff never guarantees, and that 0x0400 asks the client for
+            // its own stun roll; the player's recovery is the authoritative 0x1d1 (SendPlayerHitRecovery).
+            ushort hitFlags = (ushort)(0x4201 | (blocked ? 0x0040 : 0) | (monsterCritical ? 0x0020 : 0));
+            return InstanceProtocol.ActionHit(id, 0xffff, PlayerId, flags: hitFlags, kind: 0x03, code: HitCode(mitigated),
                 angle: HitAngle(here.X - from.X, here.Y - from.Y));
-        }, $"0x01af monster 0x{id:x} hit on the player (sequence 0xffff)")) return;
+        }, $"0x01af monster 0x{id:x} hit on the player (kind 3, sequence 0xffff)")) return;
         await SendPlayerEnergyShield(remote, stream, ciphers, conn);
         if (recovery is not null) await SendPlayerHitRecovery(remote, stream, ciphers, conn, recovery);
         // At 0 the Life tick stops refreshing the overhead life bar (see Attack): hide it.

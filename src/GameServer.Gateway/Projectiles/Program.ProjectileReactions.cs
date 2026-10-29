@@ -22,8 +22,10 @@ partial class Program
         var random = contact.Projectile.ReactionRandomSource;
         if (hit.Life == 0)
             session.Packet(InstanceEntities.StatsUpdate(id, [(StatKeys.HideMiniLifeBar, 1)]));
-        if (HitReaction.TryFlinch(target, damage, now, random) is { } flinch)
-            session.Packet(InstanceProtocol.AnimationUpdate(id, 0, (uint)flinch.Index, 1));
+        // Native Actor TakeHit recovery (0x1d1), as the melee path sends: a rig-only clip (0x1b2) leaves the client
+        // monster walking while the server's estimate has stopped (11-skills.md "Hit reaction").
+        if (HitReaction.TryFlinch(target, damage, now, random) is not null)
+            session.Packet(InstanceProtocol.ActorAnimation(id, (float)(target.FlinchUntil - now), PlayerHitRecovery.TakeHitAnimation));
         session.Packet(InstanceProtocol.LifeUpdate(id, hit.Life),
             $"projectile {shot.Label} {contact.Stage} t={now:0.000000} use={contact.Projectile.UseId} entity={contact.Projectile.Id}"
             + $" phase={contact.Phase} form={contact.Projectile.Form} at={contact.Position}"

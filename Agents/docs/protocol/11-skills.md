@@ -831,6 +831,11 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   profile supplies the duration policy rather than forcing a rig index. Neither rig-only 0x1b2 nor 0x1ac followed
   by 0x1b2 stops native movement: an initial moving-Drowned probe kept sliding despite its accepted hurt clip.
   Do not append 0x1b2 after 0x1d1, which would replace the native recovery animation's completion lifecycle.
+  Projectile contacts (ordinary arrows and bolts, skill projectiles) commit the same 0x1d1 from the runtime's hit
+  (`CommitProjectileHit`) instead of a rig-only 0x1b2 clip, which left the client monster walking while the server's
+  estimate had stopped. The static 0x1af decode (`research/poe-rea-reference`,
+  `Agents/docs/re/action-hit-packet-3.29.3b.md` §4) agrees: 0x1d1 and the hit packet's stun share one interruption
+  routine, and 0x1b2 only replaces the clip.
   Native type-5 TakeHit fits its non-looping clip to the requested duration. Verification on 2026-10-26 stopped a
   Drowned at (582,367): all 46 samples from 40 to 950 ms after the hit retained that cell and a zero movement step;
   enabling AI afterward started a new walk. Evidence: `artifacts/combat-validation/enemy-moving-flinch-final.json`
@@ -910,7 +915,13 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   `atan2(dx, −dy)` from attacker to target), then a u16 for kind bit 2 and one for bit 3. The handler calls the
   attacker's `ProcessDamagePackageInternal` (vtable +0x230), which plays the effects; 0x1b1 stays authoritative on
   life. The server sends it before 0x1b1 on the default attack and on attack-gem hits (flags 0x4201, kind 3) and on a
-  monster's hit on the player (flags 0x4601 with u16 450, kind 2, sequence 0xffff); spells and projectiles skip it.
+  monster's hit on the player (kind 3, sequence 0xffff, flags 0x4201 plus 0x0040 when blocked and 0x0020 when critical,
+  code = the largest damage component: 0 Physical, 1 Cold, 2 Fire, 3 Lightning, 4 Chaos; `HitCode`); spells and
+  projectiles skip it. The monster hit used to go out as 0x4601 with a 450 ms duration and kind 2. The static decode
+  (`research/poe-rea-reference`, `Agents/docs/re/action-hit-packet-3.29.3b.md` §§1–4) shows that kind bit 0 clear
+  only queues the package until an action with that sequence consumes it, which the fabricated 0xffff never
+  guarantees, and that 0x0400 asks the client to stun the target itself, with its own avoidance roll, through the
+  same interruption routine as 0x1d1; the player's recovery is already the authoritative 0x1d1 below.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's

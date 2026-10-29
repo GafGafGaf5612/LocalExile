@@ -120,7 +120,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Release was 6.1 to 31.4 ms after the selected contact in 15 ground samples; the first cold sample was 55.6 ms late.
   Enemy flinches now cancel movement and ordinary pending swings, hold AI for the requested native TakeHit recovery,
   and invalidate old queued contacts permanently. Moving-Drowned native samples held one cell through recovery;
-  AI movement resumed afterward. The original rig-only hurt animation did not stop locomotion.
+  AI movement resumed afterward. The original rig-only hurt animation did not stop locomotion; projectile hits
+  (`CommitProjectileHit`) send the same native recovery instead of that clip.
   The faster monster planner issued its first chase after 38 to 50 ms in native controls, without duplicate orders.
   Turn tracking, full 2.4 s Drowned attack pacing and actual Escape-menu pause/resume were also verified.
   Full off-hand timing/damage and nonzero intrinsic attack repeats are not implemented.

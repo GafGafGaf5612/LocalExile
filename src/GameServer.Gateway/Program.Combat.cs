@@ -67,6 +67,24 @@ partial class Program
         return (byte)((int)Math.Round(a * 256.0 / (2 * Math.PI)) & 0xff);
     }
 
+    // The 0x1af presentation type (code & 7; 3.29.3b table 0x1435d2110: 0 Physical, 1 Cold, 2 Fire, 3 Lightning,
+    // 4 Chaos): the hit's largest damage component, Physical on a tie or an empty packet. One type, not the amounts.
+    internal static byte HitCode(GameServer.Core.World.DamagePacket packet)
+    {
+        var type = GameServer.Core.World.DamageType.Physical;
+        double most = double.NegativeInfinity;
+        foreach (var (candidate, range) in packet.Components)
+            if (range.Min > most) { most = range.Min; type = candidate; }
+        return type switch
+        {
+            GameServer.Core.World.DamageType.Cold => 1,
+            GameServer.Core.World.DamageType.Fire => 2,
+            GameServer.Core.World.DamageType.Lightning => 3,
+            GameServer.Core.World.DamageType.Chaos => 4,
+            _ => 0,
+        };
+    }
+
     // A positive offset on the hit's contact timing (seconds): the client starts its swing a beat after the server's 0x1ab
     // echo (the walk estimate leads the client's own walk, so the contact keyframe alone leaves the blood early). A fixed
     // offset is a compromise over the variable walk-sync; Game_HIT_OFFSET_MS overrides it (150 ms here covers most of the
