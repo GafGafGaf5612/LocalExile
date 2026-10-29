@@ -89,6 +89,16 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         return AddAffix(item, MaxAffixesPerSide(type), random);
     }
 
+    /// <summary>Chaos Orb's validated rare reroll: every unprotected explicit affix is replaced by 4-6 new weighted
+    /// ones, a new rare name is drawn, and metamod-protected affixes stay. Flasks are magic-only and cannot be
+    /// rare.</summary>
+    public Item? Chaos(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Rare || item.Components.Contains("Flask") || !TryModifiable(item, out var type) ||
+            Pool(type, item.ItemLevel).Count == 0) return null;
+        return Roll(item, ItemRarity.Rare, random, respectMetamods: true) with { Identified = true };
+    }
+
     /// <summary>The rare per-side limit: jewel classes allow two prefixes and two suffixes, other rare bases three.</summary>
     static int MaxAffixesPerSide(ItemCatalog.BaseType type) => type.Class is "Jewel" or "AbyssJewel" ? 2 : 3;
 

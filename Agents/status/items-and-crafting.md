@@ -146,10 +146,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   CoE count/jewel checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
   The old live check (2026-10-21) predates these rules; native re-acceptance is pending.
   See [13](../docs/protocol/13-items.md), "Orb of Alchemy", and [evidence](../docs/re/alchemy-coe.md).
-- **Chaos Orb, Divine Orb (verified live, 2026-10-21):** Chaos rerolls all of a rare item's affixes (now the CoE
-  4/5/6 counts and jewel caps, new tiers); Divine keeps the affixes, tiers and order and rerolls only values.
-  Shift works for both.
-  See [13](../docs/protocol/13-items.md), "Chaos Orb", "Divine Orb".
+- **Chaos Orb:** a modifiable rare item's unprotected affixes are rerolled (CoE 4/5/6 counts, jewels 3-4 with two per
+  side; new tiers, new rare name); prefix/suffix metamod locks keep their side. Flasks are magic-only; non-rare,
+  unmodifiable/unsupported and empty-pool targets are refused before spending.
+  CoE count/metamod checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  The old live check (2026-10-21) predates these rules; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Chaos Orb", and [evidence](../docs/re/chaos-coe.md).
+- **Divine Orb (verified live, 2026-10-21):** keeps the affixes, tiers and order and rerolls only values.
+  Shift works. See [13](../docs/protocol/13-items.md), "Divine Orb".
 - **Orb of Scouring (verified live, 2026-10-21):** a magic / rare / unique item becomes normal, only base mods stay.
   See [13](../docs/protocol/13-items.md), "Orb of Scouring".
 - **Orb of Transmutation:** normal to identified magic, targeting 1-2 weighted affixes at equal probability.

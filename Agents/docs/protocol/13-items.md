@@ -477,11 +477,16 @@ Flasks are magic-only and refused. Unknown/unmodifiable bases, non-normal items,
 pools are refused before spending.
 The 300-apply sample and jewel caps are in [the source comparison](../re/alchemy-coe.md).
 
-### Chaos Orb (2026-10-21, verified live)
+### Chaos Orb (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyRerollRare`, same handler (0x71, and 0x72 with Shift for repeated use). `CurrencyEffects.Chaos` takes only a
-rare item with a Mods component: every explicit affix is replaced by a fresh `ItemRolls.Roll` (4-6 affixes, new tiers
-and values), a new rare name, implicits kept; the item ends identified. Anything else is refused and nothing is spent.
+`CurrencyRerollRare`, same handler (0x71, and 0x72 with Shift for repeated use). `CurrencyEffects.Chaos` delegates to
+`ItemRolls.Chaos`: a modifiable rare item's unprotected explicit affixes are replaced by a fresh `ItemRolls.Roll`
+(4-6 affixes, new tiers and values; jewel classes 3-4 with two per side), a new rare name is drawn, implicits stay and
+the item ends identified. Prefix/suffix metamod locks keep their side.
+Flasks are magic-only and a rare flask is refused.
+The base must be known and serializable, with Mods and not `Unmodifiable`; non-rare, corrupted/mirrored and empty-pool
+targets are refused before spending.
+CoE's 300-applies counts, jewel limits and prefix-lock result are in [the source comparison](../re/chaos-coe.md).
 
 ### Divine Orb (2026-10-21, verified live)
 

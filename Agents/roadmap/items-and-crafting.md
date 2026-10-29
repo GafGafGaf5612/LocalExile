@@ -46,6 +46,8 @@ features.
   natively. See [the evidence](../docs/re/alchemy-coe.md).
   Exalted adds one rare affix within the base's cap (jewels 2 per side), keeps the name and refuses flasks. Recheck
   it natively. See [the evidence](../docs/re/exalted-coe.md).
+  Chaos rerolls the same rare pool, keeps metamod locks and refuses flasks/empty pools. Recheck it natively. See
+  [the evidence](../docs/re/chaos-coe.md).
 - **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
   Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
   socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).
