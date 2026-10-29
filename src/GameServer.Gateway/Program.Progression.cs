@@ -134,16 +134,36 @@ partial class Program
         int god = conn.God ? 1000 : 0;
         int requirementsPct = Stats.Key(AttributeRequirementsStat) is uint reqKey ? dev.GetValueOrDefault(reqKey, passives.GetValueOrDefault(reqKey)) : 0;
         int Req(int value) => ScaledRequirement(value, requirementsPct);
+        // A worn item needs the most any of its socketed gems needs too, as the client shows it: a gem the character is too
+        // low for makes the whole item inactive, so its mods and every gem in it do nothing and its skills leave the skill
+        // list and the skill bar (GemSkillEffectsAt). The gems' requirements are catalog data compared with the totals this
+        // resolver counts itself, never the pools, which may not exist yet (the old check read them and switched items off
+        // at login; PR #175 then dropped the rule entirely).
+        ItemModStats.Worn WithGems(ItemModStats.Worn item)
+        {
+            foreach (var socket in item.Item.Sockets)
+                if (socket.Gem is { } gem && SocketedGemRequirements(conn, gem, requirementsPct) is var g)
+                    item = item with { Level = Math.Max(item.Level, g.Level), Strength = Math.Max(item.Strength, g.Str),
+                        Dexterity = Math.Max(item.Dexterity, g.Dex), Intelligence = Math.Max(item.Intelligence, g.Int) };
+            return item;
+        }
         var wornItems = worn
             .Select(i => (i, t: ItemsFor(conn).ByHash(i.Item.TypeHash)))
             .Select(x => x.t is { } t
                 ? new ItemModStats.Worn(x.i.Id, x.i.Item, Req(ItemsFor(conn).Requirements(t).Str), Req(ItemsFor(conn).Requirements(t).Dex), Req(ItemsFor(conn).Requirements(t).Int),
                     ItemModStats.LevelRequirement(x.i.Item, t.DropLevel, ItemsFor(conn).Mods))
-                : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0)).ToList();
-        var (inactive, active) = ItemModStats.ResolveEquipment(wornItems, level ?? conn.Pools.Level,
-            active => AttributeInputs(RawAttributes(active.Select(w => w.Item)), dev)
-                .Apply(c.Strength + god, c.Dexterity + god, c.Intelligence + god), before);
-        // Item activation depends on equipment requirements, never the gems inside it.
+                : new ItemModStats.Worn(x.i.Id, x.i.Item, 0, 0, 0, 0))
+            .Select(WithGems).ToList();
+        // Requirements compare virtual_*_for_requirements, as the client and GemRequirementsUnmet do: the attribute unless
+        // /set_stat replaced it.
+        int ForRequirements(string attribute, int value) =>
+            Stats.Key($"virtual_{attribute}_for_requirements") is uint key && dev.TryGetValue(key, out int set) ? set : value;
+        var (inactive, active) = ItemModStats.ResolveEquipment(wornItems, level ?? conn.Pools.Level, active =>
+        {
+            var (str, dex, intel) = AttributeInputs(RawAttributes(active.Select(w => w.Item)), dev)
+                .Apply(c.Strength + god, c.Dexterity + god, c.Intelligence + god);
+            return (ForRequirements("strength", str), ForRequirements("dexterity", dex), ForRequirements("intelligence", intel));
+        }, before);
         var rawAttributes = RawAttributes(active);
         var sources = ItemModStats.Plus(passives, ItemModStats.Global(active, ItemsFor(conn).Mods, Stats));
         // Clamp only this outgoing integer view; the authoritative attribute inputs remain wide beside it.
