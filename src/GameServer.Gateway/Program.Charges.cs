@@ -80,19 +80,27 @@ partial class Program
         var session = ChargesOf(conn);
         var limits = new Dictionary<ChargeType, Charges.Limits>();
         var held = new Dictionary<ChargeType, int>();
+        var converted = new Dictionary<ChargeType, bool>();
+        var minimumConverted = new Dictionary<ChargeType, bool>();
         lock (conn.Monsters)
         {
-            // The session's limits and periodic stats follow every change of the character's stats from here, so the
-            // ticker never polls them.
+            // The session's limits, periodic stats and conversion flags follow every change of the character's stats
+            // from here, so the ticker never polls them.
             session.Observe(Get);
             foreach (var type in Charges.Types)
             {
                 limits[type] = session.Limits(type);
                 held[type] = session.Effective(type);
+                converted[type] = session.Converted(type);
+                minimumConverted[type] = session.MinimumConverted(type);
             }
         }
-        var added = ChargeEffects.Expand(Get, t => held[t]);
-        foreach (var (stat, value) in added.Select(kv => (Stat: kv.Key, kv.Value)).Concat(ChargeEffects.Display(t => held[t], t => limits[t])))
+        // The special per-charge coefficients (Character.ot's 3% triple damage and 10% stun threshold per Brutal Charge)
+        // are PanelStatDefaults, which BaseStats adds to the published sources after this: count them here too.
+        int Coefficient(string name) => (int)Math.Clamp((long)Get(name) + PanelStatDefaults.Default(name), int.MinValue, int.MaxValue);
+        var added = ChargeEffects.Expand(Coefficient, t => held[t], t => converted[t]);
+        foreach (var (stat, value) in added.Select(kv => (Stat: kv.Key, kv.Value))
+            .Concat(ChargeEffects.Display(t => held[t], t => limits[t], t => converted[t], t => minimumConverted[t])))
             if (Stats.Key(stat) is uint key) stats[key] = stats.GetValueOrDefault(key) + value;
         return stats;
     }
@@ -268,7 +276,7 @@ partial class Program
                 if (step.CountsChanged)
                 {
                     await SendChargeStats(remote, stream, ciphers, conn,
-                        string.Join(", ", Charges.Types.Select(t => $"{session.Effective(t)} {Charges.Name(t)}")));
+                        string.Join(", ", Charges.Types.Select(t => $"{session.Effective(t)} {Charges.Label(t, session.Converted(t))}")));
                 }
             }
             catch (Exception ex) when (ex is not (IOException or ObjectDisposedException))
@@ -314,7 +322,7 @@ partial class Program
                 text = string.Join("; ", Charges.Types.Select(t =>
                 {
                     var l = session.Limits(t);
-                    return $"{Charges.Name(t)} {session.Effective(t)}/{l.Maximum} (minimum {l.Minimum}, " +
+                    return $"{Charges.Name(t)}{(session.Converted(t) ? $" (as {Charges.SpecialName(t)})" : "")} {session.Effective(t)}/{l.Maximum} (minimum {l.Minimum}, " +
                         $"{l.DurationMs / 1000.0:0.###} s, {session.State.Remaining(t, now):0.0} s left)";
                 }));
             await conn.Commands!.Reply($"Charges: {text}.");

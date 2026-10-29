@@ -865,6 +865,45 @@ Tests: `PanelStatsTests` (Defence, flags, brand), `CriticalStrikePolicyTests`, `
 `OffHandPanelTests`, `AilmentPanelStatsTests`, `AilmentPanelGatewayTests` (real Rusted Sword / Glass Shank, Cyclone and
 Fireball fixtures). Native display checks of every row in this batch are pending.
 
+## Converted special charges
+
+The Charges tab's Brutal, Affliction and Absorption rows (2026-10-29): the three Domain 1 unique mods
+`GainBrutalChargesInsteadOfEnduranceUnique__1`, `GainAfflictionChargesInsteadOfFrenzyUnique__1` and
+`GainAbsorptionChargesInsteadOfPowerUnique__1` (`gain_*_charges_instead_of_*_charges`) are the only 3.29 player
+sources of these charges; Blitz and Challenger have none (their stats appear only in monster/mercenary skill stat sets),
+Spirit and Siphoning maxima come only from abyss-jewel and Elder/Shaper item counts the server does not model, and
+Blood Charges need Reap.
+
+- `Charges.ConversionFlag` / `MinimumConversionFlag`: while the flag is held (observed with the limits in
+  `ChargeSession.Observe`, so an unequipped belt takes effect at the next stats change), the held Endurance / Frenzy /
+  Power state *is* the special type: the standard held state, limits, gains, expiry and area carry are unchanged, and
+  pinned PoB `16de4b8` CalcPerform's rule (special = standard count, standard = 0) is applied at presentation.
+- `ChargeEffects.Expand(converted)`: the standard per-charge and "with no / any … charges" stats see zero charges of a
+  converted type (Character.ot's reductions, Frenzy speed, Power critical, the "per Frenzy, Power or Endurance Charge"
+  total); the `Special` rules take the count: `chance_to_deal_triple_damage_%_per_brutal_charge` →
+  `base_chance_to_deal_triple_damage_%` (the gambler's hit roll) and `stun_threshold_+%_per_brutal_charge` →
+  `stun_threshold_+%` (`PlayerHitRecovery.Chance`; the stat is no longer an unsupported stun gate). The coefficients
+  include `PanelStatDefaults` (3 / 10 / 8 / 8 / 12) through `PanelStatDefaults.Default`, since `BaseStats` adds those
+  defaults to the published sources after `WithCharges`.
+- `ChargeEffects.DamageMore(ailment: true)`: `ailment_damage_+%_final_per_affliction_charge` × `current_affliction_charges`
+  as one more multiplier (PoB: Damage MORE with KeywordFlag.Ailment); read by `AilmentPanelStats` only, because no
+  server path applies player ailment damage yet. The non-damaging ailment effect per Affliction Charge and the
+  Absorption recoup of elemental damage taken as energy shield have no server consumer: their rows show the
+  coefficients and the counts.
+- `ChargeEffects.Display(converted, minimumConverted)`: `current_brutal/affliction/absorption_charges` (the rows and
+  BuffDefinitions 1757–1759's `Current_StatsKey`) and `minimum_*` (under the minimum flag); the standard
+  `current_*`, `actual_current_*` and `current_removable_*` rows show 0. The special rows are always sent, so a removed
+  flag clears them. `virtual_maximum_*` stays the earlier mirror publication (`ChargePanelStats.MirroredMaximums`).
+- HUD: `ChargeBuffs.Row(type, converted)` uses rows 1757 `brutal_charge`, 1758 `affliction_charge`, 1759
+  `absorption_charge`; `ChargeSession.Presentation` swaps the buff when the flag changes without a count change.
+  `/charges` shows "endurance (as brutal)" and accepts the special names.
+
+Tests: `ChargeEffectsTests` (conversion stats exist and name the mods, Brutal effects instead of reductions, special
+rows, Affliction ailment-only multiplier), `ChargeSessionTests` (special buff and the swap on flag removal),
+`ChargeBuffsTests` (rows 1757–1759 against BuffDefinitions, the 0x1c1 bytes), `ConvertedChargesGatewayTests`
+(composition through `CharacterPlayerStats` with the stun threshold accepted) and the adjusted
+`Issue75UpstreamCompositionTests` stun case. Not natively validated; a real conversion unique has not been equipped.
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
@@ -883,8 +922,10 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
 4. Damaging-ailment application, duration, critical and stacking mechanics: the panel ranges are display rows
    (batch above); Protocol 20 section 3 documents helpers, but also the missing execution paths.
 5. Current-branch validation of the incoming Ward implementation, the defence estimates (batch above), remaining
-   regeneration/recharge conversions, specialized leech, special charge counts and gains (Spirit, Siphoning, Blitz,
-   Challenger, Blood), minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap.
+   regeneration/recharge conversions, specialized leech, the converted charges (above), the special charge types
+   without a reachable player source here (Spirit and Siphoning need abyss-jewel / Elder-Shaper item counting, Blood
+   needs Reap, Blitz and Challenger have no 3.29 player source), minion/brand/trap/mine mechanics and conditional
+   source operators documented in the roadmap.
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 
 Do not turn historical client observations, hidden rows, sparse zero packets or source-name matches into completion.

@@ -7,10 +7,11 @@
 /// Semantics 2 means OVERRIDE_VALUE; it does not establish that addition rule. The combined power/endurance and
 /// power/frenzy bonuses add to both rows; the former is reachable through the ordinary Warstaff base implicit.
 /// Conditional stats (while affected by ...) and the mechanics that replace the maximum with 0 are outside the standard
-/// contribution. The three explicitly sourced special-charge maximum mirrors are a separate, later projection. The
-/// charges themselves (current counts, gains,
-/// expiry, per-charge effects) are <see cref="Charges"/>, which takes its standard maxima from here. No Mods.dat row uses the
-/// max_*_charges_override stats today; if supported later, those must replace the sum rather than add to it.
+/// contribution. The three explicitly sourced special-charge maximum mirrors are a separate, later projection
+/// (<see cref="MirroredMaximums"/>); the special counts come from the converted standard charges
+/// (<see cref="Charges.ConversionFlag"/>, <see cref="ChargeEffects.Display"/>). The charges themselves (current counts,
+/// gains, expiry, per-charge effects) are <see cref="Charges"/>, which takes its standard maxima from here. No Mods.dat
+/// row uses the max_*_charges_override stats today; if supported later, those must replace the sum rather than add to it.
 /// </summary>
 static class ChargePanelStats
 {

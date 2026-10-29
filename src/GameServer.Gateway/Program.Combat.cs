@@ -1009,10 +1009,9 @@ partial class Program
             if (Get(AntiquarianEffects.StunRecoverySource) > 0)
                 Console.WriteLine($"[gateway] Turtle Shell stun: {reason}");
         }
-        // The panel publishes this per-charge coefficient even on an ordinary character with zero Brutal Charges.
-        // It cannot affect that character's threshold; retain the unsupported gate when the charge is present.
-        if (stats.FirstOrDefault(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key))
-            && (Stats.Name(s.Key) != "stun_threshold_+%_per_brutal_charge" || Get("current_brutal_charges") != 0)) is { Key: > 0 } unsupported)
+        // The panel publishes the per-Brutal-Charge threshold coefficient on every character; the charges held (converted
+        // Endurance Charges, ChargeEffects) are already in stun_threshold_+%, so it is not an unsupported stat.
+        if (stats.FirstOrDefault(s => s.Value != 0 && PlayerHitRecovery.UnsupportedStat(Stats.Name(s.Key))) is { Key: > 0 } unsupported)
         { Trace("unsupported stat " + Stats.Name(unsupported.Key)); return null; }
         // Skill immunity can depend on a native action's contact phase, which this server does not track yet.
         // Conservatively skip builds with any equipped skill carrying it, rather than stun an uninterruptible phase.

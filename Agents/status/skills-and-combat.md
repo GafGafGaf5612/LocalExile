@@ -342,7 +342,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   maxima, with final standard/special zero overrides and independent source clearing. Real 4/5/6 native-modifier
   fixtures cover both modes; combined automated results are recorded with the panel changes below.
   This uses labelled pinned-PoB 3.29.x formulas and native source identities, without certifying every official getter.
-  Special held state, gain/expiry, conversions, combat effects and Spirit/Abyss-jewel counts remain separate.
+  Converted charges (2026-10-29): under the three "gain … instead of" unique flags the held Endurance / Frenzy / Power
+  charges are Brutal / Affliction / Absorption Charges: the special `current_*` and `minimum_*` rows and BuffDefinitions
+  1757–1759 buffs, the standard effects off, Brutal's triple-damage chance and stun threshold per charge applied, and
+  Affliction's more ailment damage in the ailment panel rows; automated only (`ConvertedChargesGatewayTests`,
+  `ChargeEffectsTests`, `ChargeSessionTests`, `ChargeBuffsTests`). Spirit, Siphoning, Blood, Blitz and Challenger
+  have no reachable player source here (abyss-jewel / Elder-Shaper counting, Reap, none in 3.29), the Affliction
+  non-damaging effect and Absorption recoup have no consumer.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
   `Program.Charges.cs`, `ChargePanelStats.cs`.
   Docs: [11](../docs/protocol/11-skills.md) §15.

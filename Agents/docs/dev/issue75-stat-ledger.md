@@ -101,7 +101,7 @@ and automated checks. Wait for shared resources and stop only this task's own pr
 
 ## Exact target
 
-Current disposition: 184 partial, 173 pending, 0 complete. These are audit states, not implemented-stat counts.
+Current disposition: 187 partial, 170 pending, 0 complete. These are audit states, not implemented-stat counts.
 
 | Stat | Status | Review record / next audit |
 |---|---|---|
@@ -420,9 +420,9 @@ Current disposition: 184 partial, 173 pending, 0 complete. These are audit state
 | `virtual_life_leech_speed_+%` | partial | [leech coefficients](#leech-coefficients) |
 | `virtual_mana_leech_from_attack_damage_permyriad` | partial | [leech coefficients](#leech-coefficients) |
 | `virtual_mana_leech_speed_+%` | partial | [leech coefficients](#leech-coefficients) |
-| `virtual_maximum_absorption_charges` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_affliction_charges` | pending | [pending audit](#pending-audit) |
-| `virtual_maximum_brutal_charges` | pending | [pending audit](#pending-audit) |
+| `virtual_maximum_absorption_charges` | partial | [converted charges](issue75-review.md#converted-special-charges) |
+| `virtual_maximum_affliction_charges` | partial | [converted charges](issue75-review.md#converted-special-charges) |
+| `virtual_maximum_brutal_charges` | partial | [converted charges](issue75-review.md#converted-special-charges) |
 | `virtual_maximum_endurance_charges` | pending | [pending audit](#pending-audit) |
 | `virtual_maximum_energy_shield_leech_amount_per_leech_permyriad_max_energy_shield` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |
 | `virtual_maximum_energy_shield_leech_rate_permyriad_per_minute` | partial | [leech limits and prohibitions](#leech-limits-and-prohibitions) |

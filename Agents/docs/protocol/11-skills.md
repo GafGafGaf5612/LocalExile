@@ -2492,8 +2492,25 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   maxima 4/5/6 and cover independent removal/recovery and zero overrides in both modes.
   The formulas follow pinned PoB `16de4b8` `CalcPerform` with exact native source identities, as a labelled 3.29.x
   fallback; every official virtual getter has not been independently traced. Combined automated results are in §14;
-  new native checks remain pending. This bounded publication leaves standard held state/gains unchanged and does not
-  implement special current counts, gain/expiry, minimum conversions, Spirit/Abyss-jewel counting or combat effects.
+  new native checks remain pending. This bounded publication leaves standard held state/gains unchanged; the
+  current counts and effects of the three converted types are the next bullet, and Spirit/Abyss-jewel counting is
+  not implemented.
+- **Converted charges** (Brutal, Affliction, Absorption; 2026-10-29). The three Domain 1 unique mods
+  `gain_brutal_charges_instead_of_endurance_charges`, `gain_affliction_charges_instead_of_frenzy_charges` and
+  `gain_absorption_charges_instead_of_power_charges` (`Charges.ConversionFlag`) are these charges' only 3.29 player
+  sources. While the flag is held (observed with the limits, `ChargeSession.Observe`), the held Endurance / Frenzy /
+  Power charges *are* the special type (pinned PoB CalcPerform: special = standard count, standard = 0): the held
+  state, limits, gains, expiry and area carry stay the standard type's. `ChargeEffects.Expand(converted)` gives the
+  standard per-charge and "with no / any … charges" stats zero charges of the type and the `Special` rules the count:
+  `chance_to_deal_triple_damage_%_per_brutal_charge` → `base_chance_to_deal_triple_damage_%` (the hit's gambler roll)
+  and `stun_threshold_+%_per_brutal_charge` → `stun_threshold_+%` (the stun chance; no longer an unsupported gate),
+  with `PanelStatDefaults`' coefficients counted. `ChargeEffects.DamageMore(ailment: true)` multiplies damage with
+  ailments by `ailment_damage_+%_final_per_affliction_charge` × `current_affliction_charges` (the ailment panel rows;
+  no server path applies player ailment damage yet). `Display` sends `current_brutal/affliction/absorption_charges`
+  and `minimum_*` (under `modifiers_to_minimum_*_charges_instead_apply_to_*_charges`) and zero on the standard rows;
+  the HUD uses BuffDefinitions 1757 `brutal_charge`, 1758 `affliction_charge`, 1759 `absorption_charge` (whose
+  `Current_StatsKey` is `current_*_charges` itself) and swaps the buff when the flag changes. Not modelled: the
+  non-damaging ailment effect per Affliction Charge and the Absorption recoup (no consumer), native validation.
 - **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
   on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)
   hands the charges to the destination ticket with the time they had left;
@@ -2559,8 +2576,10 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
 - **`/charges`** shows each type's count, maximum, minimum, duration and time left; `/charges <type> <n>` sets a count,
   `/charges add <type> [n]` gains as a skill would (refresh, maximum chance) and `/charges clear` empties them. A stat
   set with `/set_stat` counts in the charge effects and limits too.
-- **Not modelled.** Held state, gain/expiry and conversions for other charge types (Spirit, Siphoning, Blitz,
-  Challenger, Brutal, Affliction, Absorption, Blood, Brine and the rest), beyond the three bounded maxima above;
+- **Not modelled.** Held state and gain/expiry for the charge types without a reachable player source here: Spirit
+  and Siphoning (their maxima come only from abyss-jewel and Elder/Shaper item counts the server does not model),
+  Blood (needs Reap), Blitz and Challenger (no 3.29 player source: their stats appear only in monster/mercenary skill
+  stat sets), Brine and the rest, beyond the three bounded maxima and the converted charges above;
   skills and effects that consume or remove
   charges (Discharge, Flicker Strike's cooldown bypass, Immortal Call, "lose all … when", expiry triggers); gains that
   need stun, freeze, bleed, poison, curses, traps, mines, totems, Vaal souls, other warcries, allies, flask use (the

@@ -86,17 +86,17 @@ public class Issue75UpstreamCompositionTests
         Assert.Equal(12, Program.LeechOf(f.Conn).TakeRecovery(2).Life, 3);
     }
 
-    [Theory]
-    [InlineData(0, true)]
-    [InlineData(1, false)]
-    public void Default_per_Brutal_Charge_coefficient_does_not_disable_ordinary_stun(int charges, bool accepted)
+    [Fact]
+    public void Default_per_Brutal_Charge_coefficient_does_not_disable_ordinary_stun()
     {
         TestSaves.Ensure();
         var conn = new ClientState(new(ushort.MaxValue, "stun composition", 100, 100, 10, 10, null, []), 1, 1)
             { Character = "StunComposition" + Guid.NewGuid().ToString("N"), PlayerLife = 100 };
-        conn.PlayerStats[Program.Stats.Key("current_brutal_charges")!.Value] = charges;
-        Assert.Equal(10, Program.CharacterPlayerStats(conn)[Program.Stats.Key("stun_threshold_+%_per_brutal_charge")!.Value]);
-        Assert.Equal(accepted, Program.CommitPlayerHitRecoveryLocked(conn, 10000, 0) is not null);
+        var stats = Program.CharacterPlayerStats(conn);
+        Assert.Equal(10, stats[Program.Stats.Key("stun_threshold_+%_per_brutal_charge")!.Value]);
+        // The coefficient counts only converted charges (ConvertedChargesGatewayTests): none here, no threshold.
+        Assert.Equal(0, stats.GetValueOrDefault(Program.Stats.Key("stun_threshold_+%")!.Value));
+        Assert.NotNull(Program.CommitPlayerHitRecoveryLocked(conn, 10000, 0));
     }
 
     [Fact]

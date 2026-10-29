@@ -15,4 +15,9 @@ static class PanelStatDefaults
 
     public static List<(string Stat, int Value)> Compute(Func<string, int> raw) =>
         [.. Inherent.Select(s => (s.Stat, (int)Math.Clamp((long)raw(s.Stat) + s.Value, int.MinValue, int.MaxValue)))];
+
+    /// <summary>The inherent value of one stat (0 for any other): what <see cref="Compute"/> adds to its raw sources.
+    /// The charge expansion (WithCharges) reads the special per-charge coefficients through this before the defaults
+    /// enter the published sources.</summary>
+    public static int Default(string stat) => Inherent.FirstOrDefault(s => s.Stat == stat).Value;
 }

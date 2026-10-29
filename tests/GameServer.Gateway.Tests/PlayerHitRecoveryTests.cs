@@ -57,6 +57,7 @@ public class PlayerHitRecoveryTests
         Assert.True(PlayerHitRecovery.UnsupportedStat("enchantment_boots_stun_avoid_%_on_kill"));
         Assert.True(PlayerHitRecovery.UnsupportedStat("skill_cannot_be_stunned_before_contact_point"));
         Assert.True(PlayerHitRecovery.UnsupportedStat("stun_recovery_+%_per_frenzy_charge"));
+        Assert.False(PlayerHitRecovery.UnsupportedStat("stun_threshold_+%_per_brutal_charge"));   // expanded by ChargeEffects
         Assert.False(PlayerHitRecovery.UnsupportedStat("cannot_be_stunned_by_spells"));
         Assert.False(PlayerHitRecovery.UnsupportedStat("avoid_stun_%"));
         Assert.False(PlayerHitRecovery.UnsupportedStat("base_avoid_stun_%"));
