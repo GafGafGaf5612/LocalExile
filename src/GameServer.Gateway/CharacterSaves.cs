@@ -52,7 +52,7 @@ static class CharacterSaves
         Dictionary<string, SavedCosmetic>? SkillCosmetics = null, List<string>? ActiveAuras = null, string? SelectedHideout = null,
         OpeningTutorial? Tutorial = null, AscendancyProgress? MainAscendancy = null,
         Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null,
-        uint? Life = null, uint? Mana = null, VitalsSession? VitalsOwner = null)
+        uint? Life = null, uint? Mana = null, VitalsSession? VitalsOwner = null, ushort? Sulphite = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -93,6 +93,9 @@ static class CharacterSaves
         });
 
     public static void SetSelectedHideout(string character, string area) => Update(character, s => s with { SelectedHideout = area });
+
+    /// <summary>The character's Voltaxic Sulphite (the Delve gauge's current value).</summary>
+    public static void SetSulphite(string character, ushort amount) => Update(character, s => s with { Sulphite = amount });
 
     /// <summary>A Ruthless resource writer. Retired transfer owners retain their token so only that exact failed
     /// transfer can resume; a newer area's token can never be reclaimed by the old connection.</summary>

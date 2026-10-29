@@ -459,6 +459,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public OpenShop? Shop;
     // The town's Stash object (0 = none here), and the stash tabs whose inventory this connection has sent (0xc0 + 0xc8).
     public uint StashObject;
+    /// <summary>The Delve Crawler in the Azurite Mine Encampment (Program.Delve), and its cell.</summary>
+    public uint DelveCrawlerObject;
+    public (int X, int Y) DelveCrawlerAt;
     public readonly HashSet<int> StashTabsSent = [];
     /// <summary>The guild stash: its object in the hideout, its tabs this connection has the contents of, and whether its
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>

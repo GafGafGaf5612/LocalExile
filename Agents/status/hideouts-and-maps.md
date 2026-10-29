@@ -107,6 +107,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   the stash and the guild stash.
   The mine itself is not implemented.
   See [21](../docs/protocol/21-hideouts.md).
+- **Delve sulphite and the Crawler (verified live, 2026-10-29).**
+  - The character's Voltaxic Sulphite is saved, sent on entering the Mine Encampment or a Delve area (S→C 0x228), and
+    shown by the Subterranean Chart's gauge. `/sulphite <n>` sets it.
+  - The HUD gauge shows only in WorldAreas type 27, the mine areas; the encampment is type 15 in the client data, so
+    there the gauge is the chart's.
+  - `/delve_crawler [x y degrees]` creates the Crawler (DelveRobot) in the encampment, or moves and turns it. A click on
+    it opens the chart (the Crawler showed live; the click is not checked yet).
+  - The Crawler is not yet created by itself: its native cell and facing are being placed.
+  - `/stash_place` and `/guild_stash_place <x> <y> <degrees>` move the stash and the guild stash of any area until the
+    player leaves it, to find their places.
+  - See [21](../docs/protocol/21-hideouts.md) "Delve".
 - **Hideout crafting bench placement (2026-10-25).** Personal hideout selection now handles the native 0x254 request,
   saves the selected WorldAreas Id per character and transfers immediately.
   Auth uses the saved choice on login; world-panel travel, `/hideout` and map return portals use the same home.
