@@ -279,8 +279,9 @@ public class CrowdRegressionTests
         var ai = Call<Task>("RunMonsterAi", "crowd-regression", f.Stream, f.Ciphers, f.State);
         try
         {
-            await Until(() => mob.BusyUntil > 0);
-            var p = mob.Walk.Position(f.State.Clock.Elapsed.TotalSeconds);
+            // The AI sets BusyUntil before it stops the walk; read both in its combat-lock section.
+            (int X, int Y) p = default;
+            await Until(() => { lock (f.State.Monsters) { p = mob.Walk.Position(f.State.Clock.Elapsed.TotalSeconds); return mob.BusyUntil > 0; } });
             Assert.True(Math.Sqrt(Math.Pow(p.X - 100, 2) + Math.Pow(p.Y - 100, 2)) <= variety.AttackRange);
         }
         finally { f.State.Closed = true; await ai.WaitAsync(TimeSpan.FromSeconds(5)); }
@@ -297,10 +298,12 @@ public class CrowdRegressionTests
         var ai = Call<Task>("RunMonsterAi", "crowd-regression", f.Stream, f.Ciphers, f.State);
         try
         {
-            await Until(() => mob.LastTarget is not null);
-            var slot = mob.LastTarget!.Value;
-            Assert.False(ClientPathfinder.ObjectBlocks(f.State.StationaryBlockers, slot.X, slot.Y, 3, 6));
-            Assert.Equal(slot, mob.Walk.Position(mob.Walk.ArrivesAt + 1));
+            // The AI sets LastTarget before it orders the walk; read both in its combat-lock section.
+            (int X, int Y)? slot = null;
+            (int X, int Y) end = default;
+            await Until(() => { lock (f.State.Monsters) { slot = mob.LastTarget; end = mob.Walk.Position(mob.Walk.ArrivesAt + 1); return slot is not null; } });
+            Assert.False(ClientPathfinder.ObjectBlocks(f.State.StationaryBlockers, slot!.Value.X, slot.Value.Y, 3, 6));
+            Assert.Equal(slot.Value, end);
         }
         finally { f.State.Closed = true; await ai.WaitAsync(TimeSpan.FromSeconds(5)); }
     }
