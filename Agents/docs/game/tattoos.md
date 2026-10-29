@@ -1,15 +1,16 @@
 # Tattoos
 
-**Status: in progress (documentation complete, catalogue 100/100; client apply/remove verified for the Firewalker
-pilot).** The client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries
-the inventory id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends
-the tattoo in `0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. The Firewalker is `works`; the
-other nine pilot stats are `partial` (server stats verified, client flow not individually re-checked); the remaining
-90 rows are `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the
-target/limit rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
+**Status: in progress (documentation complete, catalogue 100/100; all ten plain-stat pilot tattoos are
+client-verified).** The client's right-click tattoo + left-click passive flow is traced and implemented: C->S
+`0x77` carries the inventory id, item id and passive graph id; the server consumes the item, replaces the passive's
+stats and sends the tattoo in `0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. All ten pilot
+stats are `works`; the remaining 90 rows are `not implemented`. This page records the 3.29.3b catalogue, the client
+mechanics, the protocol, the target/limit rules and the implementation groups. The `Status` column is per row;
+`Reason` names the missing layer.
 
 This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos`,
-`PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki [Tattoo](https://www.poewiki.net/wiki/Tattoo) and
+`PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki
+[Tattoo](https://www.poewiki.net/wiki/Tattoo) and
 [List of tattoos](https://www.poewiki.net/wiki/List_of_tattoos) pages (2026-10-29) and Path of Building's
 `src/Data/TattooPassives.lua`. Path of Building is a read-only third-party reference under `Tools/PathOfBuilding`
 (not committed).
@@ -18,10 +19,10 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
-| Current (drop-enabled) | 53 | 1 | 8 | 0 | 44 |
-| Drop-disabled | 40 | 0 | 1 | 0 | 39 |
+| Current (drop-enabled) | 53 | 9 | 0 | 0 | 44 |
+| Drop-disabled | 40 | 1 | 0 | 0 | 39 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **1** | **9** | **0** | **90** |
+| **Total** | **100** | **10** | **0** | **0** | **90** |
 
 | Status | Meaning |
 |---|---|
@@ -37,7 +38,7 @@ stat already has a gameplay consumer. The first implementation pass must audit e
 
 | Group | Contents | State |
 |---|---|---|
-| 1. Plain stats | The ten pilot tattoos: four resistances, movement speed, armour, block, spell suppression, energy shield and maximum life. | Firewalker is end-to-end (client apply/remove + relog); the other nine have server stats and unit/live checks only. |
+| 1. Plain stats | The ten pilot tattoos: four resistances, movement speed, armour, block, spell suppression, energy shield and maximum life. | 10/10 client-verified; Firewalker also has removal and relog checks. |
 | 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
 | 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Not implemented. |
 | 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
@@ -254,7 +255,7 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Tattoo of the Arohongui Moonwarden** | +6% to Cold Resistance | Small Dexterity | Te Onui | partial | server stats live-verified; client apply/remove not checked |
+| **Tattoo of the Arohongui Moonwarden** | +6% to Cold Resistance | Small Dexterity | Te Onui | works | client apply; cold 211% -> 217% |
 | **Tattoo of the Arohongui Scout** | 10% chance to Avoid being Chilled<br>10% chance to Avoid being Frozen | Small Dexterity | Te Onui | not implemented | needs chill/freeze avoidance rolls |
 | **Tattoo of the Arohongui Shaman** | 5% increased Effect of Herald Buffs on you | Small Intelligence | Moti Aro | not implemented | needs Herald buff effect |
 | **Tattoo of the Arohongui Warmonger** | 5% chance to Freeze | Small Intelligence | Moti Aro | not implemented | needs freeze chance |
@@ -266,9 +267,9 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 |---|---|---|---|---|---|
 | **Tattoo of the Hinekora Deathwarden** | 6% reduced Effect of Curses on you | Small Intelligence | Moti Aro | not implemented | stat-only |
 | **Tattoo of the Hinekora Shaman** | 8% increased Mana Regeneration Rate | Small Intelligence | Moti Aro | not implemented | stat-only |
-| **Tattoo of the Hinekora Storyteller** | +3% to Chaos Resistance | Small Intelligence | Moti Aro | partial | server stats live-verified; client apply/remove not checked |
+| **Tattoo of the Hinekora Storyteller** | +3% to Chaos Resistance | Small Intelligence | Moti Aro | works | client apply; chaos 0% -> 3% |
 | **Tattoo of the Hinekora Warmonger** | Minions have 5% increased maximum Life | Small Intelligence | Moti Aro | not implemented | needs minion life |
-| **Tattoo of the Hinekora Warrior** | 3% increased maximum Energy Shield | Small Intelligence | Moti Aro | partial | server mapping/unit test; live client check pending |
+| **Tattoo of the Hinekora Warrior** | 3% increased maximum Energy Shield | Small Intelligence | Moti Aro | works | client apply; max ES +3% |
 
 ### Kitava (5)
 
@@ -295,9 +296,9 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
 | **Tattoo of the Ramako Archer** | 5% increased Global Accuracy Rating | Small Dexterity | Te Onui | not implemented | stat-only |
-| **Tattoo of the Ramako Fleetfoot** | 2% increased Movement Speed | Small Dexterity | Te Onui | partial | server mapping/unit test; live client check pending |
+| **Tattoo of the Ramako Fleetfoot** | 2% increased Movement Speed | Small Dexterity | Te Onui | works | client apply; movement speed +2% |
 | **Tattoo of the Ramako Scout** | 6% increased Evasion Rating | Small Dexterity | Te Onui | not implemented | stat-only |
-| **Tattoo of the Ramako Shaman** | +2% chance to Suppress Spell Damage | Small Dexterity | Te Onui | partial | server mapping/unit test; live client check pending |
+| **Tattoo of the Ramako Shaman** | +2% chance to Suppress Spell Damage | Small Dexterity | Te Onui | works | client apply; +2% suppression (100% cap, panel unchanged) |
 | **Tattoo of the Ramako Sniper** | 5% increased Projectile Speed | Small Dexterity | Te Onui | not implemented | stat-only |
 
 ### Rongokurai (5)
@@ -308,7 +309,7 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 | **Tattoo of the Rongokurai Goliath** | 10% increased Stun Duration on Enemies | Small Strength | Ngakanu | not implemented | stat-only |
 | **Tattoo of the Rongokurai Guard** | Guard Skills have 6% increased Duration | Small Strength | Ngakanu | not implemented | needs guard-skill duration |
 | **Tattoo of the Rongokurai Turtle** | You take 5% reduced Extra Damage from Critical Strikes | Small Intelligence | Moti Aro | not implemented | stat-only |
-| **Tattoo of the Rongokurai Warrior** | 6% increased Armour | Small Strength | Ngakanu | partial | server mapping/unit test; live client check pending |
+| **Tattoo of the Rongokurai Warrior** | 6% increased Armour | Small Strength | Ngakanu | works | client apply; armour 319% -> 325% |
 
 ### Tasalio (5)
 
@@ -346,8 +347,8 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 |---|---|---|---|---|---|
 | **Tattoo of the Valako Scout** | 10% reduced Effect of Shock on you | Small Intelligence | Moti Aro | not implemented | stat-only |
 | **Tattoo of the Valako Shaman** | 5% chance to Shock | Small Intelligence | Moti Aro | not implemented | needs shock chance |
-| **Tattoo of the Valako Shieldbearer** | +1% Chance to Block Attack Damage | Small Strength | Ngakanu | partial | server mapping/unit test; live client check pending |
-| **Tattoo of the Valako Stormrider** | +6% to Lightning Resistance | Small Intelligence | Moti Aro | partial | server stats live-verified; client apply/remove not checked |
+| **Tattoo of the Valako Shieldbearer** | +1% Chance to Block Attack Damage | Small Strength | Ngakanu | works | client apply; uncapped block 168% -> 169% |
+| **Tattoo of the Valako Stormrider** | +6% to Lightning Resistance | Small Intelligence | Moti Aro | works | client apply; lightning 211% -> 217% |
 | **Tattoo of the Valako Warrior** | 5% increased Lightning Damage | Small Intelligence | Moti Aro | not implemented | stat-only |
 
 ### Ancestral (1)
@@ -374,7 +375,7 @@ tattoos do not. All are drop-disabled in 3.29.
 | **Honoured Tattoo of the Hunter** | +1 to Level of all Dexterity Skill Gems | Notable (+30 Dex) | drop-disabled | not implemented | needs Dexterity gem levels |
 | **Honoured Tattoo of the Makanga** | +2% to all maximum Resistances | Small Attribute | drop-disabled | not implemented | stat-only |
 | **Honoured Tattoo of the Mountain** | +1% to maximum Fire Resistance<br>+1 to Maximum Endurance Charges | Notable (+30 Str) | drop-disabled | not implemented | needs max fire res + endurance charge cap |
-| **Honoured Tattoo of the Oak** | 2% increased maximum Life | Small Attribute | drop-disabled | partial | server mapping/unit test; live client check pending |
+| **Honoured Tattoo of the Oak** | 2% increased maximum Life | Small Attribute | drop-disabled | works | client apply; max life +2% |
 | **Honoured Tattoo of the Pa** | Melee Hits Fortify | Notable (+30 Str) | drop-disabled | not implemented | needs melee-hit fortify |
 | **Honoured Tattoo of the Pillager** | 3% increased Rarity of Items found | Small Attribute | drop-disabled | not implemented | stat-only |
 | **Honoured Tattoo of the Sky** | +3% to all Elemental Resistances | Small Attribute | drop-disabled | not implemented | stat-only |
@@ -462,16 +463,25 @@ Client checks 2026-10-29 (real 3.29.3b client):
 - **Repeated clicks:** before `0x77` was handled, the client sent the same packet on every click; the first valid
   request must consume the item and later ones must fail cleanly.
 
-Earlier server checks on 2026-10-29 (`/tattoo_apply` dev path):
+Batch client checks 2026-10-29 (same session, after the Firewalker log):
 
-- **Moonwarden** on node 6363 (small Dexterity): cold resistance 211% -> 217%.
-- **Stormrider** on node 10490 (small Intelligence): lightning resistance 211% -> 217%.
-- **Storyteller** on node 11651 (small Intelligence): chaos resistance 0% -> 3%.
-- A Firewalker on an Intelligence node was refused; the passive was unchanged.
-- The passive count stayed 523 and the demo tree was left clean (`Tattoos` empty).
+- **Moonwarden** on 27659 (small Dexterity): cold resistance 211% -> 217%.
+- **Stormrider** on 37671 (small Intelligence): lightning resistance 211% -> 217%.
+- **Storyteller** on 27415 (small Intelligence): chaos resistance 0% -> 3%.
+- **Rongokurai Warrior** on 21301 (small Strength): armour 319% -> 325% (2685 -> 2724).
+- **Fleetfoot** on 7112 (small Dexterity): movement speed +2%.
+- **Valako Shieldbearer** on 50862 (small Strength): uncapped block 168% -> 169%.
+- **Ramako Shaman:** +2% Spell Suppression; the character is at the 100% cap, so `/suppression` stays 100% and the
+  client apply/stat was checked instead of the panel number.
+- **Hinekora Warrior** on 33479 (small Intelligence): maximum Energy Shield +3%.
+- **Honoured Oak** on 16775 (small Strength/attribute): maximum Life +2%.
+- **Refusals:** Firewalker on an Intelligence node; Storyteller first clicked Undertaker (25439, unallocated) and
+  was refused, then the allocated Intelligence node worked.
+- The batch was removed with `/tattoo_remove`; the demo tree is back to 523 passives, no tattoos, and resistances
+  258/211/211/0.
 
 Not yet verified through the client: replace, unallocate/reallocate, the 50 cap, Makanga adjacency, Journey Makanui,
-the seven Forbidden tattoos, and the six non-resistance pilot stats beyond their server checks.
+the seven Forbidden tattoos, and the remaining 90 rows.
 
 ## See also
 
