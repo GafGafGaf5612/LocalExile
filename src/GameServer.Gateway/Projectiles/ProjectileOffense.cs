@@ -19,6 +19,9 @@ sealed record ProjectileOffense(DamagePacket Hit, bool Spell, int Accuracy, int 
     public int? SecondFormCriticalChance { get; init; }
     public string? AreaVisual { get; init; }
     public string? FlightVisual { get; init; }
+    /// <summary>The client spawns this use's primary projectiles itself (its own skill use), so the server sends no object
+    /// for them; continuation children still get one.</summary>
+    public bool ClientPredicted { get; init; }
     public Program.ProjectilePresentation? Presentation { get; init; }
     public IReadOnlyDictionary<uint, int> SkillStats { get; init; } = new Dictionary<uint, int>();
 }

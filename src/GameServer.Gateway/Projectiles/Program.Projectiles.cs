@@ -248,6 +248,10 @@ partial class Program
             if (presentation.EventEffect?.Invoke(value) is { } eventEffect)
                 Effect(x, y, eventEffect, presentation.EffectLifetime,
                     value.Kind == ProjectileEventKind.Area ? value.Radius : null);
+            // The client draws its own primary projectiles of a skill use; the server still simulates them (contacts,
+            // areas and continuation children, which do get objects).
+            if (value.Kind == ProjectileEventKind.Spawn && p.ParentId == 0
+                && p.Use.Payload is ProjectileOffense { ClientPredicted: true }) return;
             if (value.Kind == ProjectileEventKind.Spawn)
             {
                 string? flightVisual = (p.Use.Payload as ProjectileOffense)?.FlightVisual ?? presentation.FlightVisual;
