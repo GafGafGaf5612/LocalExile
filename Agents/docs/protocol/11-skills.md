@@ -2519,8 +2519,9 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   no server path applies player ailment damage yet). `Display` sends `current_brutal/affliction/absorption_charges`
   and `minimum_*` (under `modifiers_to_minimum_*_charges_instead_apply_to_*_charges`) and zero on the standard rows;
   the HUD uses BuffDefinitions 1757 `brutal_charge`, 1758 `affliction_charge`, 1759 `absorption_charge` (whose
-  `Current_StatsKey` is `current_*_charges` itself) and swaps the buff when the flag changes. Not modelled: the
-  non-damaging ailment effect per Affliction Charge and the Absorption recoup (no consumer), native validation.
+  `Current_StatsKey` is `current_*_charges` itself) and swaps the buff when the flag changes. Live 2026-10-29 with the
+  flags set by `/set_stat` (rows, buff swap and the swap back). Not modelled: the non-damaging ailment effect per
+  Affliction Charge and the Absorption recoup (no consumer); no conversion unique is defined yet (#60).
 - **Blood Charges** (Reap; 2026-10-29; `BloodCharges.cs`, `Program.BloodCharges.cs`). ActiveSkills `reap`: a use whose
   hit leaves any enemy alive gives one charge, and the skill's `lose_blood_scythe_charge_on_kill` takes one per enemy
   its hit kills (`BloodCharges.Settle`, run by `AreaSkillHit` after the sweep's kills); the maximum is Character.ot's
@@ -2533,9 +2534,9 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   Charges rows are gated by it); HUD: BuffDefinitions 1822 `blood_scythe_charge` with the count as stacks, re-sent on
   every change with `SendChargeStats`. Death takes them (`CancelOnDeath`). No game table or PoB gives them a duration,
   so they stay until a kill or death; an area change does not carry them; Vaal Reap's temporary maximum, Reap's
-  physical damage over time debuff and its life cost are not modelled. Automated only (`BloodChargesTests`,
-  `BloodChargesGatewayTests`: a surviving target gives a charge, the next hit is floor(× 1.15), the cost × 1.4 at two
-  charges, a kill takes one).
+  physical damage over time debuff and its life cost are not modelled. `BloodChargesTests` and
+  `BloodChargesGatewayTests` (a surviving target gives a charge, the next hit is floor(× 1.15), the cost × 1.4 at two
+  charges, a kill takes one); live 2026-10-29 with a socketed Reap (rows, gain, loss, buff).
 - **Death and area changes.** Death takes every gained charge at once (`PlayerDied`; BuffDefinitions `CancelOnDeath`
   on the three rows), so a pause or Resurrect in Town cannot keep them; the minimum stays. An area change (`Transfer`)
   hands the charges to the destination ticket with the time they had left;

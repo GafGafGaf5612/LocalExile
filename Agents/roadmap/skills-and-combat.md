@@ -111,10 +111,10 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Brand attachment/cap enforcement, the Affliction non-damaging effect and Absorption recoup consumers and
   Spirit/Abyss-jewel counting remain open; these changes do not certify entire charge rows.
   Every panel row now has a server derivation (the 2026-10-29 batch in Status covers the Defence estimates, off-hand,
-  effective critical, secondary and damaging-ailment rows); what remains for #75 is native validation of that batch
-  and of the converted and Blood Charges, actual ailment application behind the ailment rows, Reap's damage over time
-  debuff and Vaal Reap's temporary Blood Charge maximum, and executing the secondary hits (Bear Trap, Herald of Ice)
-  whose rows are display-only. Deferred (2026-10-29, owner's decision): Spirit and Siphoning Charges. Their only 3.29
+  effective critical, secondary and damaging-ailment rows; the owner's live run of 2026-10-29 passed them, the converted
+  charges and the Blood Charges); what remains for #75 is actual ailment application behind the ailment rows, Reap's
+  damage over time debuff and Vaal Reap's temporary Blood Charge maximum, and executing the secondary hits (Bear Trap,
+  Herald of Ice) whose rows are display-only. Deferred (2026-10-29, owner's decision): Spirit and Siphoning Charges. Their only 3.29
   player sources are unique mods (`maximum_spirit_charges_per_abyss_jewel_equipped`,
   `maximum_siphoning_charges_per_elder_or_shaper_item_equipped`), so they need, in the items area, unique definitions
   beyond Mageblood (#60), abyss jewels socketable into abyssal sockets (the Stygian Vise is created without its socket,

@@ -827,7 +827,11 @@ and continuing until an irreversible action is required. Publishing remains proh
 ## Offence, Defence, Misc and Charges row batch
 
 This batch (2026-10-29) publishes the remaining virtual rows that had no server derivation at all, as display rows
-with automated composition checks; none of them is natively validated on this branch yet.
+with automated composition checks. The owner's live run of 2026-10-29 (merged base `7fd944be`, a stack from this
+checkout on alternative ports) passed the test plan over them: the Off Hand block and averaged per-use/DPS/APS with two
+weapons and its clearing, the ailment rows per hand/spell/secondary, the spell effective-critical rows, the secondary
+blocks of Bear Trap, Herald of Ice and Vaal Detonate Dead, and the Defence tab's estimate, projectile, hits, evade,
+mana-recharge and stun-flag rows under `/set_stat`.
 
 - Defence estimates (`PanelStats.Defence`): estimated physical reduction (plain, against projectiles with
   `physical_damage_reduction_rating_against_projectiles` and its `armour_differs_against_projectiles` flag, against hits
@@ -866,7 +870,7 @@ with automated composition checks; none of them is natively validated on this br
 
 Tests: `PanelStatsTests` (Defence, flags, brand), `CriticalStrikePolicyTests`, `SpellEffectiveCriticalPanelTests`,
 `OffHandPanelTests`, `AilmentPanelStatsTests`, `AilmentPanelGatewayTests` (real Rusted Sword / Glass Shank, Cyclone and
-Fireball fixtures). Native display checks of every row in this batch are pending.
+Fireball fixtures). Native display checks: the owner's live run above.
 
 ## Converted special charges
 
@@ -906,7 +910,9 @@ Tests: `ChargeEffectsTests` (conversion stats exist and name the mods, Brutal ef
 rows, Affliction ailment-only multiplier), `ChargeSessionTests` (special buff and the swap on flag removal),
 `ChargeBuffsTests` (rows 1757–1759 against BuffDefinitions, the 0x1c1 bytes), `ConvertedChargesGatewayTests`
 (composition through `CharacterPlayerStats` with the stun threshold accepted) and the adjusted
-`Issue75UpstreamCompositionTests` stun case. Not natively validated; a real conversion unique has not been equipped.
+`Issue75UpstreamCompositionTests` stun case. Live (owner, 2026-10-29, base `7fd944be`): the conversion and
+maximum-equals flags set with `/set_stat` on held Endurance Charges showed the Brutal row, the zeroed Endurance row, the
+swapped HUD buff and the swap back on `off`; a real conversion unique has not been equipped (none is defined, #60).
 
 ## Blood Charges
 
@@ -928,7 +934,8 @@ and the two per-charge coefficient rows gated by `show_blood_charge_info`.
   once in `CharacterPlayerStatsSnapshot`) and the show flag while a gem socketed in an active item uses the charges
   (decided once per GrantedEffects row, `UsesBloodCharges`; the stat snapshot runs on every hit). Death clears them.
 - Not modelled: a duration (none in the tables or PoB), carrying them across areas, Vaal Reap's temporary maximum,
-  Reap's physical damage over time debuff, its life cost (the server pays mana). Not natively validated.
+  Reap's physical damage over time debuff, its life cost (the server pays mana). Live (owner, 2026-10-29, base
+  `7fd944be`): a socketed Reap showed the Blood Charges rows and gained, displayed and lost charges with its buff.
 
 Tests: `BloodChargesTests` (tables, multiplier, settle rule), `BloodChargesGatewayTests` (Reap on the contact
 fixture: a surviving target gives a charge, the second hit is floor(first × 1.15), the cost at two charges is
@@ -970,7 +977,15 @@ tree: solution build clean; Core 389, Data 34, Gateway 2556 pass. One case,
 concurrent runs: it applied the chill at game time 0 while the connection's Stopwatch had run since its creation, so a
 loaded suite's catalog loads outran the chill's two seconds; the test now applies the chill at the clock's current time
 and stops the clock (as a pause does) for its reads.
-Still no native validation of the panel batches on this base.
+Native validation on this base: the owner's live run of 2026-10-29 over the row batch, the converted charges and the
+Blood Charges (each section above); the stack ran from this checkout on alternative ports beside another checkout's.
+
+Deferred and open at the close of the PR (each with its home): Spirit and Siphoning Charges (unique definitions #60,
+abyss-jewel socketing and Shaper/Elder influence: the combat roadmap); Blitz and Challenger Charges (no 3.29 player
+source); the Affliction non-damaging ailment effect and the Absorption recoup (no server consumer); executing the
+secondary hits of Bear Trap and Herald of Ice, Reap's damage over time debuff and Vaal Reap's temporary maximum; actual
+damaging-ailment application behind the ailment rows (Protocol 20 §3); the ledger's 169 `pending` audit states, which
+are audit coverage, not missing rows.
 
 ## Remaining review and implementation
 
@@ -989,9 +1004,9 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
    critical sources, multi-hit/secondary averages, cooldown/downtime and DoT remain open.
 4. Damaging-ailment application, duration, critical and stacking mechanics: the panel ranges are display rows
    (batch above); Protocol 20 section 3 documents helpers, but also the missing execution paths.
-5. Current-branch validation of the incoming Ward implementation, the defence estimates (batch above), remaining
-   regeneration/recharge conversions, specialized leech, the converted charges and Blood Charges (above),
-   minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap. Spirit and Siphoning
+5. Current-branch validation of the incoming Ward implementation, remaining regeneration/recharge conversions,
+   specialized leech, minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap
+   (the defence estimates, converted charges and Blood Charges passed the owner's live run above). Spirit and Siphoning
    Charges are deferred by the owner (2026-10-29): their sources are unique mods, which need unique definitions (#60),
    abyss-jewel socketing and Shaper/Elder influence in the item model first (the combat roadmap lists the gaps); Blitz
    and Challenger have no 3.29 player source.

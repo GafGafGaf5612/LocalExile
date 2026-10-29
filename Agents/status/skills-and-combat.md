@@ -345,12 +345,14 @@ Part of [Status](../Status.md); what to build next in this area is in
   Converted charges (2026-10-29): under the three "gain … instead of" unique flags the held Endurance / Frenzy / Power
   charges are Brutal / Affliction / Absorption Charges: the special `current_*` and `minimum_*` rows and BuffDefinitions
   1757–1759 buffs, the standard effects off, Brutal's triple-damage chance and stun threshold per charge applied, and
-  Affliction's more ailment damage in the ailment panel rows; automated only (`ConvertedChargesGatewayTests`,
-  `ChargeEffectsTests`, `ChargeSessionTests`, `ChargeBuffsTests`). Reap's Blood Charges (2026-10-29): a use whose hit
+  Affliction's more ailment damage in the ailment panel rows (`ConvertedChargesGatewayTests`, `ChargeEffectsTests`,
+  `ChargeSessionTests`, `ChargeBuffsTests`; live 2026-10-29 with the flags set by `/set_stat`: the Brutal row, the
+  zeroed Endurance row and the swapped buff). Reap's Blood Charges (2026-10-29): a use whose hit
   leaves an enemy alive gives one, a kill takes one, up to Character.ot's 5 plus the enchantment; the charges held are
   15% more damage per charge on the hits and the Offence rows and 20% more cost, with the Charges tab rows, the
   `show_blood_charge_info` gate and BuffDefinitions 1822; no duration (none in the tables), not carried across
-  areas, automated only (`BloodChargesTests`, `BloodChargesGatewayTests`). Spirit, Siphoning, Blitz and Challenger
+  areas (`BloodChargesTests`, `BloodChargesGatewayTests`; live 2026-10-29: rows, gain, loss and buff with a socketed
+  Reap). Spirit, Siphoning, Blitz and Challenger
   have no reachable player source here (abyss-jewel / Elder-Shaper counting, none in 3.29), the Affliction
   non-damaging effect and Absorption recoup have no consumer.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,
@@ -454,9 +456,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   `Program.SecondaryPanel.cs`); `skill_show_average_damage_instead_of_dps`; the 32 Bleeding / Ignite / Poison damage per second rows
   per hand, spell and secondary context (`AilmentPanelStats`, from the hit's raw packet and conversion with the
   ailment buckets and DoT multipliers); stun-by-kind flags, brand per-target limit, Spirit maximum and the Siphoning
-  damage-taken coefficient. 60 new automated cases pass with real sword/dagger, Cyclone and Fireball fixtures;
-  native display checks of this batch are pending, and actual ailment application, special charge counts and
-  Elder/Shaper and abyss-jewel item counting remain open
+  damage-taken coefficient. 60 new automated cases pass with real sword/dagger, Cyclone and Fireball fixtures; the
+  owner's live run of 2026-10-29 (base `7fd944be`) passed the batch's test plan (off hand and clearing, ailment rows,
+  effective critical, secondary blocks, Defence estimates under `/set_stat`). Actual ailment application and
+  Elder/Shaper and abyss-jewel item counting (Spirit, Siphoning; deferred behind #60) remain open
   ([review](../docs/dev/issue75-review.md#offence-defence-misc-and-charges-row-batch)).
   Code: `PanelStats.cs`, `PanelStatDefaults.cs`, `AilmentPanelStats.cs`, `Program.OffHandPanel.cs`, `DualWieldPanel.cs`,
   Gateway (`CharacterPlayerStats`, `HandLocalStats`, `GemSkills`).
