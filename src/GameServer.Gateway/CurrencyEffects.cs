@@ -24,10 +24,10 @@ static class CurrencyEffects
     /// rarity and name stay. Refused for anything else, or an item without explicit affixes.</summary>
     public static Item? Annulment(Item item, ItemRolls rolls, Random random) => rolls.Annul(item, random);
 
-    /// <summary>Exalted Orb: a rare item keeps its affixes and name and gets one more (at most three prefixes and three
-    /// suffixes). Refused for anything else, or when the item is full.</summary>
-    public static Item? Exalted(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Rare || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 3, random);
+    /// <summary>Exalted Orb: a modifiable rare item keeps its affixes and name and gets one more within its rare
+    /// limits (three per side, two for jewels). Flasks are magic-only; non-rare items, unknown/unmodifiable bases and
+    /// full items are refused before the inventory handler spends an orb.</summary>
+    public static Item? Exalted(Item item, ItemRolls rolls, Random random) => rolls.Exalted(item, random);
 
     /// <summary>Regal Orb: a modifiable magic item becomes rare with its affixes kept, one more affix from the rare
     /// pool (at most three of each kind) and a rare name. Flasks are magic-only; anything else, or no affix that

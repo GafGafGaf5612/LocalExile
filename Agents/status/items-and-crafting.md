@@ -177,8 +177,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   CoE rare-pool/apply checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
   The old live check (2026-10-21) predates these admission rules; native re-acceptance is pending.
   See [13](../docs/protocol/13-items.md), "Regal Orb", and [evidence](../docs/re/regal-coe.md).
-- **Exalted Orb (verified live, 2026-10-21):** +1 affix on a rare item, up to 6 (three of each kind).
-  See [13](../docs/protocol/13-items.md), "Exalted Orb".
+- **Exalted Orb:** +1 weighted affix on a modifiable rare item, up to 6 (three per side; jewels two per side), name
+  kept. Flasks, unmodifiable/unsupported bases, non-rare and full targets are refused before spending.
+  CoE pool/jewel checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  The old live check (2026-10-21) predates these rules; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Exalted Orb", and [evidence](../docs/re/exalted-coe.md).
 - **Orb of Annulment (verified live, 2026-10-21):** removes one random affix from a magic or rare item.
   See [13](../docs/protocol/13-items.md), "Orb of Annulment".
 - **Armourer's Scrap (verified live, 2026-10-21):** +1% quality on armour, up to 20%; Scouring resets it to 0.

@@ -57,7 +57,7 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     {
         if (item.Rarity != ItemRarity.Magic || item.Components.Contains("Flask") || !TryModifiable(item, out var type))
             return null;
-        return AddAffix(item, 3, random) is not { } added ? null
+        return AddAffix(item, MaxAffixesPerSide(type), random) is not { } added ? null
             : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = RareName(type, random) };
     }
 
@@ -79,6 +79,18 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             Pool(type, item.ItemLevel).Count == 0) return null;
         return Roll(item, ItemRarity.Rare, random) with { Identified = true };
     }
+
+    /// <summary>Exalted Orb's validated rare addition: the affixes and name stay and one more weighted affix is
+    /// added within the base's rare limits. Flasks are magic-only and cannot be rare.</summary>
+    public Item? Exalted(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Rare || item.Components.Contains("Flask") || !TryModifiable(item, out var type))
+            return null;
+        return AddAffix(item, MaxAffixesPerSide(type), random);
+    }
+
+    /// <summary>The rare per-side limit: jewel classes allow two prefixes and two suffixes, other rare bases three.</summary>
+    static int MaxAffixesPerSide(ItemCatalog.BaseType type) => type.Class is "Jewel" or "AbyssJewel" ? 2 : 3;
 
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
@@ -113,8 +125,8 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         var (count, maxEach) = shape ?? (rarity == ItemRarity.Magic
             ? (rng.Next(1, 3), 1)
             : t.Class is "Jewel" or "AbyssJewel"
-                ? (rng.Next(20) < 13 ? 3 : 4, 2)
-                : (rng.Next(12) switch { < 8 => 4, < 11 => 5, _ => 6 }, 3));
+                ? (rng.Next(20) < 13 ? 3 : 4, MaxAffixesPerSide(t))
+                : (rng.Next(12) switch { < 8 => 4, < 11 => 5, _ => 6 }, MaxAffixesPerSide(t)));
         var generation = new MetacraftRules(item with { Mods = kept }, catalog.Mods);
         var pool = Pool(t, Math.Min(item.ItemLevel, maxModLevel ?? item.ItemLevel))
             .Where(p => !respectMetamods || generation.Allows(p.Mod)).ToList();

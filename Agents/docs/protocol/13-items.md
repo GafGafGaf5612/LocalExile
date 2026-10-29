@@ -554,11 +554,16 @@ CoE's rare-pool applies open both sides after the upgrade (12 candidates, total 
 prefix), unlike its `pool` operation, which still evaluates the magic item. See
 [the source comparison](../re/regal-coe.md).
 
-### Exalted Orb (2026-10-21, verified live)
+### Exalted Orb (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyAddModToRare`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Exalted` adds one affix to a rare item
-(`ItemRolls.AddAffix`, at most three prefixes and three suffixes); its affixes and name stay. Anything but a rare item,
-or a full one, is refused and nothing is spent.
+`CurrencyAddModToRare`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Exalted` delegates to
+`ItemRolls.Exalted`: a modifiable rare item keeps its affixes and name and gets one more weighted affix within its
+rare limits (three prefixes and three suffixes, two of each for jewels).
+Flasks are magic-only and a rare flask is refused.
+The base must be known and serializable, with Mods and not `Unmodifiable`; corrupted/mirrored, non-rare and full
+targets are refused before spending.
+The four-mod wand pool (nine candidates, weight 5150) and the jewel 2+2 refusal are in
+[the source comparison](../re/exalted-coe.md).
 
 ### Orb of Annulment (2026-10-21, verified live)
 
