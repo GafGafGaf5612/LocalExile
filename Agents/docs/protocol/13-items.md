@@ -588,12 +588,15 @@ accepts a normal armour piece with quality). Other items, or 20%, are refused an
 `CurrencyWeaponQuality`, the same as Armourer's Scrap for items with a Weapon component (`CurrencyEffects.Whetstone`):
 +1% quality, any rarity, up to 20%, Shift included; the Orb of Scouring sets a weapon's quality back to 0 as well.
 
-### Orb of Chance (2026-10-21, verified live)
+### Orb of Chance (2026-10-21, verified live; CoE boundary 2026-10-30)
 
 `CurrencyUpgradeRandomly`, same handler (0x71, 0x72 with Shift). A server rule, not the official one (which can also
-make uniques): `CurrencyEffects.Chance` turns a normal weapon or armour piece (Weapon or Armour component) rare with a
-30% chance (4-6 affixes, rare name) and magic otherwise (2-4 affixes, at most two prefixes and two suffixes, a server
-rule above the normal magic limit); the item ends identified. Anything else is refused and nothing is spent.
+make uniques): `CurrencyEffects.Chance` delegates to `ItemRolls.Chance`, which turns a normal weapon or armour piece
+(Weapon or Armour component) rare with a 30% chance (4-6 affixes, rare name) and magic otherwise (2-4 affixes, at most
+two prefixes and two suffixes, a server rule above the normal magic limit); the item ends identified.
+Corrupted/mirrored items, unsupported/unknown or `Unmodifiable` bases and empty pools are refused before spending.
+The CoE beta method tree has no Chance handler, so the official unique/rarity outcome remains separate work; see
+[the admission check and boundary](../re/chance-coe.md).
 
 ### Glassblower's Bauble (2026-10-21, verified live)
 

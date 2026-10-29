@@ -109,13 +109,11 @@ static class CurrencyEffects
 
     public const string OrbOfChance = "Metadata/Items/Currency/CurrencyUpgradeRandomly";
 
-    /// <summary>Orb of Chance (this server's rule, not the official one): a normal weapon or armour piece becomes rare
-    /// (30%: 4-6 affixes and a rare name) or magic (2-4 affixes, at most two of each kind), identified. Refused for
-    /// anything else.</summary>
-    public static Item? Chance(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") || !(item.Components.Contains("Weapon") || item.Components.Contains("Armour")) ? null
-        : (random.Next(100) < 30 ? rolls.Roll(item, ItemRarity.Rare, random)
-            : rolls.Roll(item, ItemRarity.Magic, random, (random.Next(2, 5), 2))) with { Identified = true };
+    /// <summary>Orb of Chance, the documented LocalExile rule (not the official unique outcome table): a modifiable
+    /// normal weapon or armour piece becomes rare (30%: 4-6 affixes and a rare name) or magic (2-4 affixes, at most
+    /// two of each kind), identified. Corrupted/mirrored/unsupported/unmodifiable targets and empty pools are refused
+    /// before the inventory handler spends an orb.</summary>
+    public static Item? Chance(Item item, ItemRolls rolls, Random random) => rolls.Chance(item, random);
 
     public const string BlacksmithsWhetstone = "Metadata/Items/Currency/CurrencyWeaponQuality";
 

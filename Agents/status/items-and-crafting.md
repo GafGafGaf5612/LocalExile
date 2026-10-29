@@ -192,9 +192,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   See [13](../docs/protocol/13-items.md), "Armourer's Scrap".
 - **Blacksmith's Whetstone (verified live, 2026-10-21):** +1% quality on weapons, up to 20%; Scouring resets it.
   See [13](../docs/protocol/13-items.md), "Blacksmith's Whetstone".
-- **Orb of Chance (verified live, 2026-10-21):** a normal weapon / armour piece → rare (30%, 4-6 affixes) or magic
-  (2-4 affixes).
-  See [13](../docs/protocol/13-items.md), "Orb of Chance".
+- **Orb of Chance:** the documented local rule: a normal weapon / armour piece → rare (30%, 4-6 affixes) or magic
+  (2-4 affixes, at most two per side), identified. Corrupted/mirrored/unsupported/`Unmodifiable` and empty-pool
+  targets are refused before spending.
+  CoE beta has no Chance handler, so official unique/rarity outcomes remain separate work.
+  Ordinary/Shift inventory/stash dispatch and save reloads have automated coverage; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Orb of Chance", and [admission](../docs/re/chance-coe.md).
 - **Vaal Orb and corruption:** the local rule corrupts a modifiable weapon, armour piece or jewellery (Base +0xc7
   bit 0, saved); normal / magic → rare with 4-6 affixes, a rare item gets 1-5 or all affixes rerolled, one white socket
   is coloured. Corrupted/mirrored/unique, unsupported/`Unmodifiable` and empty-pool targets are refused before

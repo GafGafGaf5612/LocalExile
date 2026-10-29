@@ -102,6 +102,18 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     /// <summary>The rare per-side limit: jewel classes allow two prefixes and two suffixes, other rare bases three.</summary>
     static int MaxAffixesPerSide(ItemCatalog.BaseType type) => type.Class is "Jewel" or "AbyssJewel" ? 2 : 3;
 
+    /// <summary>Orb of Chance, the documented LocalExile rule: a modifiable normal weapon or armour piece becomes
+    /// rare (30%, 4-6 affixes and a rare name) or magic (2-4 affixes, at most two of each side). Refused targets
+    /// return null before rolling or spending, including missing/empty pools.</summary>
+    public Item? Chance(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Normal ||
+            !(item.Components.Contains("Weapon") || item.Components.Contains("Armour")) ||
+            !TryModifiable(item, out var type) || Pool(type, item.ItemLevel).Count == 0) return null;
+        return (random.Next(100) < 30 ? Roll(item, ItemRarity.Rare, random)
+            : Roll(item, ItemRarity.Magic, random, (random.Next(2, 5), 2))) with { Identified = true };
+    }
+
     /// <summary>Vaal Orb, the documented LocalExile rule: a weapon, armour piece or jewellery (ring, amulet, belt)
     /// that is modifiable, not unique and not corrupted/mirrored is always corrupted. A normal or magic item becomes
     /// rare with 4-6 affixes; a rare one replaces 1-5 affixes or rerolls all of them. One white socket is coloured.
