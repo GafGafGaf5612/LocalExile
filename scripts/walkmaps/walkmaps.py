@@ -265,7 +265,7 @@ def save_failed_generation(out, gen):
 
 
 def save_probe(out, probe):
-    """One probe record (walkmaps.js PROBES), appended to probes.jsonl."""
+    """One probe record (walkmaps.js PROBE_AREAS), appended to probes.jsonl."""
     with open(os.path.join(out, "probes.jsonl"), "a", encoding="utf-8") as f:
         f.write(json.dumps(probe) + "\n")
 

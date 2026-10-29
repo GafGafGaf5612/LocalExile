@@ -47,59 +47,45 @@ if (!exe) {
     hookDoodads(exe);
     hookGeneration(exe);
     hookRooms(exe);
-    hookOverlayProbe(exe);
+    hookRoomPickProbe(exe);
     send({ type: 'ready', module: exe.name });
   }
 }
 
-// Overlay fit probe (Agents/docs/re/011-level-generation.md §8, 2_8_7_1_): every 0x141ffef60(ctx, group, view x | y << 32,
-// flags) whose map position falls in a box of PROBES is reported with its result, the exclusion bytes under the key
-// (ctx +0x20 width, +0x30 bytes), and the tiles-inside check 0x141d850b0 as it made it
-// (the key match 0x141ffa7b0 takes more arguments than its first four and is not called).
-// ctx +0 → view: +8 / +0xc offset; group +0x20 / +0x21 key size.
-const PROBES = [{ area: '2_8_7_1_', x0: 84, y0: 26, x1: 94, y1: 34 }];
-function hookOverlayProbe(exe) {
+// Room pick probe (Agents/docs/re/011-level-generation.md §8, the Sanctum floors): every 0x142105a70(layout, out, node,
+// &cell) of an area in PROBE_AREAS is reported with the cell its caller 0x142106b00 computed
+// (graph +0x40 × node +0x4c / graph +0x50, +0x48 × node +0x50 / +0x54; graph = layout[2]), the inputs, the node's tag
+// and orientation (+0x40) and the graph's orientation (+0x58). Generation only: no in-game cost.
+const PROBE_AREAS = /^Sanctum(Cellar|Crypt|Nave|Vaults)$/;
+function hookRoomPickProbe(exe) {
   const at = va => exe.base.add(ptr(va).sub(IMAGE_BASE));
-  const fitsAt = at('0x141ffef60'), insideAt = at('0x141d850b0');
   const areaOf = () => {
     try {
       const row = currentGen.add(0x38).readPointer().add(0xb0).readPointer();
       return row.isNull() ? '' : row.readPointer().readUtf16String();
     } catch (e) { return ''; }
   };
-  // Called from the probe for its spots only: hooking them would run on every in-game call too (0x141d850b0 is a
-  // generic tile-grid helper) and slow the client's frames.
-  const inside = new NativeFunction(insideAt, 'uint8', ['pointer', 'pointer']);
-  Interceptor.attach(fitsAt, {
+  const wstr = p => {
+    const len = p.add(0x10).readU64().toNumber(), cap = p.add(0x18).readU64().toNumber();
+    return (cap > 7 ? p.readPointer() : p).readUtf16String(len);
+  };
+  Interceptor.attach(at('0x142105a70'), {
     onEnter(a) {
-      this.on = false;
       if (currentGen === null) return;
       const area = areaOf();
-      const view = a[0].readPointer();
-      const vx = a[2].and(0xffffffff).toInt32(), vy = a[2].shr(32).and(0xffffffff).toInt32();
-      const x = vx + view.add(8).readS32(), y = vy + view.add(0xc).readS32();
-      if (!PROBES.some(p => p.area === area && x >= p.x0 && x < p.x1 && y >= p.y0 && y < p.y1)) return;
-      const w = a[1].add(0x20).readU8(), h = a[1].add(0x21).readU8();
-      const ew = a[0].add(0x20).readU64().toNumber(), excl = a[0].add(0x30).readPointer();
-      const bytes = [];
+      if (!PROBE_AREAS.test(area)) return;
+      const info = { area };
       try {
-        for (let v = 0; v < h; v++) for (let u = 0; u < w; u++) bytes.push(excl.add((vy + v) * ew + vx + u).readU8());
-      } catch (e) { bytes.push(String(e)); }
-      this.on = true;
-      this.info = { area, x, y, w, h, flags: a[3].toUInt32() & 0xff, excl: bytes, inside: null };
-      this.map = view.readPointer();
-    },
-    onLeave(r) {
-      if (!this.on) return;
-      this.info.result = r.toUInt32() & 0xff;
-      // As 0x141ffef60 calls it: the map and the key's map rectangle (x0, y0, x1, y1).
-      try {
-        const { x, y, w, h } = this.info;
-        const rect = Memory.alloc(16);
-        rect.writeS32(x); rect.add(4).writeS32(y); rect.add(8).writeS32(x + w); rect.add(12).writeS32(y + h);
-        this.info.inside = inside(this.map, rect);
-      } catch (e) { this.info.error = String(e); }
-      send(Object.assign({ type: 'probe', probe: 'overlay-fit' }, this.info));
+        const graph = a[0].add(0x10).readPointer(), node = a[2];
+        info.cell = [a[3].readS32(), a[3].add(4).readS32()];
+        info.node = [node.add(0x4c).readS32(), node.add(0x50).readS32()];
+        info.graph = [graph.add(0x40).readS32(), graph.add(0x48).readS32(), graph.add(0x50).readS32(), graph.add(0x54).readS32()];
+        info.graphRaw = Array.from(new Uint8Array(graph.add(0x28).readByteArray(0x38)));
+        info.graphOrientation = graph.add(0x58).readU8();
+        info.nodeOrientation = node.add(0x40).readU8();
+        info.tag = wstr(node.add(0x20));
+      } catch (e) { info.error = String(e); }
+      send(Object.assign({ type: 'probe', probe: 'room-pick' }, info));
     },
   });
 }

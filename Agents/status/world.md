@@ -85,7 +85,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   transitions and waypoints (`AreaObjects.cs`).
   1669 of the 1671 seed-1 traces match the client in tile hash, both grids, every random draw the port makes and every doodad,
   and 2884 of the 2886 loads the 3.29.3 client logged match by tile hash (`scripts/re/levelgen/gate.ps1`); of the 118
-  loads the client itself failed to generate, the port fails 112 the same way. The 34 areas the client cannot
+  loads the client itself failed to generate, the port fails 112 the same way (115 expected once the gate reruns:
+  the Sanctum Cellar, Nave and Vaults now fail as the client does). The 34 areas the client cannot
   generate at seed 1 (and that need no server data) were toured at random seeds the port generates: all 73 loads match.
   An unattended tour of every WorldAreas row with a topology (2026-10-27, `scripts/re/levelgen/tourloop.py`, which
   restarts and logs in the client by itself) left 234 of the 1932 rows with no client-side level to match: 17 without a
@@ -94,8 +95,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   list is written to data/areas-unavailable.txt). The port matches a load of every other row.
   A tour of 3 random seeds per matching area: all 519 match.
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
-  Every load with a height capture matches cell for cell; 185 of the 186 with a transitions capture match exactly
-(Act 5's crater effects, `GlowyFX` and `SlavePensIntroGround`, are placed but not sent yet).
+  Every load with a height capture matches cell for cell; 185 of the 186 with a transitions capture match exactly.
+  Act 5's crater effects in The Slave Pens (`GlowyFX`, `SlavePensIntroGround`: `server_only` types the client draws
+  only when the server creates them) are sent at their end state (Transitionable 3); the client draws them
+  (2026-10-29, seed 1).
   The Gateway generates the supported areas itself (`ServerLevels.cs`): those whose seed-1 trace passes every gate
   check (`gate-baseline.json`); their walk grid, cell heights, transitions and waypoint need no capture.
   Entering any other area tells the player it is generated on the client and not supported by the server yet.

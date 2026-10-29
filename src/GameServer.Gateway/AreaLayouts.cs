@@ -10,6 +10,8 @@ sealed record AreaLayout(ushort Hash, string Id, int GridW, int GridH, int Spawn
 {
     /// <summary>The area's waypoint (WaypointCatalog), if it has one and its place is known.</summary>
     public WaypointObject? Waypoint { get; init; }
+    /// <summary>The area transitions' effects (<see cref="AreaTransitionCatalog.Effects"/>).</summary>
+    public (uint Id, TransitionEffect Effect)[] Effects { get; init; } = [];
     public Func<int, int, int, bool>? Clearance { get; init; }
 
     /// <summary>Every cell's ground height, row by row (GridW × GridH), when the Gateway generated the layout itself
@@ -110,6 +112,12 @@ static class AreaLayouts
     }
 
     static AreaLayout WithCells(ushort hash, string id, uint seed, byte[]? cells, int w, int h)
+    {
+        var layout = WithTransitions(hash, id, seed, cells, w, h);
+        return layout with { Effects = AreaTransitionCatalog.Effects(id, seed) };
+    }
+
+    static AreaLayout WithTransitions(ushort hash, string id, uint seed, byte[]? cells, int w, int h)
     {
         var notes = new List<string>();
         var transitions = AreaTransitionCatalog.For(hash, id, seed, notes);

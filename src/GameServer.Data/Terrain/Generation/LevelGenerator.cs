@@ -582,17 +582,17 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
             _view.X1 - r.X, _view.Y1 - r.Y, _store, _fills, notes).Run();
     }
 
-    /// <summary>The Explore room's type of the Sanctum floor whose rooms lie beside <paramref name="masterPath"/>
-    /// (Data/SanctumRooms: Id +0, ArmFile +8, RoomType +0x10, row 0 = Explore), null for any other master.</summary>
-    string? SanctumRoomType(string masterPath)
+    /// <summary>The tag of a Sanctum floor's rooms when the server sends none: SanctumRooms row 0's room
+    /// (Cellar_Explore_1_1, Id +0, ArmFile +8), on every floor. Null when no SanctumRooms row lies beside
+    /// <paramref name="masterPath"/> (not a Sanctum floor).</summary>
+    string? SanctumRoomTag(string masterPath)
     {
         if (files.Raw("Data/SanctumRooms.datc64") is not { } data) return null;
         var rooms = new RawDat(data);
         string folder = masterPath[..(masterPath.LastIndexOf('/') + 1)];
-        int row = rooms.Find(r => rooms.Ref(r, 0x10) == 0 && rooms.String(r, 8).StartsWith(folder, StringComparison.OrdinalIgnoreCase));
-        if (row < 0) return null;
-        string id = rooms.String(row, 0);
-        return id[(id.IndexOf('_') + 1)..].ToLowerInvariant();
+        if (rooms.Find(r => rooms.String(r, 8).StartsWith(folder, StringComparison.OrdinalIgnoreCase)) < 0) return null;
+        string arm = rooms.String(0, 8);
+        return (files.Room(arm) ?? throw new FileNotFoundException(arm)).Tag;
     }
 
     /// <summary><c>0x14203c900</c> for a graph of several nodes: the exist rolls (as for tile graphs), then the rooms
@@ -601,13 +601,16 @@ sealed class DungeonTiler(TerrainCache files, LevelRandom rng, List<string> note
         bool share = true)
     {
         var graph = TileGraph.Parse(files.Text(graphPath) ?? throw new FileNotFoundException(graphPath));
-        // A Sanctum floor's .dgr is one node tagged "land": the client places the floor's room there under its type
-        // (SanctumRooms Id without the floor, "Cellar_Explore_1_1" → "explore_1_1"). The room comes from the server;
-        // without one the client takes the floor's room of type 0 (Explore) and fails as the port then does (seed 1:
-        // "No suitable room found for room at (4, 2) with type "explore_1_1"", the Crypt's "No possible rooms found").
-        // No client code names "land"; where the room is read was not found.
-        if (graph.Nodes.Any(n => n.Tag == "land") && SanctumRoomType(masterPath) is { } land)
-            foreach (var n in graph.Nodes.Where(n => n.Tag == "land")) n.Tag = land;
+        // A Sanctum floor's .dgr is one node tagged "land"; the client rebuilds the first graph (0x141f5e790): 6 × 4
+        // cells of 23 units, a node at cell (0, 0) with "default" for the server's first room and one at (4, 2) for its
+        // second (0x141f5ea10: the room's .arm tag, any orientation). Without server data both are SanctumRooms row 0,
+        // and every floor fails as the client does: the Crypt has no room of that tag ("No possible rooms found for room
+        // at (0, 0)"), the others find no free cells for the second ("No suitable room found for room at (4, 2)").
+        if (primary && graph.Nodes.Any(n => n.Tag == "land") && SanctumRoomTag(masterPath) is { } land)
+        {
+            (graph.Width, graph.Height) = (6, 4);
+            graph.Nodes = [new GraphNode { Tag = land, Descriptions = ["default"] }, new GraphNode { X = 4 * 23, Y = 2 * 23, Tag = land }];
+        }
         // 0x142031d10: the Vaal side area pick, as on tile graphs; the first graph that keeps an entrance clears it.
         if (TileGraphGenerator.Prepare(graph, rng, VaalSideArea, Hideout, primary, pool, Labyrinth)) VaalSideArea = false;
         // Then a subgraph whose parent is the first (+0x92 = 0) takes its share of the rows, the side area's included.

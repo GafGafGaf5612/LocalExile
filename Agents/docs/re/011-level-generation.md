@@ -1417,7 +1417,10 @@ keeps the two `Metadata/MiscellaneousObjects/AreaTransitionEffects` types, `Glow
 (server-only Transitionable effects at Act 5's craters in 1_5_1, 1_5_2 and 2_10_7; their path contains
 "AreaTransition"). The port places them too (`AreaObjects.IsEffect`), with the type's `Animated` `animated_object` as
 the model (`crater_glow.ao`, `ground_shatter.ao`), not the record's virtual `.ao`. The Gateway keeps them out of its
-transitions; it does not send them yet. All 131 objects of the 30 matching loads of these areas match. Of the 186
+transitions and creates them as their own objects (`AreaTransitionCatalog.Effects`, ids from 0x2f80): Positioned with
+the record's height, Animated with that model, Transitionable state 3 (the end of the arrival's animation; whether
+the real server plays state 2 on a first arrival is not captured), tasks. Their `BaseEvents` is `server_only`, so the
+client draws them only when the server creates them. All 131 objects of the 30 matching loads of these areas match. Of the 186
 captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates the port places.
 
 ## 8. Tooling
@@ -1431,9 +1434,10 @@ captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates th
   graph (nodes, edges with points, virtual end points, end offsets, widths) at each layout stage boundary (§3f).
   A generation that stops drawing for 8 s unfinished (the client hangs on its error) sends the trace so far
   as `<area>_seed<seed>.failtrace.json` (not `.gen.json`, so the gate does not take it for a load); the next
-  generation on that thread starts a new trace. `PROBES` in walkmaps.js reports every overlay fit test
-  (`0x141ffef60`) in a box of an area to `data/walkability/probes.jsonl`: result, exclusion bytes, flags and the
-  tiles-inside check (`0x141d850b0`) (2026-10-28, for `2_8_7_1_`).
+  generation on that thread starts a new trace. `PROBE_AREAS` in walkmaps.js reports every room pick
+  (`0x142105a70`) of those areas to `data/walkability/probes.jsonl`: the cell its caller `0x142106b00` computed, the
+  node's position, tag and orientation, and the graph's sizes and orientation (2026-10-29, for the Sanctum floors;
+  it replaced the overlay fit probe that settled `2_8_7_1_`).
 - **Capture tour (traces without playing):** with `live.ps1 -Walkmaps` running and a character in game,
   `/tour data/tour.txt` sends the character through every "`<area id> <seed>`" line of the file, each in a new
   instance with that seed (the `transfer` control request's `Seed`, `InstanceRegistry.EnterNew`), waits until the
@@ -1504,15 +1508,18 @@ captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates th
   the extra room pool's tile store that its rows' tiles go to, neither ported; with no pool row bringing tiles the
   port fails as the client does, else it stops): "Could not find matching feature tile at (36, 8) with feature name
   'round west'" (churchruin_4.arm). The Sanctum floors: each `.dgr` is one node tagged
-  "land", which no room has and no client code names. The client places the floor's room there under its type
-  (Data/SanctumRooms Id without the floor: "Crypt_Explore_1_1" → "explore_1_1", not the .arm's own tag, which is
-  "encounter_01" in the Crypt); the server chooses the room, and without one the client takes the floor's room of
-  type 0, Explore, on all four floors. The port does the same (`LevelGenerator.SanctumRoomType`), and SanctumCrypt
-  fails as the client does ("No possible rooms found for room at (0, 0) with type "explore_1_1"", its room set has no
-  Explore room). Open: the Cellar, Nave and Vaults, where the client reports the room at (4, 2) and finds no fit,
-  while the port puts node (11, 11) at cell (0, 0) (Width × 23 per graph cell) and places it; (4, 2) needs about 16
-  units per cell, so the room's position comes from data the port does not read. The Incursion temples (3; the server's room
-  hash). `2_6_12` seed 1 fails where the client does: its failed-load trace (`2_6_12_seed1.failtrace.json`) matches
+  "land", which no room has. The client does not use it: the floor's first graph is rebuilt (`0x141f5e790`, a
+  callback with the Sanctum state's two room bytes, +0x20 and +0x21, indexes into Data/SanctumRooms) as 6 × 4 cells
+  of 138 × 92 units, with a node at cell (0, 0) for the first room (description "default") and, when the second
+  byte names a row, one at cell (4, 2) for the second (`0x141f5ea10`: the node's position is cell × 23, its tag the
+  room's `.arm` tag, any orientation; a description "teleport1disabled" becomes "sideentrancedisabled" on the first
+  room when there is no second). The server sends the rooms; without it both bytes are 0, row 0
+  (`Cellar_Explore_1_1`, tag "explore_1_1") on every floor. The Crypt's room set has no room of that tag, so it fails
+  at the first node ("No possible rooms found for room at (0, 0)"); the Cellar, Nave and Vaults place a 4 × 4 room at
+  (0, 0) and find no free cells for the second ("No suitable room found for room at (4, 2)"). Live probe 2026-10-29
+  (walkmaps.js `PROBE_AREAS`): the Cellar's two room picks, cells (0, 0) and (4, 2), and its failed-load trace
+  (`encounter_explore_1_1c.arm` at (0, 0)). The port does the same (`LevelGenerator.SanctumRoomTag`). The Incursion
+  temples (3; the server's room hash). `2_6_12` seed 1 fails where the client does: its failed-load trace (`2_6_12_seed1.failtrace.json`) matches
   all 7267 draws and every graph stage, and the client names the edge tile's cell in map coordinates (view
   (16, 51) + the outer buffer's 6 = "(22, 57)"; the edge point match's "Could not connect edge tiles" stays in view
   coordinates, as `0x141ffbf40` prints them).
