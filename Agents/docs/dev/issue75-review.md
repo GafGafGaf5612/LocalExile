@@ -965,10 +965,12 @@ conditions, map drops). Conflicts: `Program.Skills.cs` (the panel-source snapsho
 keeps `excludeMonster` with main's channel checks), `13-items.md` (both Armour descriptions), and 34 trimmed test files
 (main's trim kept; the branch's version of a kept test where the branch changed it; the branch's added tests for
 branch-only behaviour kept; the contact and Rage fixtures pass the new `channelGeneration` argument). On the merged
-tree: solution build clean; Core 389, Data 34, Gateway 2556 pass (one timing-sensitive case,
+tree: solution build clean; Core 389, Data 34, Gateway 2556 pass. One case,
 `GameModeAilmentIntegrationTests.Chill_slows_attack_and_spell_timers_once_in_both_modes`, failed in two of three full
-concurrent runs and passes alone and in the third; the test file is unchanged on the branch). Still no native
-validation of the panel batches on this base.
+concurrent runs: it applied the chill at game time 0 while the connection's Stopwatch had run since its creation, so a
+loaded suite's catalog loads outran the chill's two seconds; the test now applies the chill at the clock's current time
+and stops the clock (as a pause does) for its reads.
+Still no native validation of the panel batches on this base.
 
 ## Remaining review and implementation
 
