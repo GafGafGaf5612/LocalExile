@@ -47,6 +47,14 @@ whose packets evaluate game state in their `still`/`atGate` callbacks. Those cal
 a crowd of 148 monsters they held the send gate for up to 4 s, so the answers queued behind them and the meter jumped
 to 0.5–4 s. Measured afterwards: no 0x1c later than 50 ms in a crowded Coast session.
 
+The full player stat and Actor refreshes (aura, charge, Fortification and Rage changes) build the whole skill list
+(`PlayerSkills`) inside the send gate, so every echo and monster packet waits for it. In 2026-10 one build of a 10-gem
+level 100 Witch cost 180–270 ms in the Debug Gateway (45–65 ms Release), and an aura toggle ran two or three of them:
+move handlers logged 400–730 ms in an empty hideout. Each gem resolved its links and supports (`SupportedSkill`) and the
+final player stats five or six times, and every gem requirement check scanned the whole GrantedEffectStatSetsPerLevel
+requirement list. One build now resolves each once (`SkillBuildScope`) and the requirements are indexed by stat set:
+5–10 ms per build in Debug and Release alike.
+
 ## 2. HNC, the hidden side channel
 
 The 0x1c u32 is not free data. `0x141fa0720` feeds its bits 9..31 then 0..8 (LSB first) into a byte accumulator on the
