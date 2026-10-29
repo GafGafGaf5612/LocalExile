@@ -102,8 +102,6 @@ Part of [Status](../Status.md); what to build next in this area is in
   The Gateway generates the supported areas itself (`ServerLevels.cs`): those whose seed-1 trace passes every gate
   check (`gate-baseline.json`); their walk grid, cell heights, transitions and waypoint need no capture.
   Entering any other area tells the player it is generated on the client and not supported by the server yet.
-  1717 of the 1915 WorldAreas areas with a topology have never been recorded; at seed 1 the port gets through 1404
-  of them (`levelgen survey`, unchecked against the client) and stops on 313.
   The client's stages after the doodads (mesh variation, ground clutter, critters) are client-only and not ported.
   The Labyrinth's boss ends use the layout the client builds with seed 0; the server sends no daily layout.
   Code: `GameServer.Data/Terrain/Generation`, `scripts/re/levelgen`.

@@ -1480,10 +1480,12 @@ captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates th
 - **Survey:** `lg.ps1 survey [--jobs N]` runs every WorldAreas area with a topology and no trace through the port at
   seed 1 and its area level: generation, walkability, doodads, cell heights. It writes
   `scripts/re/levelgen/survey-latest.json` (local) and a count per stop reason. "ok" only means the port got
-  through; nothing compares it with the client. 2026-10-26: 1717 areas, 1404 ok, 313 stops. The commonest stops are
-  "Could not fix heights in dungeon" (84), the extra room pool `0x141d8b750` (80+), tiles over a base tile with
-  fields of their own (40+), and "No walkable area in the level" (24). By kind: maps 764 of 807, league areas 114 of
-  308, Labyrinth 249 of 257, hideouts 100 of 109, act areas 17 of 22.
+  through; nothing compares it with the client. Since the tour of 2026-10-27 recorded every area the client can
+  generate, only the 234 rows with no client level are left without a trace. Before that tour (2026-10-26): 1717
+  areas, 1404 ok, 313 stops. The commonest stops were "Could not fix heights in dungeon" (84), the extra room pool
+  `0x141d8b750` (80+), tiles over a base tile with fields of their own (40+), and "No walkable area in the level"
+  (24). By kind: maps 764 of 807, league areas 114 of 308, Labyrinth 249 of 257, hideouts 100 of 109, act areas 17
+  of 22.
 - **Random seeds (2026-10-26):** `levelgen tourlist data/tour-random.txt --random 3` (3 seeds per area whose seed-1
   trace matches), `levelgen tourcheck` (drops the seeds the port cannot generate: 21 of 522, and the two the client
   was sent anyway, 1_1_3 2042820024 and 1_3_9 603386005, failed in the client at the same place), then `/tour`. 518
