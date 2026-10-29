@@ -38,8 +38,12 @@ Dreadful Attitude:
 - Requirement scaling is `floor(requirement × (100 + pct) / 100)`, never below 0 (PoB `CalcPerform`).
   It applies to gem attribute requirements and to worn item activation. Only passive sources and `/set_stat` count:
   an item's own requirement modifier is not used to decide that item's activation.
-- The ailment conditions are checked against final attributes for every new ailment, and `Reconcile` drops an
-  ailment already active once the condition holds. Ties are not immune ("higher than" is strict).
+- While a condition holds (strictly higher; ties are not immune), the player stats carry the plain
+  `cannot_be_frozen` / `cannot_be_ignited` / `cannot_be_shocked`. The Defence tab shows them as "Cannot be ...", and the
+  ailment consumer reads the same stats; `Reconcile` drops an ailment already active once one starts to hold.
+- The client checks gem and item requirements scaled by `global_item_attribute_requirements_+%` (`0x1402ce5f0`,
+  `0x1421eca50`, `0x14246fc40`'s callers). The tooltip's number stays unscaled; the red/white colour and the socket
+  refusal show the change.
 - Dreadful Attitude adds to `damage_+%` once per stat build, like the other derived bonuses; a `/set_stat damage_+%`
   replaces it.
 
