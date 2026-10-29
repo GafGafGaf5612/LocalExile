@@ -377,12 +377,14 @@ partial class Program
     {
         int action = actionToken ?? conn.ActionCount;
         int recoveryGeneration = 0;
+        int? channelGeneration = null;
         lock (conn.Monsters)
             if (actionToken is not null && (conn.ActionCount != action || conn.ElementalAilments.ActionFactor(conn.Clock.Elapsed.TotalSeconds) == 0 || conn.HitRecovery.Active(conn.Clock.Elapsed.TotalSeconds))) return false;
         if (InTown(conn) || conn.PlayerLife == 0) return false;
         await EndGracePeriod(remote, stream, ciphers, conn, action: true);
         var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
-        bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || PlayerActionCurrent(conn, action));
+        bool Current() => (cooldownUse?.Current(conn) ?? (actionToken is null || PlayerActionCurrent(conn, action)))
+            && (channelGeneration is not int generation || ChannelCurrent(conn, skillId, action, generation));
         if (!Current()) return false;
         if (gem.Name is not null && !ProjectilePathAvailable(remote, conn, skillId, gem.Effect)) return false;
         if (locationInstant && (gem.Name is null || !InstantLocationSkill.Supported(SkillsFor(conn), gem.Effect))) return false;
@@ -460,12 +462,6 @@ partial class Program
                 return false;
             }
         }
-        if (gem.Name is not null && Supports.Of(gem.Effect)?.Types.Contains(47) == true)
-        {
-            conn.NextChannelHitAt = conn.Clock.Elapsed.TotalSeconds + SupportedAttackSeconds(conn, skillId);
-            conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
-            _ = RunChannel(remote, stream, ciphers, conn, skillId, gem, action);
-        }
         if (gem.Name is not null && SupportedReservation(conn, skillId) is { } reservation)
         {
             if (!Current()) return false;
@@ -480,6 +476,13 @@ partial class Program
             {
                 if (!Current()) return false;
                 paid = PayMana(conn, skillId, out cost);
+                if (paid && Supports.Of(gem.Effect)?.Types.Contains(47) == true)
+                {
+                    channelGeneration = ++conn.ChannelGeneration;
+                    conn.ChannelSkill = skillId;
+                    conn.ChannelSkillSequence = sequence;
+                    conn.LastChannelUpdateAt = conn.Clock.Elapsed.TotalSeconds;
+                }
                 // Capture at paid admission, before output or release scheduling can catch up other hits.
                 recoveryGeneration = conn.ActionInterruptionGeneration;
             }
@@ -497,6 +500,15 @@ partial class Program
             }
         }
         if (!Current()) return false;
+        if (channelGeneration is not null)
+        {
+            lock (conn.Monsters)
+            {
+                if (!Current()) return false;
+                conn.NextChannelHitAt = conn.Clock.Elapsed.TotalSeconds + SupportedAttackSeconds(conn, skillId);
+                _ = RunChannel(remote, stream, ciphers, conn, skillId, gem, action);
+            }
+        }
         // Location instant acceptance handles only Frostblink's repositioning, without inventing its departure/arrival
         // hits or chilled ground. In particular do not route it through the generic single-area hit approximation.
         if (locationInstant) return true;
@@ -518,7 +530,7 @@ partial class Program
             await ActivateRighteousFire(remote, stream, ciphers, conn, skillId, gem.Effect, gem.Level, gem.Quality, gem.Gem);
         else
             await LaunchProjectile(remote, stream, ciphers, conn, skillId, from, to, recoveryGeneration, targetId, sequence: sequence,
-                actionToken: actionToken, cooldownUse: cooldownUse);
+                actionToken: actionToken, cooldownUse: cooldownUse, channelGeneration: channelGeneration);
         return true;
     }
 
@@ -680,7 +692,7 @@ partial class Program
     // Every projectile uses the same scheduler and simulator. Definitions change rules, never execution paths.
     static Task LaunchProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (int X, int Y) from, (int X, int Y) to, int recoveryGeneration, uint targetId = 0, ushort sequence = 0,
-        int? actionToken = null, CooldownUseTicket? cooldownUse = null)
+        int? actionToken = null, CooldownUseTicket? cooldownUse = null, int? channelGeneration = null)
     {
         var gem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
         if (gem.Name is null) return Task.CompletedTask;
@@ -691,7 +703,7 @@ partial class Program
         // sweeps follow on the attack timer (RunChannel).
         bool channelled = Supports.Of(gem.Effect)?.Types.Contains(47) == true;
         return AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, from, to, immediate: channelled, sequence: sequence,
-            actionToken: actionToken, cooldownUse: cooldownUse);
+            actionToken: actionToken, cooldownUse: cooldownUse, channelGeneration: channelGeneration);
     }
 
     // A channelled skill's hits (Cyclone): one sweep around the player every attack time (SupportedAttackSeconds: the
@@ -705,8 +717,8 @@ partial class Program
     static async Task RunChannel(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, int action)
     {
-        bool Running() => !conn.Closed && !conn.LeavingArea && conn.PlayerLife > 0 && conn.ChannelSkill == skillId
-            && conn.ActionCount == action && conn.Clock.Elapsed.TotalSeconds - conn.LastChannelUpdateAt <= ChannelSilenceSeconds;
+        int generation = conn.ChannelGeneration;
+        bool Running() => ChannelCurrent(conn, skillId, action, generation);
         try
         {
             while (true)
@@ -716,25 +728,40 @@ partial class Program
                 await WhilePaused(conn);
                 if (!Running()) return;
                 double now = conn.Clock.Elapsed.TotalSeconds;
-                (int X, int Y) at;
-                lock (conn.Monsters)
+                uint cost;
+                using (conn.Performance.Lock(conn.Monsters, "channel"))
                 {
-                    if (!Running() || now < conn.NextChannelHitAt) continue;
+                    if (!Running() || conn.Paused || now < conn.NextChannelHitAt) continue;
+                    // A freeze or a stun's hit recovery interrupts the channelled action: no stage is paid or swept until it
+                    // ends. The client's updates are dropped meanwhile, so a longer one ends the channel by silence.
+                    if (PlayerActionBlocked(conn, now, now)) { conn.NextChannelHitAt = now + TickSeconds; continue; }
+                    var activeGem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
+                    if (activeGem.Name is null || activeGem.Effect != gem.Effect
+                        || GemSkillInstanceDisabled(conn, activeGem.Effect, skillId) is not null)
+                    { conn.ChannelSkill = 0; conn.ChannelGeneration++; return; }
+                    gem = activeGem;
+                    conn.Performance.RecordMilliseconds(LatencyPhase.ChannelLate, (now - conn.NextChannelHitAt) * 1000);
                     conn.NextChannelHitAt = Math.Max(conn.NextChannelHitAt, now - 0.05) + SupportedAttackSeconds(conn, skillId);
-                    at = conn.Walk.Position(now);
+                    // Payment and admission share the channel's generation check.
+                    if (!PayMana(conn, skillId, out cost)) { conn.ChannelSkill = 0; conn.ChannelGeneration++; }
                 }
-                if (!PayMana(conn, skillId, out uint cost))
-                {
-                    conn.ChannelSkill = 0;
-                    await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped: insufficient mana");
-                    return;
-                }
+                if (!Running()) { await SendPlayerMana(remote, stream, ciphers, conn, "channel stopped"); return; }
                 if (cost > 0) await SendPlayerMana(remote, stream, ciphers, conn, $"channel cost {cost}");
+                if (!Running()) return;
+                var at = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
                 await AreaSkillHit(remote, stream, ciphers, conn, skillId, gem, at, at,
-                    immediate: true, sequence: conn.ChannelSkillSequence, actionToken: action);
+                    immediate: true, sequence: conn.ChannelSkillSequence, actionToken: action, channelGeneration: generation);
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+    }
+
+    static bool ChannelCurrent(ClientState conn, ushort skill, int action, int generation)
+    {
+        lock (conn.Monsters)
+            return !conn.Closed && !conn.LeavingArea && !conn.RageRetired && conn.PlayerLife > 0
+                && conn.ChannelSkill == skill && conn.ActionCount == action && conn.ChannelGeneration == generation
+                && conn.Clock.Elapsed.TotalSeconds - conn.LastChannelUpdateAt <= ChannelSilenceSeconds;
     }
 
     // The radius in cells of a gem skill's hit around its aimed point (AreaSkillHit): its own
@@ -756,9 +783,11 @@ partial class Program
     // cones, chains), stun, and the attack's accuracy roll.
     static async Task AreaSkillHit(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         ushort skillId, (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem) gem, (int X, int Y) from, (int X, int Y) to,
-        bool immediate = false, ushort sequence = 0, int? actionToken = null, CooldownUseTicket? cooldownUse = null)
+        bool immediate = false, ushort sequence = 0, int? actionToken = null, CooldownUseTicket? cooldownUse = null,
+        int? channelGeneration = null)
     {
-        bool Current() => cooldownUse?.Current(conn) ?? (actionToken is null || conn.ActionCount == actionToken);
+        bool Current() => (cooldownUse?.Current(conn) ?? (actionToken is null || conn.ActionCount == actionToken))
+            && (channelGeneration is not int generation || ChannelCurrent(conn, skillId, actionToken ?? conn.ActionCount, generation));
         if (!Current()) return;
         var skillStats = SupportedSkill(conn, skillId).Stats;
         // An attack gem's share of the weapon's damage ("Deals 77.3% of base Attack Damage"): the hit below uses it.
@@ -791,6 +820,12 @@ partial class Program
         using (ProjectileMutation(conn))
         {
             double now = ProjectileWorldTime(conn);
+            if (!Current()) return;
+            // A freeze or stun that landed after this stage was paid interrupts it before the sweep.
+            if (channelGeneration is not null
+                && PlayerActionBlocked(conn, conn.Clock.Elapsed.TotalSeconds, conn.Clock.Elapsed.TotalSeconds)) return;
+            // Queued mana output may outlast movement: resolve a channel at its current position.
+            if (channelGeneration is not null) centre = conn.Walk.Position(now);
             targets = [.. conn.Monsters.Where(e => !e.Value.Dead && e.Value.Life > 0 && Dist(e.Value.Walk.Position(now), centre) <= radius)
                 .Select(e => (e.Key, e.Value))];
         }

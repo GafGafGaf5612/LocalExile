@@ -204,8 +204,8 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 40;
         int statSet = t.StatSets[effectRow];
         int max = 0;
-        foreach (var (ss, level, req) in t.GemLevelReqs)
-            if (ss == statSet && req <= charLevel && level > max) max = level;
+        foreach (var (level, req) in t.LevelReqsOf(statSet))
+            if (req <= charLevel && level > max) max = level;
         return max > 0 ? max : 1;
     }
 
@@ -215,8 +215,8 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     {
         if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.StatSets.Count) return 0;
         int statSet = t.StatSets[effectRow], req = 0;
-        foreach (var (ss, lvl, r) in t.GemLevelReqs)
-            if (ss == statSet && lvl <= level && r > req) req = r;
+        foreach (var (lvl, r) in t.LevelReqsOf(statSet))
+            if (lvl <= level && r > req) req = r;
         return req;
     }
 
@@ -385,6 +385,8 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     /// <summary>Classify the gem's base-item row from GemTags/SkillGems metadata, not its display name.</summary>
     public bool FamilyStatRaises(string stat, int gemRow) =>
         _stats.Key(stat) is uint key && _families.Value.Raises((int)key - 1, gemRow);
+
+    public bool IsExceptional(int gemRow) => _families.Value.IsExceptional(gemRow);
 
     readonly Lazy<SkillGemFamilies> _families = new(() => new(folder));
 
@@ -745,6 +747,14 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         List<int> VaalSouls, List<int> VaalStoredUses, List<int?> ActiveSkills,
         Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness, List<int?> SpellCritChances, List<int> AttackSpeedMultipliers)
     {
+        // GemLevelReqs by stat set: every gem's requirement check (twice per linked gem per skill build) scanned the whole
+        // table before.
+        Dictionary<int, (int GemLevel, int PlayerLevelReq)[]>? _levelReqsBySet;
+        public (int GemLevel, int PlayerLevelReq)[] LevelReqsOf(int statSet) =>
+            LazyInitializer.EnsureInitialized(ref _levelReqsBySet, () => GemLevelReqs.GroupBy(r => r.StatSet)
+                .ToDictionary(g => g.Key, g => g.Select(r => (r.GemLevel, r.PlayerLevelReq)).ToArray()))
+                .GetValueOrDefault(statSet, []);
+
         public static Tables? Load(string folder)
         {
             string Table(string name) => Path.Combine(folder, "tables", name + ".json");
