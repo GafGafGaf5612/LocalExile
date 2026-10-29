@@ -37,6 +37,35 @@ public class AnimationVariantSelectorTests
         Assert.Equal(3101734177u, random.NextUInt());
     }
 
+    // Keyed initialization (0x1413cbe50): the published TinyMT32 init_by_array with this client's constants, replayed
+    // independently in Python (standard initializer, then the native right-shift transition). The decompile's
+    // constant-folded first step for a two-word key (state 0x40336050, 0xcfa3723c, 0x3cac5f6f, tmat) agrees with it.
+    [Theory]
+    [InlineData(0u, 0u, 2216047026u, 2008475589u, 1861335174u)]
+    [InlineData(1u, 0u, 1146099097u, 2120761714u, 376439422u)]
+    [InlineData(0x2000u, 0xdeadbeefu, 1211711957u, 837265017u, 2112675210u)]
+    [InlineData(0x1234u, 0x9f1a5e3cu, 3790756449u, 1809634775u, 2720885823u)]
+    public void Keyed_native_random_matches_init_by_array_vectors(uint objectId, uint typeWord, uint first, uint second, uint third)
+    {
+        var random = new AnimationVariantSelector.NativeRandom([objectId, typeWord]);
+        Assert.Equal(first, random.NextUInt());
+        Assert.Equal(second, random.NextUInt());
+        Assert.Equal(third, random.NextUInt());
+    }
+
+    [Fact]
+    public void Range_draw_is_the_bounded_draw_plus_the_minimum()
+    {
+        // 0x1404d03d0: Uniform(max − min + 1) + min; a one-value range consumes nothing.
+        var ranged = new AnimationVariantSelector.NativeRandom([0x1234u, 0x9f1a5e3cu]);
+        var bounded = new AnimationVariantSelector.NativeRandom([0x1234u, 0x9f1a5e3cu]);
+        Assert.Equal(2, ranged.Uniform(-5, 5));
+        Assert.Equal(2, (int)bounded.Uniform(11) - 5);
+        var degenerate = new AnimationVariantSelector.NativeRandom([0x1234u, 0x9f1a5e3cu]);
+        Assert.Equal(7, degenerate.Uniform(7, 7));
+        Assert.Equal(3790756449u, degenerate.NextUInt());
+    }
+
     [Fact]
     public void Empty_zero_weight_and_overflowing_pools_are_rejected()
     {

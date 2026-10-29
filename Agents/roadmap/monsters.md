@@ -35,5 +35,6 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   `ClientPathfinder` already paths them exactly as the client does.
   The decision loop now uses 50 ms game time and repaths no faster than 100 ms after a three-cell target change.
   Native response, turning, attack pacing and pause controls pass; official monster controller rules remain separate.
-  Still missing are the client's monster controller (its own re-paths, frozen far monsters), the speed variance and
-  the 5–50 ms until the client applies an order ([07](../docs/protocol/07-latency-visibility-movement.md) §5, "Open").
+  The estimate walks at the client's rolled speed (the status's monster walk speed entry).
+  Still missing are the client's monster controller (its own re-paths, frozen far monsters) and the 5–50 ms until the
+  client applies an order ([07](../docs/protocol/07-latency-visibility-movement.md) §5, "Open").

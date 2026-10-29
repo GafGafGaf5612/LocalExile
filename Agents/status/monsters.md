@@ -94,6 +94,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   The Core helper retains an optional owned guard; corpse identity, final-death registration and consumption remain open.
   Code: `MonsterLifeData.cs`, `MonsterObject`, `MonsterCatalog.cs`, `Program.Monsters.cs`, `ot_components.py`.
   Docs: [04](../docs/protocol/04-player-entity.md#44-life-0x141e6c2f0-55-bytes).
+- Monster walk speed on the server includes the client's per-monster speed roll: Actor setup draws a uniform percent
+  in the MonsterVarieties row's range (the Goatmen ±5 %, the 7.60–8.40 band measured live for a base of 8; most rows
+  none) from a TinyMT32 state keyed by the object id and its type, and the walk estimate, swing range and contact
+  checks use that speed.
+  The range, the generator and the key order come from the decompile and pass the tests; whether the key's type word
+  is the 0x2b9 type hash, and so whether the exact value matches the client's, is not checked live yet
+  (`scripts/re/frida/trace-movement.js` prints each monster's seed words, range and multiplier).
+  Code: `MonsterSpeedRoll.cs`, `AnimationVariantSelector.cs`, `MonsterCatalog.cs`, Gateway (`SpawnMonster`).
+  Docs: [07](../docs/protocol/07-latency-visibility-movement.md) §5 ("Monsters on the client").
 - Monster mods' accuracy (of the Marksman, of Precision): the monster's accuracy is raised in its swing, but only the
   tests check it; live, the player was never evaded.
   Code: `MonsterMods.cs`.
