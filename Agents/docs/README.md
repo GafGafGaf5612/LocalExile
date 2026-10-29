@@ -40,7 +40,8 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 ## Generated references
 | Doc | Content |
 |---|---|
-| [protocol/schema.md](protocol/schema.md) ([json](protocol/schema.json)) | read sequence of every component deserializer and of 333 instance/world message classes |
+| [protocol/schema.md](protocol/schema.md) ([json](protocol/schema.json)) | read sequence of every component deserializer and of every S→C message class (instance, world, login, patch) |
+| [protocol/c2s.md](protocol/c2s.md) ([json](protocol/c2s.json)) | every C→S message (instance, login, patch): class, writer, length, senders |
 | [re/components.md](re/components.md) ([json](re/components.json)) | every component class the client registers: pool, factory, vtables |
 | [re/object-types.md](re/object-types.md) | component list of every object type (`Metadata/...`), from the `.ot` files |
 
