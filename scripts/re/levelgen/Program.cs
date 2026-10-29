@@ -326,7 +326,8 @@ static void Objects(string filter)
             .Select(o => (Type: o.GetProperty("objectType").GetString()!, Model: o.GetProperty("model").GetString()!,
                 X: o.GetProperty("x").GetInt32(), Y: o.GetProperty("y").GetInt32(), R: o.GetProperty("rotation").GetSingle(),
                 Z: o.TryGetProperty("z", out var z) && z.ValueKind == JsonValueKind.Number ? z.GetSingle() : float.NaN)).ToList();
-        var mine = AreaObjects.Transitions(files, result);
+        // Only the types the recorder keeps, as the gate does (BossArenaEntranceTransition and the like are left out).
+        var mine = AreaObjects.Transitions(files, result).Where(o => Gate.Recorded.IsMatch(o.Type)).ToList();
         objects += theirs.Count;
         var left = mine.ToList();
         var notes = new List<string>();

@@ -35,6 +35,17 @@ def log(text):
     print(f"[walkmaps] {text}", flush=True)
 
 
+def replace(tmp, path):
+    """os.replace, retried while another process (the Gateway reading the capture) has the target open on Windows."""
+    for _ in range(40):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    os.replace(tmp, path)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--process", default="Game.patched.exe", help="client process name")
@@ -132,7 +143,7 @@ def save(out, w, h, cells):
         return
     with open(stem + ".bin.tmp", "wb") as f:
         f.write(cells)
-    os.replace(stem + ".bin.tmp", stem + ".bin")
+    replace(stem + ".bin.tmp", stem + ".bin")
     with open(stem + ".json", "w", encoding="utf-8") as f:
         json.dump({"w": w, "h": h}, f)
     log(f"saved {os.path.basename(stem)}.bin ({w}x{h})")
@@ -149,7 +160,7 @@ def save_projectile(out, w, h, cells):
         return
     with open(stem + ".projectile.bin.tmp", "wb") as f:
         f.write(cells)
-    os.replace(stem + ".projectile.bin.tmp", stem + ".projectile.bin")
+    replace(stem + ".projectile.bin.tmp", stem + ".projectile.bin")
     log(f"saved {os.path.basename(stem)}.projectile.bin ({w}x{h})")
 
 
@@ -167,7 +178,7 @@ def save_object(out, obj):
     stem = os.path.join(out, f"{area['id']}_seed{area['seed']}")
     with open(stem + ".transitions.json.tmp", "w", encoding="utf-8") as f:
         json.dump({"area": area["id"], "seed": area["seed"], "objects": found}, f, indent=1)
-    os.replace(stem + ".transitions.json.tmp", stem + ".transitions.json")
+    replace(stem + ".transitions.json.tmp", stem + ".transitions.json")
     log(f"{os.path.basename(stem)}: {obj.get('objectType', '').rsplit('/', 1)[-1]} at ({obj.get('x')}, {obj.get('y')}) "
         f"z {obj.get('z')} (raw {obj.get('rawZ')}, height offset {obj.get('heightOffset')})")
 
@@ -193,7 +204,7 @@ def save_quest_object(out, obj):
     stem = os.path.join(out, f"{area['id']}_seed{area['seed']}")
     with open(stem + ".objects.json.tmp", "w", encoding="utf-8") as f:
         json.dump({"area": area["id"], "seed": area["seed"], "objects": found}, f, indent=1)
-    os.replace(stem + ".objects.json.tmp", stem + ".objects.json")
+    replace(stem + ".objects.json.tmp", stem + ".objects.json")
     log(f"{os.path.basename(stem)}: quest object {obj['objectType'].rsplit('/', 1)[-1]} at ({obj.get('x')}, {obj.get('y')})")
 
 
@@ -218,7 +229,7 @@ def save_room(out, obj):
     stem=os.path.join(out,f"{area['id']}_seed{area['seed']}")
     with open(stem+".rooms.json.tmp","w",encoding="utf-8") as f:
         json.dump({"area":area["id"],"seed":area["seed"],"rooms":found},f)
-    os.replace(stem+".rooms.json.tmp",stem+".rooms.json")
+    replace(stem+".rooms.json.tmp",stem+".rooms.json")
 
 
 def save_doodads(out, batch):
@@ -234,7 +245,7 @@ def save_doodads(out, batch):
     with open(stem + ".doodads.json.tmp", "w", encoding="utf-8") as f:
         json.dump({"area": area["id"], "seed": area["seed"], "models": models,
                    "doodads": [[index[d[0]], d[1], d[2], round(d[3], 4)] for d in found]}, f)
-    os.replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
+    replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
     if len(found) == len(batch) or len(found) // 1000 != (len(found) - len(batch)) // 1000:
         log(f"{os.path.basename(stem)}: {len(found)} doodads")
 
@@ -247,7 +258,7 @@ def save_cell_heights(out, info, cells):
     stem = os.path.join(out, f"{info['area']}_seed{info['seed']}")
     with open(stem + ".heights.bin.tmp", "wb") as f:
         f.write(cells)
-    os.replace(stem + ".heights.bin.tmp", stem + ".heights.bin")
+    replace(stem + ".heights.bin.tmp", stem + ".heights.bin")
     log(f"{os.path.basename(stem)}: cell heights {info.get('w')}x{info.get('h')}, map +0x104 {info.get('storey')}, "
         f"{info.get('rects')} height rectangles, {info.get('clipped')} clipped to i16")
 
@@ -260,7 +271,7 @@ def save_failed_generation(out, gen):
     stem = os.path.join(out, f"{gen['area']}_seed{gen['seed']}")
     with open(stem + ".failtrace.json.tmp", "w", encoding="utf-8") as f:
         json.dump(gen, f)
-    os.replace(stem + ".failtrace.json.tmp", stem + ".failtrace.json")
+    replace(stem + ".failtrace.json.tmp", stem + ".failtrace.json")
     log(f"{os.path.basename(stem)}: failed generation trace, {len(gen.get('draws') or [])} draws, {len(gen.get('tiles') or [])} tiles")
 
 
@@ -278,7 +289,7 @@ def save_generation(out, gen):
     stem = os.path.join(out, f"{gen['area']}_seed{gen['seed']}")
     with open(stem + ".gen.json.tmp", "w", encoding="utf-8") as f:
         json.dump(gen, f)
-    os.replace(stem + ".gen.json.tmp", stem + ".gen.json")
+    replace(stem + ".gen.json.tmp", stem + ".gen.json")
     log(f"{os.path.basename(stem)}: generation trace, {len(gen.get('draws') or [])} draws, {len(gen.get('tiles') or [])} tiles, "
         f"{gen.get('w')}x{gen.get('h')}, tile hash {gen.get('tileHash')}")
     # An area that places no doodads sends no batch: write its empty list, so a load with none is told apart from one
@@ -289,7 +300,7 @@ def save_generation(out, gen):
         DOODADS[area.get("nonce")] = []
         with open(stem + ".doodads.json.tmp", "w", encoding="utf-8") as f:
             json.dump({"area": gen["area"], "seed": gen["seed"], "models": [], "doodads": []}, f)
-        os.replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
+        replace(stem + ".doodads.json.tmp", stem + ".doodads.json")
 
 
 def current_area(out):

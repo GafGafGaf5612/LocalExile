@@ -34,7 +34,7 @@ static class Gate
         [System.Text.Json.Serialization.JsonIgnore] public bool DrawsOk => HashOk && (FirstDiff is null || FirstDiff.EndsWith(" (port stopped)"));
     }
 
-    static readonly System.Text.RegularExpressions.Regex Recorded = new("AreaTransition|Waypoint$|TownEntrance$");
+    internal static readonly System.Text.RegularExpressions.Regex Recorded =new("AreaTransition|Waypoint$|TownEntrance$");
 
     static readonly JsonSerializerOptions Json = new()
     {

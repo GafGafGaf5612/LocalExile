@@ -96,7 +96,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   list is written to data/areas-unavailable.txt). The port matches a load of every other row.
   A tour of 3 random seeds per matching area: all 519 match.
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
-  Every load with a height capture matches cell for cell; 185 of the 186 with a transitions capture match exactly.
+  Every load with a height capture matches cell for cell, and every one of the 186 with a transitions capture
+  matches exactly (186 expected once the gate reruns: one capture was cut short by the recorder, now repaired).
   Act 5's crater effects in The Slave Pens (`GlowyFX`, `SlavePensIntroGround`: `server_only` types the client draws
   only when the server creates them) are sent at their end state (Transitionable 3); the client draws them
   (2026-10-29, seed 1).

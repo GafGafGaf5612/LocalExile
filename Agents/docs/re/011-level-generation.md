@@ -1420,8 +1420,11 @@ the model (`crater_glow.ao`, `ground_shatter.ao`), not the record's virtual `.ao
 transitions and creates them as their own objects (`AreaTransitionCatalog.Effects`, ids from 0x2f80): Positioned with
 the record's height, Animated with that model, Transitionable state 3 (the end of the arrival's animation; whether
 the real server plays state 2 on a first arrival is not captured), tasks. Their `BaseEvents` is `server_only`, so the
-client draws them only when the server creates them. All 131 objects of the 30 matching loads of these areas match. Of the 186
-captures, 185 match; 2_Labyrinth_boss_2_end's capture lacks three arena gates the port places.
+client draws them only when the server creates them. All 131 objects of the 30 matching loads of these areas match. All 186
+captures match (`lg.ps1 objects`; the gate counted 185 before 2_Labyrinth_boss_2_end's was repaired). That capture
+had kept 3 of its 5 objects: on Windows, `os.replace` fails while another process (the Gateway, loading the area) has
+the target open, so the recorder's write of the fourth object threw and left the full list in the `.tmp`
+(`2_7_9` seed 68149332 lost its third the same way). walkmaps.py now retries the replace.
 
 ## 8. Tooling
 
