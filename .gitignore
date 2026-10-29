@@ -76,3 +76,4 @@ desktop.ini
 # levelgen's last gate run (the baseline beside it is committed)
 /scripts/re/levelgen/gate-latest.json
 /scripts/re/levelgen/survey-latest.json
+/scripts/re/levelgen/loads-latest.json
