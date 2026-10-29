@@ -163,8 +163,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   automated coverage. The old live check (2026-10-21) predates these admission checks; native re-acceptance is pending.
   See [13](../docs/protocol/13-items.md), "Orb of Augmentation", and
   [evidence](../docs/re/augmentation-coe.md).
-- **Regal Orb (verified live, 2026-10-21):** magic → rare, affixes kept, +1 affix, rare name.
-  See [13](../docs/protocol/13-items.md), "Regal Orb".
+- **Regal Orb:** a modifiable magic item becomes rare, affixes kept, +1 weighted affix from the rare pool (max three
+  of each side), rare name. Flasks are refused (magic-only), as are unmodifiable/unsupported bases and no-fit targets,
+  without spending.
+  CoE rare-pool/apply checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  The old live check (2026-10-21) predates these admission rules; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Regal Orb", and [evidence](../docs/re/regal-coe.md).
 - **Exalted Orb (verified live, 2026-10-21):** +1 affix on a rare item, up to 6 (three of each kind).
   See [13](../docs/protocol/13-items.md), "Exalted Orb".
 - **Orb of Annulment (verified live, 2026-10-21):** removes one random affix from a magic or rare item.

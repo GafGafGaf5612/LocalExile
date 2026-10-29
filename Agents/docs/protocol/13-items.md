@@ -532,11 +532,17 @@ That last refusal is LocalExile policy: CoE's engine still spends the orb and ad
 The level-1 Driftwood Wand pools and simulated probabilities agree with CoE beta; see
 [the source comparison](../re/augmentation-coe.md).
 
-### Regal Orb (2026-10-21, verified live)
+### Regal Orb (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyUpgradeMagicToRare`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Regal` makes a magic item rare:
-its affixes stay, one more is added (`ItemRolls.AddAffix`, at most three prefixes and three suffixes) and it gets a rare
-name. Anything but a magic item, or one where no affix fits, is refused and nothing is spent.
+`CurrencyUpgradeMagicToRare`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Regal` delegates to
+`ItemRolls.Regal`: a modifiable magic item becomes rare, keeps its affixes, gets one more from the rare pool
+(`ItemRolls.AddAffix`, at most three prefixes and three suffixes) and a rare name.
+Flasks are magic-only and cannot become rare, so they are refused.
+The base must be known and serializable, with Mods and neither its base nor its class marked `Unmodifiable`;
+corrupted/mirrored, non-magic and no-fit targets are refused before spending.
+CoE's rare-pool applies open both sides after the upgrade (12 candidates, total 6983, for a level-1 wand with one
+prefix), unlike its `pool` operation, which still evaluates the magic item. See
+[the source comparison](../re/regal-coe.md).
 
 ### Exalted Orb (2026-10-21, verified live)
 

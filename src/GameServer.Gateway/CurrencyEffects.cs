@@ -29,11 +29,10 @@ static class CurrencyEffects
     public static Item? Exalted(Item item, ItemRolls rolls, Random random) =>
         item.Rarity != ItemRarity.Rare || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 3, random);
 
-    /// <summary>Regal Orb: a magic item becomes rare with its affixes kept, one more affix (at most three of each kind)
-    /// and a rare name. Refused for anything else, or when no affix fits.</summary>
-    public static Item? Regal(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") || rolls.AddAffix(item, 3, random) is not { } added ? null
-            : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = rolls.RareName(item, random) };
+    /// <summary>Regal Orb: a modifiable magic item becomes rare with its affixes kept, one more affix from the rare
+    /// pool (at most three of each kind) and a rare name. Flasks are magic-only; anything else, or no affix that
+    /// fits, is refused before the inventory handler spends the orb.</summary>
+    public static Item? Regal(Item item, ItemRolls rolls, Random random) => rolls.Regal(item, random);
 
     /// <summary>Orb of Augmentation: a modifiable magic item with a free prefix or suffix (at most one of each) gets
     /// one more affix from the ordinary weighted pool; its affixes and rarity stay. Anything else is refused before

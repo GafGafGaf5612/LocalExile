@@ -51,6 +51,16 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     public Item? Augment(Item item, Random random) =>
         item.Rarity == ItemRarity.Magic && TryModifiable(item, out _) ? AddAffix(item, 1, random) : null;
 
+    /// <summary>Regal Orb's validated magic-to-rare upgrade: the magic affixes stay, one more comes from the rare
+    /// pool (at most three of each side), and a rare name is drawn. Flasks are magic-only and cannot become rare.</summary>
+    public Item? Regal(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Magic || item.Components.Contains("Flask") || !TryModifiable(item, out var type))
+            return null;
+        return AddAffix(item, 3, random) is not { } added ? null
+            : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = RareName(type, random) };
+    }
+
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.
