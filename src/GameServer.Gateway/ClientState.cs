@@ -16,6 +16,9 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 {
     /// <summary>Called with Auth's answer to the transfer (a map portal records the map's new instance).</summary>
     public Action<ControlResponse>? Done { get; init; }
+
+    /// <summary>With <see cref="New"/>: the new instance's seed (0 = Auth's choice; the capture tour sets it).</summary>
+    public uint Seed { get; init; }
 }
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.

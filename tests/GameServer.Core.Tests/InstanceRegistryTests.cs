@@ -44,6 +44,15 @@ public class InstanceRegistryTests
     }
 
     [Fact]
+    public void A_new_instance_can_be_given_its_seed_but_a_town_keeps_seed_1()
+    {
+        var reg = new InstanceRegistry { SeedFor = _ => 7 };
+        Assert.Equal(3117172586u, reg.EnterNew(Coast, "A", seed: 3117172586).Seed);
+        Assert.Equal(7u, reg.EnterNew(Coast, "A").Seed);
+        Assert.Equal(1u, reg.EnterNew(Town, "A", seed: 42).Seed);
+    }
+
+    [Fact]
     public void An_empty_instance_expires_after_its_lifetime()
     {
         var clock = new FakeClock();

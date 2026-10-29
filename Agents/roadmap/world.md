@@ -33,6 +33,31 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Start:** a dev command that walks the WorldAreas list with `/goto` and waits for each capture.
 - **Done when:** every act area has its seed-1 capture, and every waypoint area its waypoint in it.
 
+### Server-side level generation
+
+- **Known:** the port reproduces the client's generator for every recorded trace and logged load
+  ([re/011](../docs/re/011-level-generation.md), [status/world.md](../status/world.md)).
+  `/tour <file>` with `live.ps1 -Walkmaps` records new (area, seed) loads; `levelgen tourlist` writes the lists.
+- **Start:** the supported areas get random seeds, and a 5-seed tour of them found 4 loads the port gets wrong
+  (1_2_15 at `0x14211532d`, 1_2_14_2 at `0x142031e88`, [re/011](../docs/re/011-level-generation.md) §8 Random seeds)
+  and 202 seeds it cannot generate; a new instance at such a seed gets a layout the client may fail on (pick another
+  seed when the port fails).
+- **To be implemented with their leagues (out of scope for now):** the 202 areas whose level the client builds from
+  data the server sends (`data/areas-unavailable.txt`). They come with each league's server side, not with the
+  generator:
+  - Delve (82): the mine cells and biomes (`Delve_*`); the client fails without the cell data.
+  - Heist (80): the contract and blueprint areas; the layout comes from the heist plan.
+  - Synthesis (24): the memories (`Synthesis_Main*`, `Synthesis_Single*`).
+  - Incursion (10): the temples (`Incursion_Temple*`); the client needs the room hash of the opened and upgraded
+    rooms ("Unknown Incursion Temple room hash").
+  - Sanctum (4): the floors (`SanctumCellar`, `SanctumCrypt`, `SanctumNave`, `SanctumVaults`); the client rebuilds
+    the floor graph from the rooms the server sends.
+  - Deepwater (2): the 3.29 league's DeepwaterEncounter and DeepwaterEncounterVoyage, built from a biome grid the
+    server sends; the only seed-1 traces the port does not match.
+- For a daily labyrinth: port the rest of `0x1424e30f0` (connections, secrets) and send the layout message
+  (`0x141ec7220`: seed, node, difficulty).
+- **Done when:** any seed gets its layout without a capture.
+
 ### Area transitions without a walk-map run
 
 - **Known:** every area gets its area transitions and destinations, but a generated area only has them once `live.ps1

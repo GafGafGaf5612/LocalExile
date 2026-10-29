@@ -820,6 +820,9 @@ partial class Program
         foreach (var (id, transition) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
             messages.Add(($"0x02b9 create area transition 0x{id:x} {transition}",
                 InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(transition.Type), transition.Blob())));
+        foreach (var (id, effect) in layout.Effects)
+            messages.Add(($"0x02b9 create transition effect 0x{id:x} {effect}",
+                InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(effect.Type), effect.Blob())));
         if (layout.Waypoint is { } waypoint)
             messages.Add(($"0x02b9 create waypoint 0x{WaypointCatalog.ObjectId:x} {waypoint}",
                 InstanceEntities.CreateObject(WaypointCatalog.ObjectId, InstanceEntities.ObjectTypeHash(WaypointObject.MetadataPath), waypoint.Blob())));
@@ -845,6 +848,8 @@ partial class Program
             messages.Add(("0x01a9 player enters wake zone", InstanceProtocol.EnterWakeZone(PlayerId)));
             foreach (var (id, _) in layout.AreaTransitions.Where(t => TransitionShown(conn, t.Transition)))
                 messages.Add(($"0x01a9 area transition 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
+            foreach (var (id, _) in layout.Effects)
+                messages.Add(($"0x01a9 transition effect 0x{id:x} enters wake zone", InstanceProtocol.EnterWakeZone(id)));
             if (layout.Waypoint is not null) messages.Add(($"0x01a9 waypoint 0x{WaypointCatalog.ObjectId:x} enters wake zone", InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId)));
             // The attributes once more as a stats update. UI built on entering caches them (0x141e802d0 reads the Stats
             // component's getter); live 2026-10-18 the cache held 0 while the getter returned 14/14/32.

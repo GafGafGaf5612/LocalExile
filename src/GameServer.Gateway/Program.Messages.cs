@@ -597,11 +597,16 @@ partial class Program
                     await PushOutOfCollision(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
+                    await conn.Commands!.Reply($"Area generated at Seed: {conn.Seed}");
+                    // An area the Gateway does not generate itself (ServerLevels) runs on the client's layout alone.
+                    if (!ServerLevels.IsSupported(conn.Layout.Id) && !CaptureTour.Active(CharacterName(conn)))
+                        await conn.Commands!.Reply(ServerLevels.UnsupportedMessage);
                     _ = RunMonsterRegeneration(remote, stream, ciphers, conn);
                     await SyncQuestItems(remote, stream, ciphers, conn, removeItems: true);   // a1q5: the Medicine Chest's flag
                     _ = RunMercyMission(remote, stream, ciphers, conn);
                     _ = RunServerFrames(remote, stream, ciphers, conn);
                     _ = RunMonsterAi(remote, stream, ciphers, conn);
+                    _ = ContinueTour(remote, stream, ciphers, conn);
                     _ = RunLivingCollisions(remote, stream, ciphers, conn);
                     _ = RunPlayerTick(remote, stream, ciphers, conn);
                     _ = RunResourceRecovery(remote, stream, ciphers, conn);

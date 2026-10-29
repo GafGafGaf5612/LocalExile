@@ -98,6 +98,8 @@ partial class Program
     {
         var layout = conn.Layout;
         if (Environment.GetEnvironmentVariable("Game_MONSTERS") == "0") return;
+        // A capture tour only waits for the recorder: no monsters to attack the character meanwhile.
+        if (CaptureTour.Active(CharacterName(conn))) return;
         // An instance entered before keeps its monsters as the last connection left them: where they were, with their
         // damage; the dead stay dead (#12).
         if (conn.Instance.Monsters is { } saved)
