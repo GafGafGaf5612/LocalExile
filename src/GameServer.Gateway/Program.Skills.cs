@@ -14,10 +14,11 @@ partial class Program
     // refused (GemDisabled).
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
-        // One build reads one snapshot of the character's stats: every gem's cast time and panel rows used to recompute
-        // the whole calculation (CharacterPlayerStats) per gem, inside the send gate.
+        // One build reads one snapshot of the character's stats, final stats and supported gems: every gem's cast time,
+        // hit, crit and panel rows used to recompute them (CharacterPlayerStats, FinalPlayerStats, SupportedSkill) five or
+        // six times per gem, 180-270 ms per build in the Debug server, inside the send gate.
         var outer = StatsScope.Value;
-        if (outer is null) StatsScope.Value = (conn, CharacterPlayerStatsCore(conn, out _));
+        if (outer is null) StatsScope.Value = new(conn, CharacterPlayerStatsCore(conn, out _));
         try
         {
             var player = FinalPlayerStats(conn).ToList();
@@ -26,8 +27,19 @@ partial class Program
         finally { if (outer is null) StatsScope.Value = null; }
     }
 
-    /// <summary>The character's stats for the PlayerSkills build running on this flow, reused instead of recomputed.</summary>
-    static readonly AsyncLocal<(ClientState Conn, Dictionary<uint, int> Stats)?> StatsScope = new();
+    /// <summary>The PlayerSkills build running on this flow: what it computed once and reuses instead of recomputing.</summary>
+    sealed class SkillBuildScope(ClientState conn, Dictionary<uint, int> stats)
+    {
+        public ClientState Conn => conn;
+        public Dictionary<uint, int> Stats => stats;
+        public List<(uint, int)>? Final;
+        public readonly Dictionary<ushort, SupportedGem> Supported = [];
+    }
+
+    static readonly AsyncLocal<SkillBuildScope?> StatsScope = new();
+
+    static SkillBuildScope? BuildScopeOf(ClientState conn) =>
+        StatsScope.Value is { } scope && ReferenceEquals(scope.Conn, conn) ? scope : null;
 
     // The player's stats as the server sets them: what /set_stat set, then the attack's final values computed from them
     // (the client derives nothing itself: 11-skills.md §4).
@@ -56,6 +68,12 @@ partial class Program
     ];
 
     static IEnumerable<(uint, int)> FinalPlayerStats(ClientState conn)
+    {
+        if (BuildScopeOf(conn) is not { } scope) return FinalPlayerStatsCore(conn);
+        return [.. scope.Final ??= [.. FinalPlayerStatsCore(conn)]];
+    }
+
+    static IEnumerable<(uint, int)> FinalPlayerStatsCore(ClientState conn)
     {
         var stats = CharacterPlayerStats(conn);
         // Quivers are gated by main_hand_weapon_type on the client, independently of the model's weapon stance. Only the
@@ -111,7 +129,7 @@ partial class Program
     // What /set_stat set, then the class's attributes and pools and the passives' stats for the stats it did not set.
     internal static Dictionary<uint, int> CharacterPlayerStats(ClientState conn)
     {
-        if (StatsScope.Value is { } scope && ReferenceEquals(scope.Conn, conn)) return new(scope.Stats);
+        if (BuildScopeOf(conn) is { } scope) return new(scope.Stats);
         return CharacterPlayerStatsCore(conn, out _);
     }
 

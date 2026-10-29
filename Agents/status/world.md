@@ -19,7 +19,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [05](../docs/protocol/05-inventories-and-ui.md).
 - Latency acks (0x1b/0x1c) and the HNC side channel, answered from the read loop ahead of other handlers, the client's
   stale tick queue cleared on each connection (server delay 0xFFFF, so F1 NETWORK reads 0 and spikes only on overdue
-  ticks; ticks or handlers over 50 ms are logged), visibility (wake zone), click-to-move.
+  ticks; ticks or handlers over 50 ms are logged), visibility (wake zone), click-to-move. A full skill-list rebuild,
+  which holds the send gate, takes 5–10 ms for a 10-gem character (180–270 ms before 2026-10-29).
   Code: Gateway, `Hnc.cs`, `ClientInbox.cs`.
   Docs: [07](../docs/protocol/07-latency-visibility-movement.md).
 - The player's walk on the server is the client's own pathfinder and stepping, ported 1:1 (A* with the player's

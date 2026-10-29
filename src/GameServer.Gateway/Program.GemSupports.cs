@@ -8,7 +8,12 @@ partial class Program
 
     static SupportedGem SupportedSkill(ClientState conn, ushort skillId)
     {
-        lock (conn.Monsters) return SupportedSkillAt(conn, skillId, null);
+        if (BuildScopeOf(conn) is not { } scope)
+            lock (conn.Monsters) return SupportedSkillAt(conn, skillId, null);
+        // Within one PlayerSkills build each gem is resolved once; callers get their own copy of its stats.
+        if (!scope.Supported.TryGetValue(skillId, out var gem))
+            lock (conn.Monsters) scope.Supported[skillId] = gem = SupportedSkillAt(conn, skillId, null);
+        return gem with { Stats = new(gem.Stats) };
     }
 
     static SupportedGem SupportedSkillAt(ClientState conn, ushort skillId, GemRequirementSnapshot? requirements)
