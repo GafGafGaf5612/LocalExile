@@ -112,10 +112,15 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Spirit/Abyss-jewel counting remain open; these changes do not certify entire charge rows.
   Every panel row now has a server derivation (the 2026-10-29 batch in Status covers the Defence estimates, off-hand,
   effective critical, secondary and damaging-ailment rows); what remains for #75 is native validation of that batch
-  and of the converted and Blood Charges, actual ailment application behind the ailment rows, the charge types without
-  a player source here (Spirit and Siphoning need Elder/Shaper and abyss-jewel item counting, Blitz and Challenger
-  have none in 3.29), Reap's damage over time debuff and Vaal Reap's temporary Blood Charge maximum, and executing the
-  secondary hits (Bear Trap, Herald of Ice) whose rows are display-only.
+  and of the converted and Blood Charges, actual ailment application behind the ailment rows, Reap's damage over time
+  debuff and Vaal Reap's temporary Blood Charge maximum, and executing the secondary hits (Bear Trap, Herald of Ice)
+  whose rows are display-only. Deferred (2026-10-29, owner's decision): Spirit and Siphoning Charges. Their only 3.29
+  player sources are unique mods (`maximum_spirit_charges_per_abyss_jewel_equipped`,
+  `maximum_siphoning_charges_per_elder_or_shaper_item_equipped`), so they need, in the items area, unique definitions
+  beyond Mageblood (#60), abyss jewels socketable into abyssal sockets (the Stygian Vise is created without its socket,
+  `PlayerInventories.Socket` takes gems only, `ItemModStats.Global` reads no socketed item's mods) and Shaper/Elder
+  influence on the `Item` record with its Base component wire flags (undocumented in 13-items.md). Blitz and Challenger
+  Charges have no 3.29 player source at all.
   Selected area/item-rarity/minion-increased aliases now use one raw actor-plus-own snapshot, with explicit final
   zero/replacement precedence, source clearing and Cyclone radius preservation. `SendPlayer` initial/transition
   creation and later skill refreshes share the snapshot path. Real support controls cover ordinary availability.

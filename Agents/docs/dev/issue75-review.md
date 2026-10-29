@@ -947,10 +947,11 @@ Prioritize the following confirmed partial systems, then reconcile every remaini
 4. Damaging-ailment application, duration, critical and stacking mechanics: the panel ranges are display rows
    (batch above); Protocol 20 section 3 documents helpers, but also the missing execution paths.
 5. Current-branch validation of the incoming Ward implementation, the defence estimates (batch above), remaining
-   regeneration/recharge conversions, specialized leech, the converted charges and Blood Charges (above), the special
-   charge types without a reachable player source here (Spirit and Siphoning need abyss-jewel / Elder-Shaper item
-   counting, Blitz and Challenger have no 3.29 player source), minion/brand/trap/mine mechanics and conditional
-   source operators documented in the roadmap.
+   regeneration/recharge conversions, specialized leech, the converted charges and Blood Charges (above),
+   minion/brand/trap/mine mechanics and conditional source operators documented in the roadmap. Spirit and Siphoning
+   Charges are deferred by the owner (2026-10-29): their sources are unique mods, which need unique definitions (#60),
+   abyss-jewel socketing and Shaper/Elder influence in the item model first (the combat roadmap lists the gaps); Blitz
+   and Challenger have no 3.29 player source.
 6. Current-branch native validation of source changes, link/equipment changes, overrides, clearing, transitions and relog.
 
 Do not turn historical client observations, hidden rows, sparse zero packets or source-name matches into completion.
