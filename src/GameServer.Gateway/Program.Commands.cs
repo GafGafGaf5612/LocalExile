@@ -907,11 +907,42 @@ partial class Program
             }
             catch (FormatException) { await conn.Commands!.Reply("Numbers only (decimal or 0x…)."); }
         })
-        .Add("goto", "/goto <area id or name> (dev: change area as if through an area transition, e.g. /goto 1_1_3)", async args =>
+        .Add("atlas", "/atlas [layout] (dev: show or choose the fallback layout generic maps open)", async args =>
         {
-            string target = string.Join(' ', args);
+            var atlas = MapDevices.Value.Atlas;
+            if (atlas is null || atlas.Layouts.Count == 0) { await conn.Commands!.Reply("No Atlas layouts: extract AtlasNode.json and WorldAreas.json."); return; }
+            if (args.Length == 0)
+            {
+                var current = atlas.Selected(CharacterName(conn));
+                await conn.Commands!.Reply($"Atlas layout: {current?.Name} ({current?.Id}); {atlas.Layouts.Count} layouts available.");
+                return;
+            }
+            string query = string.Join(' ', args);
+            if (atlas.Find(query) is not { } layout) { await conn.Commands!.Reply($"No Atlas layout \"{query}\"."); return; }
+            atlas.Select(CharacterName(conn), layout);
+            await conn.Commands!.Reply($"Atlas layout set to {layout.Name} ({layout.Id}, tier {layout.Tier}).");
+        })
+        .Add("goto", "/goto <area id or name> [seed] (dev: change area as if through an area transition, e.g. /goto 1_1_3; with a seed, a new instance at that seed, e.g. /goto 1_1_5 1384217569)", async args =>
+        {
+            // A last number is the seed: a new instance at it, as the capture tour's stops (towns keep seed 1).
+            uint seed = args.Length > 1 && uint.TryParse(args[^1], out var s) && s != 0 ? s : 0;
+            string target = string.Join(' ', seed != 0 ? args[..^1] : args);
             if (AreaTransitionCatalog.HashOf(target) is not { } hash) { await conn.Commands!.Reply($"Unknown area \"{target}\" (needs data/area-transitions.json)."); return; }
-            await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, false), $"/goto {target}");
+            await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, seed != 0) { Seed = seed },
+                seed != 0 ? $"/goto {target} seed {seed}" : $"/goto {target}");
+        })
+        .Add("tour", "/tour <list file> | stop | status (dev, live.ps1 -Walkmaps: visit every \"<area id> <seed>\" of the file in a new instance and record it; levelgen tourlist writes one)", async args =>
+        {
+            string character = CharacterName(conn);
+            string what = args.Length > 0 ? args[0] : "status";
+            if (what.Equals("stop", StringComparison.OrdinalIgnoreCase)) { await conn.Commands!.Reply(CaptureTour.Stop(character)); return; }
+            if (what.Equals("status", StringComparison.OrdinalIgnoreCase)) { await conn.Commands!.Reply(CaptureTour.Status(character)); return; }
+            string path = string.Join(' ', args);
+            if (!AreaLayouts.Recording) { await conn.Commands!.Reply("A tour needs the walk-map recorder: start the servers with live.ps1 -Walkmaps."); return; }
+            if (!File.Exists(path)) { await conn.Commands!.Reply($"No file {path} (relative to the Gateway's directory, the repository root)."); return; }
+            await conn.Commands!.Reply(CaptureTour.Start(character, path));
+            // Not awaited: a step waits for the client to arrive or to fail.
+            _ = ContinueTour(remote, stream, ciphers, conn, starting: true);
         })
         .Add("league_flag", "/league_flag [<id> [off]] (dev: list, set or clear league quest flags by the client's id, e.g. /league_flag 350)", async args =>
         {

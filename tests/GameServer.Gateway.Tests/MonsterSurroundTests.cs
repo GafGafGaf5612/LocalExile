@@ -1,3 +1,5 @@
+using GameServer.Core.World;
+
 namespace GameServer.Gateway.Tests;
 
 public class MonsterSurroundTests
@@ -28,20 +30,4 @@ public class MonsterSurroundTests
         Assert.Contains(inner, c => c.X < 100);
     }
 
-    [Fact]
-    public void A_slot_stays_while_it_is_free_and_the_player_stands()
-    {
-        var first = MonsterSurround.Assign([new(1, 130, 100, 1, null)], (100, 100), [], Open)[1];
-        var again = MonsterSurround.Assign([new(1, first.X + 1, first.Y, 1, first)], (100, 100), [], Open)[1];
-        Assert.Equal(first, again);
-    }
-
-    [Fact]
-    public void Standing_bodies_and_unwalkable_cells_are_never_given_out()
-    {
-        var slot = MonsterSurround.Assign([new(1, 130, 100, 1, null)], (100, 100), [(104, 100, 1)],
-            (x, y, _) => y >= 100)[1];
-        Assert.True(slot.Y >= 100);
-        Assert.True(Math.Max(Math.Abs(slot.X - 104), Math.Abs(slot.Y - 100)) >= 4);
-    }
 }

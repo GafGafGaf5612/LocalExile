@@ -80,30 +80,4 @@ public partial class VaalSoulCompositionTests
         Assert.Equal(0u, f.Conn.VaalSouls.Read().Single(b => b.ActiveSkillsRow == 247).Current);
     }
 
-    [Fact]
-    public void Current_Vaal_requirements_keep_wide_raw_buckets_and_never_rebuild_or_refill_cached_pools()
-    {
-        using var f = new VaalSoulGatewayTests.Fixture();
-        UseCalculatedRequirements(f.Conn);
-        f.Gems("SkillGemVaalGrace");
-        f.Items.Add(6, 0, 0, AttributeRing(("additional_dexterity", int.MaxValue),
-            ("additional_dexterity", int.MaxValue)));
-        f.Conn.PlayerStats[Key("base_dexterity")] = -int.MaxValue;
-        f.Conn.PlayerStats[Key("dexterity_+%")] = -50;
-        f.Conn.Pools = Program.PoolsFor(f.Conn, 100);
-        Assert.Equal(1073741831, f.Conn.Pools.Dexterity);
-        f.Conn.PlayerLife = 100; f.Conn.PlayerMana = 77;
-        var cached = f.Conn.Pools;
-        Assert.True(f.Kill()); Assert.Equal(new VaalSoulBudget(247, 50, 1), f.Budget);
-        f.Conn.PlayerStats[Key("additional_dexterity")] = 0; // Replaces both affixes, before scaling.
-        Program.RefreshVaalSouls(f.Conn);
-        Assert.Empty(f.Conn.VaalSouls.Read());
-        Assert.Same(cached, f.Conn.Pools);
-        f.Conn.PlayerStats.Remove(Key("additional_dexterity"));
-        Program.RefreshVaalSouls(f.Conn);
-        Assert.Equal(new VaalSoulBudget(247, 50, 0), f.Budget);
-        Assert.True(f.Kill()); Assert.Equal(1u, f.Budget.Current);
-        Assert.Same(cached, f.Conn.Pools);
-        Assert.Equal(100u, f.Conn.PlayerLife); Assert.Equal(77u, f.Conn.PlayerMana);
-    }
 }

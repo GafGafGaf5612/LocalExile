@@ -955,6 +955,21 @@ It corroborates existing notes and changes nothing here:
 - The setter `0x1424cfaf0`, the change notification `0x1424cfd00` and the skill record/list/update readers carry no
   panel formula. The bundle's own OBSERVATIONS state it measures no official-server behaviour.
 
+## Integration base (2026-10-29)
+
+Branch head `0cfcfdd7` merged with `main` `b2737133` (156 commits past the previous base `0f49c07d`: the test-suite
+trim `bd81101c`, the channelled-skill generation, the PlayerSkills build scope, Dreadful Attitude, the Aristocrat ailment
+conditions, map drops). Conflicts: `Program.Skills.cs` (the panel-source snapshot installed as main's `SkillBuildScope`;
+`FinalPlayerStatsCore` delegates to the branch's `FinalPlayerStatsFrom`), `Program.Combat.cs` (`criticalRoll` and
+`channelGeneration` carried together through `CastGemSkill`, `LaunchProjectile` and `AreaSkillHit`; the target sweep
+keeps `excludeMonster` with main's channel checks), `13-items.md` (both Armour descriptions), and 34 trimmed test files
+(main's trim kept; the branch's version of a kept test where the branch changed it; the branch's added tests for
+branch-only behaviour kept; the contact and Rage fixtures pass the new `channelGeneration` argument). On the merged
+tree: solution build clean; Core 389, Data 34, Gateway 2556 pass (one timing-sensitive case,
+`GameModeAilmentIntegrationTests.Chill_slows_attack_and_spell_timers_once_in_both_modes`, failed in two of three full
+concurrent runs and passes alone and in the third; the test file is unchanged on the branch). Still no native
+validation of the panel batches on this base.
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.

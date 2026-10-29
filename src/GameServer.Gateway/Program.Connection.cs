@@ -101,7 +101,8 @@ partial class Program
                     return;
                 }
                 ushort areaHash = resolved.Area;
-                uint seed = resolved.Seed;
+                // The client generates the area at the seed of 0x1d: one the Gateway can generate too.
+                uint seed = AreaLayouts.PlayableSeed(areaHash, resolved.Seed);
                 ulong instanceId = resolved.Instance;
                 var layout = AreaLayouts.For(areaHash, seed);
                 AreaLayouts.Announce(layout, seed);
@@ -113,6 +114,7 @@ partial class Program
 
                 // Anything after the opening was already encrypted by the client.
                 var conn = new ClientState(layout, ticket, seed) { Character = resolved.Character, CharacterId = resolved.CharacterId, CosmeticPortalVariation = resolved.Character is { Length: > 0 } savedCharacter ? CharacterSaves.PortalCosmetic(savedCharacter) : (ushort)0, Account = resolved.Account, League = resolved.League, Hardcore = resolved.Hardcore, Ssf = resolved.Ssf, Ruthless = resolved.Ruthless, CameFrom = AreaLayouts.CameFrom.TryRemove(ticket, out var from) ? from : null, Instance = Instances.Enter(instanceId, resolved.Created, resolved.Ssf ? resolved.CharacterId?.ToString("N") : null), InstanceNumber = instanceId, LastTown = resolved.LastTown, ClassRow = Skills.RowOfClass(resolved.Class), Pools = CharacterStats.For(Skills.ClassFor(Skills.RowOfClass(resolved.Class)), resolved.Level), Hnc = new HncSender(keyring.Key(opening.Ticket)), Keyring = keyring };
+                ConnectionMetrics.Add(ciphers, conn.Performance);
                 left = conn;
                 RegisterRuthlessVitalsAdmission(conn);
                 // Another connection's requests (a trade, a party invite) reach this client through its own send gate.
@@ -136,7 +138,7 @@ partial class Program
                 }
                 Console.WriteLine($"[gateway] {remote} {CharacterName(conn)}: {SkillsFor(conn).ClassFor(conn.ClassRow).ObjectType} (Characters row {conn.ClassRow}), level {conn.Pools.Level} (experience {conn.Experience}, {conn.Passives.Count} passive(s), life {conn.Pools.Life}, mana {conn.Pools.Mana}, attack speed +{conn.Pools.AttackSpeedPct}%), league {conn.League ?? "?"}");
                 // The read loop answers ticks; everything else runs in order on the handler task (ClientInbox, issue #46).
-                var inbox = new ClientInbox();
+                var inbox = new ClientInbox(conn.Performance);
                 using var reading = new CancellationTokenSource();
                 var handlers = RunHandlers(remote, stream, ciphers, conn, inbox, reading);
                 try
@@ -239,6 +241,8 @@ partial class Program
                 if (conn.Closed) break;
                 long start = Stopwatch.GetTimestamp();
                 await OnClientMessages(remote, stream, ciphers, batch.Messages, batch.Unknown, conn, batch.ReadAt);
+                conn.Performance.Elapsed(LatencyPhase.Handler, start);
+                conn.Performance.MaybeLog(remote, inbox.PendingBatches);
                 var took = Stopwatch.GetElapsedTime(start);
                 if (took > ClientInbox.SlowAfter)
                 {
@@ -252,6 +256,8 @@ partial class Program
         {
             Console.WriteLine($"[gateway] {remote} error: {ex.GetType().Name}: {ex.Message}");
         }
+        inbox.Complete();
+        inbox.DiscardPending();
         lock (conn.Monsters)
         {
             conn.Closed = true;
@@ -317,7 +323,11 @@ partial class Program
         Func<bool>? still = null, Func<byte[]?>? atGate = null)
     {
         var gate = SendGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
+        var performance = MetricsFor(ciphers);
+        long waitingAt = Stopwatch.GetTimestamp();
         await gate.WaitAsync();
+        performance.Elapsed(LatencyPhase.SendWait, waitingAt);
+        long heldAt = Stopwatch.GetTimestamp();
         try
         {
             if (ProjectileOutputGuard.Value is { } projectileGuard && !projectileGuard()) return;
@@ -333,7 +343,7 @@ partial class Program
             await Write(stream, ciphers, bytes);
             if (trace is not null) Console.WriteLine($"[move-trace] qpc={Stopwatch.GetTimestamp()} send {trace}");
         }
-        finally { gate.Release(); }
+        finally { gate.Release(); performance.Elapsed(LatencyPhase.SendHold, heldAt); }
     }
 
     // The wire itself: the keystream must be applied and written in one order, so encryption and the write share this
@@ -341,13 +351,19 @@ partial class Program
     static async Task Write(NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes)
     {
         var wire = WireGates.GetValue(ciphers, _ => new SemaphoreSlim(1, 1));
+        var performance = MetricsFor(ciphers);
+        long waitingAt = Stopwatch.GetTimestamp();
         await wire.WaitAsync();
+        performance.Elapsed(LatencyPhase.WireWait, waitingAt);
+        long heldAt = Stopwatch.GetTimestamp();
         try
         {
             ciphers.Send.Process(bytes);
-            await stream.WriteAsync(bytes);
+            long writeAt = Stopwatch.GetTimestamp();
+            try { await stream.WriteAsync(bytes); }
+            finally { performance.Elapsed(LatencyPhase.SocketWrite, writeAt); }
         }
-        finally { wire.Release(); }
+        finally { wire.Release(); performance.Elapsed(LatencyPhase.WireHold, heldAt); }
     }
 
     // A tick's answer (0x1c) only reports that the server is there: it needs no game state, so it takes the wire alone
@@ -355,4 +371,6 @@ partial class Program
     static Task SendPong(NetworkStream stream, ConnectionCiphers ciphers, byte[] bytes) => Write(stream, ciphers, bytes);
 
     internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, SemaphoreSlim> WireGates = new();
+    internal static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ConnectionCiphers, ConnectionPerformance> ConnectionMetrics = new();
+    internal static ConnectionPerformance MetricsFor(ConnectionCiphers ciphers) => ConnectionMetrics.GetValue(ciphers, _ => new());
 }

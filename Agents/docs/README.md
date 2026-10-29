@@ -40,7 +40,8 @@ Protocol reference and reverse-engineering notes for the Path of Exile 3.29.3b c
 ## Generated references
 | Doc | Content |
 |---|---|
-| [protocol/schema.md](protocol/schema.md) ([json](protocol/schema.json)) | read sequence of every component deserializer and of 333 instance/world message classes |
+| [protocol/schema.md](protocol/schema.md) ([json](protocol/schema.json)) | read sequence of every component deserializer and of every S→C message class (instance, world, login, patch) |
+| [protocol/c2s.md](protocol/c2s.md) ([json](protocol/c2s.json)) | every C→S message (instance, login, patch): class, writer, length, senders |
 | [re/components.md](re/components.md) ([json](re/components.json)) | every component class the client registers: pool, factory, vtables |
 | [re/object-types.md](re/object-types.md) | component list of every object type (`Metadata/...`), from the `.ot` files |
 
@@ -54,6 +55,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 |---|---|
 | [../GettingStarted.md](../GettingStarted.md) | setup from a fresh clone, third-party tools, troubleshooting |
 | [re/tooling.md](re/tooling.md) | Ghidra headless scripts, Python helpers, GGPK dump tool, Frida through REA, recipes |
+| [re/011-level-generation.md](re/011-level-generation.md) | the client's level generator: stages, RNG, topology pick, tile hash, generation traces; the server port in progress |
 | [dev/live-testing.md](dev/live-testing.md) | the older live-testing notes (GettingStarted supersedes them) |
 | [dev/passive-graph-data.md](dev/passive-graph-data.md) | pinned PSG format and read-only analysis exports; no client installation or gameplay integration |
 | [dev/issue75-port.md](dev/issue75-port.md) | completed character-stat jobs ported from LocalExile, source revisions, integration decisions and validation limits |
@@ -64,6 +66,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [game/fortification.md](game/fortification.md) | melee-hit protection and the explicit server model |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
 | [game/gambler.md](game/gambler.md) | Gambler node checklist, incoming elemental ailments and read-only opt-in |
+| [game/aristocrat.md](game/aristocrat.md) | Aristocrat node checklist: gem levels/quality, attribute requirements and conditional immunities |
 | [game/ascendancies.md](game/ascendancies.md) | selection, points, saves and the Phrecia play gate |
 | [game/antiquarian.md](game/antiquarian.md) | all nine node consumers, verified-graph admission, legal builds and native acceptance |
 | [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |

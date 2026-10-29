@@ -12,21 +12,6 @@ public class ImpaleTests
     }
 
     [Fact]
-    public void A_stack_lasts_five_hits()
-    {
-        var impale = new ImpaleState();
-        impale.Apply(100);
-        for (int hit = 1; hit <= ImpaleState.HitsPerStack - 1; hit++)
-        {
-            impale.AfterHit();
-            Assert.Equal(10, impale.Bonus, 6);
-        }
-        impale.AfterHit();
-        Assert.Equal(0, impale.Stacks);
-        Assert.Equal(0, impale.Bonus, 6);
-    }
-
-    [Fact]
     public void Stacks_are_limited_by_hit_consumption_and_expiry_not_an_artificial_cap()
     {
         var impale = new ImpaleState();
@@ -36,26 +21,6 @@ public class ImpaleTests
         Assert.True(impale.Apply(100));
         Assert.Equal(6, impale.Stacks);
         Assert.Equal(60, impale.Bonus);
-    }
-
-    [Fact]
-    public void A_hit_with_no_physical_damage_cannot_impale()
-    {
-        var impale = new ImpaleState();
-        Assert.False(impale.Apply(0));
-        Assert.Equal(0, impale.Stacks);
-    }
-
-    [Fact]
-    public void A_new_impale_keeps_all_five_of_its_hits()
-    {
-        var impale = new ImpaleState();
-        impale.Apply(100);
-        // The applying hit does not consume the instance it just created.
-        for (int hit = 0; hit < ImpaleState.HitsPerStack - 1; hit++) impale.AfterHit();
-        Assert.Equal(10, impale.Bonus, 6);
-        impale.AfterHit();
-        Assert.Equal(0, impale.Stacks);
     }
 
     [Fact]
@@ -96,14 +61,4 @@ public class ImpaleTests
         Assert.Equal(0, impale.Stacks);
     }
 
-    [Fact]
-    public void Clear_drops_every_stack()
-    {
-        var impale = new ImpaleState();
-        impale.Apply(100);
-        impale.Apply(100);
-        impale.Clear();
-        Assert.Equal(0, impale.Stacks);
-        Assert.Equal(0, impale.Bonus, 6);
-    }
 }

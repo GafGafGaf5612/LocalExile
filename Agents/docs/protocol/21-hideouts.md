@@ -98,7 +98,7 @@ component, so in a hideout it needs the 6 bytes (without them: "Buffer Underflow
 `HideoutDoodad` record, `WaypointObject.Hideout`.
 
 **Instances:** a private instance per character like other areas (Auth re-enters the character's live one); hideouts
-always use seed 1, also with `Game_RANDOM_SEEDS=1` (`WorldAreaHideouts`).
+always use seed 1, also where other areas get random seeds (`WorldAreaHideouts`).
 
 ## 3. Going there
 
@@ -123,11 +123,9 @@ appears next to the hideout's waypoint. The hideout's waypoint opens the World p
 
 The map device's `.ot`: Targetable `is_map_device = true`, `required_league_quest_flag = "UnlockedMapDevice"`;
 StateMachine `define_shared_state = "opening; active;"` with `per_player_quest_flag_state_opening_1 = "MapDeviceOpening"`
-and `…_active_1 = "MapDeviceActive"`. Clicking it sends C→S 0x24; the server walks there and sends **S→C 0x7b kind 5**,
-which opens the **map device window** (case 5 → listeners at instance +0x1778 → HUD `0x140dcd9a0`, the window at HUD
-+0x7d8 built by `0x140c276c0`, mode 0xd). Its other modes are on +0x17f8 (`0x140dce1f0`, mode 0x5e) and +0x1878
-(`0x140dce290`, mode 0x56). The window's slots are Inventories row 13 `Map1` (3 × 2), already registered on login.
-The client sent C→S `0x00d8 000000` once while the window was open (not decoded).
+and `…_active_1 = "MapDeviceActive"`. Clicking it sends C→S 0x24; the server walks there and sends **S→C 0x7b kind 0x2b** (`HideoutMapDeviceScreen` in the screen table at `0x142fc5920`), which opens the Atlas map device with its four starting map nodes. Kind 5 (`MapDeviceScreen`) opens the older, non-Atlas window; it has no node selection and opens the default layout. The hideout window's slots are Inventories row 13 `Map1` (3 × 2), already registered on login.
+
+**Atlas node selection.** A click on a node sends **C→S 0x00e7** (5 bytes: u16 BE WorldAreas HASH16, u8 0x0d). The Gateway maps the HASH16 to an `AtlasCatalog.Layout` and stores it per character; the next generic map key opens that layout. The client refuses to activate an Atlas map unless the normal quest flag **EndGameAvailable** is set ("You do not have the required Quest State to access this area"; live 2026-10-29), so every character gets it..
 
 ## 5. The map device: slots, Activate, portals
 
@@ -145,10 +143,12 @@ sequenceDiagram
 ```
 
 **Slots.** Inventories row 13 `Map1` (3 × 2, inventory id 14) is an ordinary grid: items go in and out with the usual
-item messages (13-items.md). The server takes only the ItemClasses `Map` and `MapFragment` there
-(`PlayerInventories.Accepts`). Maps need the item **Map** component (read `0x1423f3f10`, write `0x1423f3e60`: u8 +0x19,
-u8 +0x18, u8 flag, then a u32 HASH32 when the flag is set; the server sends three zeros). `/item Beach Map` makes one
-(`MapAtlasBeach`, tier 2).
+item messages (13-items.md). The server takes the ItemClasses `Map`, `MapKey` and `MapFragment` there
+(`PlayerInventories.Accepts`). Area-named maps need the item **Map** component (read `0x1423f3f10`, write
+`0x1423f3e60`: u8 +0x19, u8 +0x18, u8 flag, then a u32 HASH32 when the flag is set; the server sends three zeros).
+`/item Beach Map` makes one (`MapAtlasBeach`, tier 2). Generic 3.29 maps need the **MapKey** component (read
+`0x1424ae7c0`: u8 flags, then optional u32/u16/u8; zeros are enough because `MapKeyTierN` names the tier, and the server
+sends one zero byte). `/item Map (Tier 5)` makes a tier-5 map.
 
 **Activate** is **C→S 0x00d8** (5 bytes): u16 BE, u8. The window's button handler `0x140c2a1c0` (window mode 0xd)
 calls `0x142166480`, which writes a u16 from the target its slots name (+0x7b; 0 seen with a map in the slots) and a
@@ -157,6 +157,12 @@ The server checks the slots itself (`MapDevice.Check`): only maps and map fragme
 nothing is consumed and a chat line (S→C 0x17) gives the reason. Then the slots are emptied (0xbf), the map's area
 opens (Maps.dat `BaseItemTypesKey` → `Regular_WorldAreasKey`), and six portals appear on a ring of 16 cells around
 the device. Fragments are consumed with the map but add nothing yet.
+
+Generic 3.29 maps use the **MapKey** component (read `0x1424ae7c0`: u8 flags, then optional u32/u16/u8; zero is enough
+because `MapKeyTierN` names the tier). `/item Map (Tier 5)` makes one. `MapKeys.dat` supplies its tier and the map opens
+the Atlas layout selected for the character in the native panel; `/atlas <layout id or name>` is a dev fallback. The
+first starting node (Cells) is the default. The map area currently keeps the layout's WorldAreas level; map-tier level
+selection is still to come.
 
 **Portals** are `Metadata/MiscellaneousObjects/MultiplexPortal` (`MapPortalObject`): Positioned, BaseEvents, StateMachine,
 Animated, Portal, Transitionable, MinimapIcon, InteractionAction, all read except BaseEvents (Frida

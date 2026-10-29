@@ -423,7 +423,7 @@ partial class Program
                 }
             }
             else if (id == InstanceProtocol.ChannelEndId)
-                conn.ChannelSkill = 0;
+                lock (conn.Monsters) { conn.ChannelSkill = 0; conn.ChannelGeneration++; }
             else if (id == InstanceProtocol.SwapWeaponsId)
             {
                 // The weapon swap: the hands' rows and the other set's trade their items (the client shows the active set in
@@ -483,6 +483,8 @@ partial class Program
             }
             else if (id == InstanceMapDevice.ActivateId)
                 await ActivateMapDevice(remote, stream, ciphers, conn, InstanceMapDevice.ReadActivate(bytes));
+            else if (id == InstanceMapDevice.SelectMapId)
+                await SelectAtlasMap(remote, stream, ciphers, conn, InstanceMapDevice.ReadSelectMap(bytes));
             else if (id == InstanceStash.MoveTabId)
                 Console.WriteLine($"[gateway] {remote} <= 0x00d1 stash tab into a folder (not handled): {Convert.ToHexString(bytes)}");
             else if (id == InstanceNpcs.OptionId)
@@ -523,7 +525,11 @@ partial class Program
             else if (id == InstanceSocial.TradeRequestId)
                 await RequestTrade(remote, stream, ciphers, conn, InstanceSocial.ReadTradeRequest(bytes));
             else if (id == InstanceSocial.PartyInviteId)
-                Console.WriteLine($"[gateway] {remote} <= 0x0093 party invite to \"{InstanceSocial.ReadPartyInvite(bytes)}\" (not handled yet)");
+                await InviteToParty(remote, conn, InstanceSocial.ReadPartyInvite(bytes));
+            else if (id == InstanceSocial.PartyAcceptId)
+                await AcceptParty(remote, conn, InstanceSocial.ReadPartyAccept(bytes));
+            else if (id == InstanceSocial.PartyLeaveId)
+                await LeaveParty(remote, conn, InstanceSocial.ReadPartyAccept(bytes));
             else if (id == InstanceSocial.FriendAddId)
                 Console.WriteLine($"[gateway] {remote} <= 0x0080 add friend \"{InstanceSocial.ReadFriendAdd(bytes).Name}\" (not handled yet)");
             else if (id == InstanceProtocol.AreaGeneratedId)
@@ -597,11 +603,16 @@ partial class Program
                     await PushOutOfCollision(remote, stream, ciphers, conn);
                     await SpawnMapReturnPortal(remote, stream, ciphers, conn);
                     await SpawnTownPortals(remote, stream, ciphers, conn);
+                    await conn.Commands!.Reply($"Area generated at Seed: {conn.Seed}");
+                    // An area the Gateway does not generate itself (ServerLevels) runs on the client's layout alone.
+                    if (!ServerLevels.IsSupported(conn.Layout.Id) && !CaptureTour.Active(CharacterName(conn)))
+                        await conn.Commands!.Reply(ServerLevels.UnsupportedMessage);
                     _ = RunMonsterRegeneration(remote, stream, ciphers, conn);
                     await SyncQuestItems(remote, stream, ciphers, conn, removeItems: true);   // a1q5: the Medicine Chest's flag
                     _ = RunMercyMission(remote, stream, ciphers, conn);
                     _ = RunServerFrames(remote, stream, ciphers, conn);
                     _ = RunMonsterAi(remote, stream, ciphers, conn);
+                    _ = ContinueTour(remote, stream, ciphers, conn);
                     _ = RunLivingCollisions(remote, stream, ciphers, conn);
                     _ = RunPlayerTick(remote, stream, ciphers, conn);
                     _ = RunResourceRecovery(remote, stream, ciphers, conn);

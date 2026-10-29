@@ -408,18 +408,20 @@ partial class Program
 
     // Advance and replace actor motion/life in the same critical section. A flush followed by a separate
     // Monsters lock leaves a race in which the pump can consume the replacement as historical movement.
-    internal static IDisposable ProjectileMutation(ClientState conn, bool advance = true) => new ProjectileMutationScope(conn, advance);
+    internal static IDisposable ProjectileMutation(ClientState conn, bool advance = true, string? phase = null) => new ProjectileMutationScope(conn, advance, phase);
     internal static double ProjectileWorldTime(ClientState conn) => conn.ProjectileRuntime is { Active: true } session
         ? session.Runtime.Now / (double)ProjectileRuntime.QuantaPerSecond : conn.Clock.Elapsed.TotalSeconds;
 
     sealed class ProjectileMutationScope : IDisposable
     {
         readonly System.Threading.Lock experience;
-        readonly object actors;
-        public ProjectileMutationScope(ClientState conn, bool advance)
+        readonly ConnectionPerformance.LockScope actorLock;
+        public ProjectileMutationScope(ClientState conn, bool advance, string? phase)
         {
-            experience = LevelUpdatesFor(conn).Gate; actors = conn.Monsters;
-            experience.Enter(); Monitor.Enter(actors);
+            experience = LevelUpdatesFor(conn).Gate;
+            experience.Enter();
+            try { actorLock = conn.Performance.Lock(conn.Monsters, phase ?? "projectile"); }
+            catch { experience.Exit(); throw; }
             try
             {
                 if (advance && !conn.Paused && conn.ProjectileRuntime is { Active: true } session)
@@ -427,7 +429,7 @@ partial class Program
             }
             catch { Dispose(); throw; }
         }
-        public void Dispose() { Monitor.Exit(actors); experience.Exit(); }
+        public void Dispose() { try { actorLock.Dispose(); } finally { experience.Exit(); } }
     }
 
 }

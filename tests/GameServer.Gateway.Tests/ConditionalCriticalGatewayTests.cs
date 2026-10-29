@@ -134,7 +134,7 @@ public partial class ConditionalCriticalGatewayTests
             var gem = Assert.Single(gems, g => g.Id == Skill);
             return ((Task)Method("AreaSkillHit").Invoke(null,
                 ["accuracy-area-contact-test", writer.GetStream(), ciphers, Conn, Skill, gem, (32, 32), (34, 32),
-                    false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u, null])!).WaitAsync(TimeSpan.FromSeconds(5));
+                    false, (ushort)0, Conn.ActionCount, null, null, 1.0, 0u, null, null])!).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
         public async Task Launch((int X, int Y)? aim = null)
@@ -146,7 +146,7 @@ public partial class ConditionalCriticalGatewayTests
                 await ((Task)Method("LaunchProjectile").Invoke(null,
                     ["accuracy-gem-projectile-test", writer.GetStream(), ciphers, Conn, Skill,
                         (32, 32), aim ?? Target.Walk.Position(Conn.Clock.Elapsed.TotalSeconds), Conn.HitRecovery.Generation,
-                        42u, (ushort)0, Conn.ActionCount, null, null])!);
+                        42u, (ushort)0, Conn.ActionCount, null, null, null])!);
                 // Finish this use's flights and delayed blasts before observing its damage.
                 session.AdvanceTo(session.Runtime.Now + ProjectileRuntime.Time(4));
             }
@@ -264,29 +264,6 @@ public partial class ConditionalCriticalGatewayTests
     }
 
     [Theory]
-    [InlineData(50, false, 200, 14)]
-    [InlineData(0, false, 150, 12)]
-    [InlineData(50, true, 100, 10)]
-    public async Task Parsed_default_critical_multiplier_also_scales_the_direct_Fortification_source(
-        int unarmedMultiplier, bool cannotCrit, int damage, int stacks)
-    {
-        var random = new Draws(0);
-        using var f = new Contact(random, targetLife: 400);
-        f.Set("attack_minimum_added_chaos_damage", 100);
-        f.Set("attack_maximum_added_chaos_damage", 100);
-        f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, unarmedMultiplier);
-        f.Set("extra_critical_rolls_while_on_low_life", 0);
-        f.Set("global_cannot_crit", cannotCrit ? 1 : 0);
-        f.Set(FortificationSession.OnMeleeHit, 1);
-        f.Refresh();
-        Assert.Empty(f.Conn.Passives); // Ordinary raw-source control; no Phrecia class or node allocation.
-        await f.Use();
-        Assert.Equal(400u - (uint)damage, f.Target.Life);
-        Assert.Equal(stacks, Program.FortificationOf(f.Conn).Read(f.Conn.Clock.Elapsed.TotalSeconds).Current);
-        Assert.Equal(cannotCrit ? 0 : 1, random.Calls);
-    }
-
-    [Theory]
     [InlineData("Cyclone", null)]
     [InlineData("IceNova", null)]
     [InlineData("Fireball", null)]
@@ -314,21 +291,6 @@ public partial class ConditionalCriticalGatewayTests
         Assert.InRange((int)(f.Target.MaxLife - f.Target.Life),
             DamageModel.CriticalDamage((int)Math.Round(hit.MinTotal), multiplier),
             DamageModel.CriticalDamage((int)Math.Round(hit.MaxTotal), multiplier));
-    }
-
-    [Theory]
-    [InlineData("global_cannot_crit", null)]
-    [InlineData("virtual_global_cannot_crit", "Fireball")]
-    [InlineData("cannot_critical_strike_with_attacks", "Cyclone")]
-    public async Task Parsed_cannot_crit_takes_precedence_and_consumes_no_critical_draw(string stat, string? gem)
-    {
-        var random = new Draws();
-        using var f = new Contact(random, gem);
-        f.Set(stat, 1);
-        f.Refresh();
-        await f.Use();
-        await f.HitLands();
-        Assert.Equal(0, random.Calls);
     }
 
     [Theory]
@@ -366,166 +328,4 @@ public partial class ConditionalCriticalGatewayTests
         Assert.Equal(cannotCrit ? 1000u : 1500u, f.Target.MaxLife - f.Target.Life);
     }
 
-    [Fact]
-    public async Task Raw_node_stat_removal_and_unselected_ascendancy_refund_keep_lifecycle_separate()
-    {
-        using var f = new Contact(new Draws());
-        f.Conn.PlayerStats.Clear();
-        f.Conn.RefundPoints = 5;
-        var raw = Program.Passives.Stats([10135]);
-        Assert.Equal(1000, raw[Program.Stats.Key(AttackBaseCriticalStrike.UnarmedBaseStat)!.Value]);
-        Assert.Equal(1, raw[Program.Stats.Key("extra_critical_rolls_while_on_low_life")!.Value]);
-        Assert.Equal(50, raw[Program.Stats.Key(CriticalStrikePolicy.UnarmedMeleeMultiplierStat)!.Value]);
-        foreach (var (key, value) in raw) f.Conn.PlayerStats[key] = value;
-        f.Refresh();
-        Assert.Equal(200, f.Multiplier);
-        Assert.Equal(1, Program.CriticalExtraRolls(f.Conn));
-        // Raw-source controls allocate no node or Phrecia choice; upstream selection and play gates remain in force.
-        await f.Refund(10135);
-        Assert.Empty(f.Conn.Passives);
-        Assert.Null(f.Conn.MainAscendancy.Selection);
-        Assert.Empty(f.Conn.MainAscendancy.Allocated);
-        Assert.Equal(5, f.Conn.RefundPoints);
-        Assert.Equal(200, f.Multiplier);
-        foreach (uint key in raw.Keys) f.Conn.PlayerStats.Remove(key);
-        f.Refresh();
-        Assert.Equal(150, f.Multiplier);
-        Assert.Equal(0, Program.CriticalExtraRolls(f.Conn));
-        var panel = Program.CharacterPlayerStats(f.Conn);
-        Assert.Equal(150, panel[Program.Stats.Key("main_hand_critical_strike_multiplier")!.Value]);
-        Assert.Equal(0, panel[Program.Stats.Key("virtual_extra_critical_rolls")!.Value]);
-    }
-
-    [Fact]
-    public void Active_weapon_sets_and_selected_spell_or_ranged_attack_exclude_unarmed_multiplier()
-    {
-        using var f = new Contact(new Draws(), "Fireball");
-        f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
-        var inventory = PlayerInventories.For(f.Conn.Character!, Program.Items);
-        inventory.Add(PlayerInventories.Weapon2, 0, 0, ItemCatalog.Create(Program.Items.Find("Driftwood Wand")!));
-        Assert.Equal(200, Program.AttackCriticalMultiplier(f.Conn, Program.CharacterPlayerStats(f.Conn)));
-        foreach (string effect in new[] { "Fireball", "BurningArrow" })
-            Assert.Equal(150, Program.AttackCriticalMultiplier(f.Conn, Program.CharacterPlayerStats(f.Conn), Program.Skills.EffectRow(effect)));
-        inventory.SwapWeaponSets();
-        f.Refresh();
-        Assert.Equal(150, Program.AttackCriticalMultiplier(f.Conn, Program.CharacterPlayerStats(f.Conn)));
-        inventory.SwapWeaponSets();
-        f.Refresh();
-        Assert.Equal(200, Program.AttackCriticalMultiplier(f.Conn, Program.CharacterPlayerStats(f.Conn)));
-    }
-
-    [Fact]
-    public void Live_owner_conditions_sum_before_clamp_and_panel_virtuals_follow_them()
-    {
-        using var f = new Contact(new Draws());
-        f.Set("extra_critical_rolls", -2);
-        f.Set("extra_critical_rolls_during_focus", 1);
-        f.Set("keystone_sharp_and_brittle", 1);
-        Assert.Equal(0, Program.CriticalExtraRolls(f.Conn)); // -2 + low life + Sharp and Brittle.
-        f.Set("has_focus", 1);
-        Assert.Equal(1, Program.CriticalExtraRolls(f.Conn));
-        f.Conn.PlayerLife = 51;
-        Assert.Equal(0, Program.CriticalExtraRolls(f.Conn));
-        f.Set("low_life_threshold_%_override", 55);
-        Assert.Equal(1, Program.CriticalExtraRolls(f.Conn));
-        f.Conn.PlayerLife = 56;
-        f.Set("you_count_as_low_life_while_not_on_full_life", 1);
-        Assert.Equal(1, Program.CriticalExtraRolls(f.Conn));
-        var panel = Program.CharacterPlayerStats(f.Conn);
-        Assert.Equal(1, panel[Program.Stats.Key("virtual_on_low_life")!.Value]);
-        Assert.Equal(1, panel[Program.Stats.Key("virtual_extra_critical_rolls")!.Value]);
-        f.Conn.PlayerLife = 100;
-        Assert.Equal(0, Program.CriticalExtraRolls(f.Conn));
-        f.Set("you_count_as_low_life_while_affected_by_vulnerability", 1);
-        f.Set("cursed_by_vulnerability", 1);
-        Assert.Equal(1, Program.CriticalExtraRolls(f.Conn));
-        f.Conn.PlayerLife = 0;
-        Assert.Equal(0, Program.CriticalExtraRolls(f.Conn));
-    }
-
-    [Fact]
-    public async Task Attack_only_prohibition_does_not_disable_a_low_life_spell()
-    {
-        var random = new Draws(9000, 0);
-        using var f = new Contact(random, "Fireball");
-        f.Set("cannot_critical_strike_with_attacks", 1);
-        f.Refresh();
-        await f.Use();
-        await f.HitLands();
-        Assert.Equal(2, random.Calls);
-    }
-
-    [Fact]
-    public void Unarmed_ranged_gem_does_not_inherit_the_melee_base_or_multiplier()
-    {
-        using var f = new Contact(new Draws(), "BurningArrow");
-        f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
-        Assert.Equal(0, (int)Method("SupportedCriticalChance").Invoke(null, [f.Conn, f.Skill])!);
-        Assert.Equal(1, Program.CriticalExtraRolls(f.Conn)); // Luck itself has no melee gate.
-        Assert.Equal(250, f.Multiplier); // Only the linked support's level-one +100 multiplier.
-    }
-
-    [Fact]
-    public async Task Live_life_boundary_refreshes_native_player_stats_without_a_new_action()
-    {
-        using var f = new Contact(new Draws());
-        var ticking = f.RunPanelTick();
-        try
-        {
-            f.Conn.PlayerLife = 51;
-            await f.AssertNextPlayerStats();
-        }
-        finally
-        {
-            f.Conn.Closed = true;
-            await ticking.WaitAsync(TimeSpan.FromSeconds(5));
-        }
-    }
-
-    [Theory]
-    [InlineData(false, true, true)]
-    [InlineData(false, false, false)]
-    [InlineData(true, true, false)]
-    [InlineData(true, false, true)]
-    public async Task Queued_full_and_Actor_refreshes_sample_current_life_and_active_weapon(
-        bool charges, bool becomesLowLife, bool becomesArmed)
-    {
-        using var f = new Contact(new Draws(), "Cyclone");
-        f.Set(CriticalStrikePolicy.UnarmedMeleeMultiplierStat, 50);
-        var inventory = PlayerInventories.For(f.Conn.Character!, Program.Items);
-        inventory.Add(PlayerInventories.Weapon2, 0, 0, ItemCatalog.Create(Program.Items.Find("Driftwood Wand")!));
-        if (!becomesArmed) inventory.SwapWeaponSets();
-        f.Refresh();
-        f.Conn.PlayerLife = becomesLowLife ? 100u : 50u;
-        f.Conn.ClientSkillIds = [.. f.CurrentSkills().Select(s => s.Id)]; // Keep the charge-only fast path eligible.
-        await f.SendGate.WaitAsync();
-        Task refresh;
-        try
-        {
-            refresh = f.RefreshStats(charges);
-            Assert.False(refresh.IsCompleted);
-            lock (f.Conn.Monsters)
-            {
-                f.Conn.PlayerLife = becomesLowLife ? 50u : 100u;
-                inventory.SwapWeaponSets();
-                f.Refresh();
-            }
-        }
-        finally { f.SendGate.Release(); }
-        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
-        int lowLife = becomesLowLife ? 1 : 0;
-        var player = Program.CharacterPlayerStats(f.Conn);
-        uint lifeKey = Program.Stats.Key("virtual_on_low_life")!.Value;
-        uint rollsKey = Program.Stats.Key("virtual_extra_critical_rolls")!.Value;
-        uint multiplierKey = Program.Stats.Key("main_hand_critical_strike_multiplier")!.Value;
-        Assert.Equal(lowLife, player[lifeKey]);
-        Assert.Equal(lowLife, player[rollsKey]);
-        Assert.Equal(becomesArmed ? 150 : 200, player[multiplierKey]);
-        var selected = f.CurrentSkills().Single(s => s.Id == f.Skill);
-        Assert.Contains((lifeKey, lowLife), selected.Stats!);
-        Assert.Contains((rollsKey, lowLife), selected.Stats!);
-        Assert.Contains((multiplierKey, becomesArmed ? 250 : 300), selected.Stats!);
-        await f.AssertNextPlayerStats();
-        await f.AssertNextActorStats();
-    }
 }

@@ -1004,6 +1004,8 @@ and can require explicit recipes.
   Ordinary physical melee hits can trigger native player TakeHit recovery through 0x1d1.
   Native proof stopped predictive walking and casting, blocked new actions, and cleared the recovery flag afterward.
   Server recovery cancels pending actions and channel hits and stops the walk estimate for the same interval.
+  Recovery or a freeze also suspends a running channel: it pays and sweeps nothing until the player recovers.
+  That channel suspension has automated coverage only, with no native check yet.
   Actual physical monster hits stopped walking and cancelled a slow cast before release in copied-save live checks.
   Released Fireball flight continued, and a stun-immune control took damage without recovery.
   With a bow equipped, a hit cancelled pending Burning Arrow, blocked an ordinary arrow during recovery,

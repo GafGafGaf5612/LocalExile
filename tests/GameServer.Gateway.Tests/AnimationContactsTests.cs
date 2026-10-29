@@ -34,20 +34,4 @@ public class AnimationContactsTests : IDisposable
         Assert.Equal(0.719, Contact(new WeaponProfile(false, false, true, false, false, TwoHandMelee: true)), 6);
     }
 
-    [Fact]
-    public void A_shield_or_a_pair_picks_its_variant()
-    {
-        Assert.Equal(0.3, Contact(new WeaponProfile(true, false, false, false, false, Sword: true)), 6);
-        Assert.Equal(299.0 / 833, Contact(new WeaponProfile(false, true, false, false, true, Claw: true)), 6);
-    }
-
-    [Fact]
-    public void Another_attack1_of_the_weapon_then_the_default()
-    {
-        Assert.Equal(0.25, Contact(new WeaponProfile(false, false, false, false, false, Dagger: true)), 6);
-        // No clip for axes in the rigs, and no such animated object: the default.
-        Assert.Equal(AnimationContacts.DefaultAttackContact, Contact(new WeaponProfile(false, false, false, false, false, Axe: true)));
-        Assert.Equal(AnimationContacts.DefaultAttackContact,
-            new AnimationContacts(_folder).AttackContact("Metadata/None.ao", new WeaponProfile(false, false, false, false, false, Unarmed: true)));
-    }
 }

@@ -376,6 +376,47 @@ partial class Program
         _ = Task.Delay(2000).ContinueWith(async _ => { if (conn.PendingTransfer is { } p) await Transfer(remote, stream, ciphers, conn, p); });
     }
 
+    // The capture tour's next step (CaptureTour), after an area load (0x7d) or when /tour starts: at the tour's current
+    // stop, wait for scripts/walkmaps to write it, then go to a new instance of the next (area, seed). A tour saved before
+    // a restart (data/tour-left.txt) resumes at the character's first area load.
+    static async Task ContinueTour(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool starting = false)
+    {
+        // Tours record with scripts/walkmaps: without it a saved tour (data/tour-left.txt) is left alone.
+        if (!AreaLayouts.Recording) return;
+        string character = CharacterName(conn);
+        if (!starting && CaptureTour.Resume(character) is { } resumed)
+        {
+            Console.WriteLine($"[gateway] {remote} {resumed}");
+            await conn.Commands!.Reply(resumed);
+            starting = true;
+        }
+        if (!CaptureTour.Active(character)) return;
+        if (!starting && CaptureTour.IsCurrent(character, conn.Layout.Id, conn.Seed))
+        {
+            CaptureTour.MarkArrived(character);
+            bool ok = await CaptureTour.WaitForCapture(character, conn.Layout.Id, conn.Seed);
+            Console.WriteLine($"[gateway] {remote} tour: {conn.Layout.Id} seed {conn.Seed} {(ok ? "captured" : "NOT captured (120 s; is live.ps1 -Walkmaps running?)")}");
+            TourRecords.Write(conn.Layout.Id, conn.Seed, ok ? "captured" : "not captured", layout: conn.Layout);
+        }
+        // An area the tour did not send the player to, unless the tour waits for the client to come back.
+        else if (!starting && !CaptureTour.Waiting(character)) return;
+        string done = CaptureTour.Summary(character);
+        if (CaptureTour.Next(character) is not var (area, hash, seed))
+        {
+            await conn.Commands!.Reply($"Tour finished: {done}.");
+            return;
+        }
+        await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(hash, 0, true, AtSpawn: true) { Seed = seed }, $"tour: {area} seed {seed}");
+        // A seed the client itself cannot generate ("Terrain generation failed" in Client/logs/Client.txt): the client
+        // shows the exception and hangs. The stop goes to tour-failures.txt and the tour waits: nothing more is sent to
+        // that client; after a restart (live.ps1) the next area load goes on.
+        for (var until = DateTime.UtcNow.AddMinutes(10); DateTime.UtcNow < until && CaptureTour.IsCurrent(character, area, seed); await Task.Delay(2000))
+            if (CaptureTour.Failed(character, area, seed) is { } failure)
+            {
+                Console.WriteLine($"[gateway] {remote} tour: {area} seed {seed} failed in the client ({failure}); waiting: restart the client with live.ps1 and log in, the tour goes on");
+                return;
+            }
+    }
     // Auth moves the player and issues the destination ticket; 0x27 sends the client there (it reconnects to this Gateway).
     internal static async Task Transfer(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
         PendingTransfer t, Func<ControlRequest, Task<ControlResponse>>? control = null)
@@ -393,7 +434,7 @@ partial class Program
         }
         var r = await (control ?? (request => InstanceControl.CallAsync(request)))(new ControlRequest
         {
-            Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New,
+            Op = "transfer", Ticket = conn.Ticket, Area = t.Area, Instance = t.Instance, New = t.New, Seed = t.Seed,
         });
         t.Done?.Invoke(r);
         if (!r.Ok)

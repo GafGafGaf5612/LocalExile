@@ -98,28 +98,6 @@ public class OrdinaryBowShotTests
         finally { Directory.Delete(folder, recursive: true); }
     }
 
-    [Fact]
-    public void Contact_mitigation_uses_one_rolled_packet_and_preserves_the_critical_draw_order()
-    {
-        var packet = DamagePacket.Of(DamageType.Fire, 1, 50).Add(DamageType.Cold, new(1, 50));
-        var shot = new OrdinaryBowShot(packet, 100, 10000, 150, 0);
-        var random = new Random(731);
-        var reference = new Random(731);
-        var expectedRoll = packet.Roll(reference);
-        reference.Next(10000);
-        int calls = 0;
-        var actual = shot.Roll(new ImpaleState(), random, (rolled, critical) =>
-        {
-            calls++;
-            Assert.True(critical);
-            Assert.Equal(expectedRoll.MinTotal, rolled.MinTotal);
-            return (int)Math.Round(rolled.MinTotal * .6);
-        });
-        Assert.Equal(1, calls);
-        Assert.True(actual.Critical);
-        Assert.Equal(reference.Next(), random.Next());
-    }
-
     sealed class Rolls(params int[] values) : Random
     {
         int index;
@@ -156,26 +134,4 @@ public class OrdinaryBowShotTests
         Assert.Equal(2, impale.Bonus); // The older stack expires first; the newly applied one retains its final hit.
     }
 
-    [Fact]
-    public void Converted_damage_does_not_invent_physical_impales_and_added_types_roll_separately()
-    {
-        var hit = DamagePacket.Of(DamageType.Fire, 18, 36).Add(DamageType.Cold, new(5, 5));
-        var shot = new OrdinaryBowShot(hit, 100, 0, 150, 100);
-        var impale = new ImpaleState();
-        Assert.Equal((23, false), shot.Roll(impale, new Rolls(0, 0, 0)));
-        Assert.Equal(0, impale.Stacks);
-        Assert.Equal(new DamageRange(18, 36), shot.Hit[DamageType.Fire]);
-    }
-
-    [Fact]
-    public void Each_actual_target_uses_its_own_stacks_and_a_shot_keeps_its_release_inputs()
-    {
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 10, 10), 400, 0, 150, 0);
-        var first = new ImpaleState(); first.Apply(100);
-        var second = new ImpaleState(); second.Apply(200);
-        Assert.Equal((20, false), shot.Roll(first, new Rolls(0)));
-        Assert.Equal((30, false), shot.Roll(second, new Rolls(0)));
-        Assert.Equal(400, shot.Accuracy);
-        Assert.Equal(10, shot.Hit.MinTotal);
-    }
 }
