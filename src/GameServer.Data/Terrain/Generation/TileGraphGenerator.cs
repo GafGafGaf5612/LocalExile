@@ -219,18 +219,19 @@ sealed class TileGraphGenerator(TerrainCache files, LevelRandom rng, List<string
             grounds.EdgePoints(tiling.EdgePointTiles, edgePoints, sideFill.FillSide);
         }
         grounds.Unlock();
-        // +0x90 / +0x94 = the levels: from here on the fill object's listener (0x141fef240) repaints the level grounds
-        // under every tile that room tilising and the fill place.
-        var painter = grounds.LevelPainter(GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
-        special.TilePlaced = painter;
         // The pool's area unique rooms (0x142115390, master +0x92 taken to be off), the shrines (0x142115cc0) and the
-        // pre-unique rooms (0x1421162d0), each tilised as a fill room (0x141fe89e0).
+        // pre-unique rooms (0x1421162d0), each tilised as a fill room (0x141fe89e0). The fill object's listener
+        // (0x141fef240) is still idle: the levels are not stored yet (2_6_2 seed 1814151108's shrine keeps trims1).
         var roomSet = new DungeonRoomSet(files, TerrainText.Resolve(masterPath, master["RoomSet"]));
         var placer = new Fill(files, rng, grid, _ox, _oy, Graph.Width, Graph.Height, store,
-            gftPath is null ? new Dictionary<string, List<(int Weight, string Path, int Orientation)>>() : files.FillTiles(gftPath), special.Rooms, notes) { TilePlaced = painter };
+            gftPath is null ? new Dictionary<string, List<(int Weight, string Path, int Orientation)>>() : files.FillTiles(gftPath), special.Rooms, notes);
         AreaUniqueRooms(placer);
         Shrines(roomSet, placer);
         PreUniqueRooms(roomSet, placer);
+        // +0x90 / +0x94 = the levels: from here on the listener repaints the level grounds under every tile that room
+        // tilising and the fill place.
+        var painter = grounds.LevelPainter(GraphGround(Graph.TopGround), GraphGround(Graph.BottomGround), levels);
+        special.TilePlaced = painter;
         // 0x141ffe240, then the first overlay pass (0x141fff1a0 with bit 1).
         var passes = master.TryGetValue("Overlays", out var toy) ? Overlays.Parse(files, TerrainText.Resolve(masterPath, toy)) : [];
         var overlays = new Overlays(files, rng, notes, grid, _ox, _oy, Graph.Width, Graph.Height, special.Tiler, [.. special.Rooms],

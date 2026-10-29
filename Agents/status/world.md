@@ -94,7 +94,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   memories, the Sanctum floors, the Deepwater biome grid; they come with each league's server side, see the
   [roadmap](../roadmap/world.md)), and 15 the client cannot generate at any seed tried (the
   list is written to data/areas-unavailable.txt). The port matches a load of every other row.
-  A tour of 3 random seeds per matching area: all 519 match.
+  A tour of 3 random seeds per matching area: all 519 match. Every traced load at another seed (1215, `lg.ps1 loads`)
+  matches in draws, grids, doodads, heights and transitions too, the last one (a shrine's ground, 2_6_2) since
+  2026-10-29.
   The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
   Every load with a height capture matches cell for cell, and every one of the 186 with a transitions capture
   matches exactly (186 expected once the gate reruns: one capture was cut short by the recorder, now repaired).

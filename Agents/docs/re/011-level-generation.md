@@ -992,8 +992,10 @@ are the doodads, `0x142042fae`).
    its second (+0xa8) on the lowest (`0x142110f70`; the levels are master +0x146 / +0x144 when set, else the view's
    highest / lowest vertex height, `0x141ffc700` / `0x141ffc7d0`). Heights are counted in levels (storeys) until
    `0x14204cbd0` multiplies them by the master's StoreyHeight after the layout (step 8). The `paint` trace confirms the graph's ground lines: +0xa0 = line 1 (top), +0xa8 = line 3
-   (bottom), +0xb0 = line 2 (default). Just before the overlays `0x142116600` stores the two levels (+0x90 / +0x94);
-   from then on the fill object's tile listener `0x141fef240` runs after every tile that room tilising
+   (bottom), +0xb0 = line 2 (default). Just before the overlays, after the area unique rooms, the shrines and the
+   pre-unique rooms, `0x142116600` stores the two levels (+0x90 / +0x94); before that the listener does nothing (its
+   level is 0), so those rooms' tiles keep their vertices' grounds (2_6_2 seed 1814151108: a shrine on a `trims1`
+   vertex at the bottom level). From then on the fill object's tile listener `0x141fef240` runs after every tile that room tilising
    (`0x141fea780`) and the fill (`0x141feb970`, `0x141fe89e0`, `0x141fed640`) place: with heights, a highest level
    other than 0 and a top or bottom ground, each vertex of the tile with no ground or a flag-8 one takes the top
    ground at or above the highest level, else the bottom ground at or below the lowest
@@ -1498,8 +1500,11 @@ the target open, so the recorder's write of the fourth object threw and left the
   (2026-10-28): its door overlays (`+OverlayFeatureTiles +OverlayFeatureRooms +OverlayExtraFeatures`) leave out every
   spot on the shrine (`generic_01.arm` at (90, 29), the pool's placed room, exclusion 0x20), because the client's
   flag parser (`0x141ffc8a0`) knows OverlayExtraFeatures but never sets or clears its bit 0x20 (the walkmaps.js
-  probe read flags 0x1e at `0x141ffef60`). The gate checks only the hash of these loads; their grids, doodads,
-  heights and transitions are captured but not yet compared.
+  probe read flags 0x1e at `0x141ffef60`). The gate checks only the hash of these loads; `lg.ps1 loads [area regex]`
+  checks every traced load at another seed as fully as a seed-1 capture (draws, both grids, doodads, heights,
+  transitions; `loads-latest.json`, not compared with the baseline). 2026-10-29: all 1215 match in every check but
+  one, 2_6_2 seed 1814151108, whose shrine took the level painter's ground (§3, the listener `0x141fef240`); fixed
+  (every draw and all 246 doodads match), the full rerun not done yet.
 - **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
   by tile.
 - **Client failures (2026-10-27):** the gate also runs every (area, seed) the client failed to generate (the

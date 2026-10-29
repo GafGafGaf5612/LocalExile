@@ -157,6 +157,52 @@ static class Gate
         return 0;
     }
 
+    /// <summary>`levelgen loads [area regex] [--jobs N]`: every logged load at a seed other than 1 that has a trace (the
+    /// random-seed tours), checked as fully as a seed-1 capture: draws, both grids, doodads, cell heights and
+    /// transitions. The gate's oracle checks only their tile hash. Written to loads-latest.json beside the baseline
+    /// (local); nothing is compared with the baseline.</summary>
+    public static int Loads(string[] args)
+    {
+        string root = Shared.Root();
+        int jobs = Math.Clamp(Environment.ProcessorCount / 2, 1, 8);
+        string only = ".";
+        for (int i = 0; i < args.Length; i++)
+            if (args[i] == "--jobs") jobs = int.Parse(args[++i]);
+            else only = args[i];
+        var tasks = new List<string>();
+        foreach (var ((area, seed), (_, hash)) in Shared.LoggedHashes())
+            if (seed != 1 && System.Text.RegularExpressions.Regex.IsMatch(area, only)
+                && File.Exists(Path.Combine(root, "data", "walkability", $"{area}_seed{seed}.gen.json")))
+                tasks.Add($"load\t{area}\t{seed}\t{hash}");
+        var clock = Stopwatch.StartNew();
+        var results = RunWorkers(tasks, jobs);
+        Console.WriteLine($"loads: {tasks.Count} traced loads at other seeds with {jobs} workers in {clock.Elapsed.TotalSeconds:0}s");
+        Write(Path.Combine(root, "scripts", "re", "levelgen", "loads-latest.json"), results);
+        var rs = results.Values;
+        int With(Func<Result, bool> has) => rs.Count(has);
+        Console.WriteLine($"  tile hash:   {With(r => r.HashOk)} of {rs.Count}");
+        Console.WriteLine($"  draws:       {With(r => r.DrawsOk)} of {rs.Count}");
+        Console.WriteLine($"  grids:       {With(r => r.HashOk && r.GridsOk)} of {With(r => r.Walk >= 0)}");
+        Console.WriteLine($"  doodads:     {With(r => r.DoodadsOk)} of {With(r => r.Captured >= 0)}");
+        Console.WriteLine($"  heights:     {With(r => r.HeightsOk)} of {With(r => r.Heights >= 0)}");
+        Console.WriteLine($"  transitions: {With(r => r.ObjectsOk)} of {With(r => r.Objects >= 0)}");
+        foreach (var (key, r) in results)
+        {
+            var bad = new List<string>();
+            if (!r.HashOk) bad.Add(r.Hash);
+            else
+            {
+                if (!r.DrawsOk) bad.Add($"draws {r.Draws}/{r.TraceDraws} first at {r.FirstDiff}");
+                if (!r.GridsOk) bad.Add($"walk {r.Walk} projectile {r.Projectile} cells");
+                if (r.Captured >= 0 && !r.DoodadsOk) bad.Add($"doodads {r.Matched} of {r.Captured} captured, {r.Placed} placed");
+                if (r.Heights > 0) bad.Add($"heights {r.Heights} cells");
+                if (r.Objects > 0) bad.Add($"transitions {r.Objects} off");
+            }
+            if (bad.Count > 0) Console.WriteLine($"  {key[5..]}: {string.Join("; ", bad)}");
+        }
+        return 0;
+    }
+
     static Result TryArea(string areaId, uint seed, int level)
     {
         LevelGenerator.Generate(Shared.Files(), AreaInfo.Load(Shared.Read, areaId, level), seed);
@@ -233,7 +279,7 @@ static class Gate
     static string Key(string task)
     {
         var f = task.Split('\t');
-        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", "try" => $"try {f[1]} {f[2]}", "failure" => $"failure {f[1]} {f[2]}", _ => $"oracle {f[1]} {f[2]}" };
+        return f[0] switch { "capture" => $"capture {f[1]}", "survey" => $"survey {f[1]}", "try" => $"try {f[1]} {f[2]}", "failure" => $"failure {f[1]} {f[2]}", "load" => $"load {f[1]} {f[2]}", _ => $"oracle {f[1]} {f[2]}" };
     }
 
     /// <summary>`levelgen worker`: one task per stdin line, one JSON result per stdout line.</summary>
@@ -253,6 +299,7 @@ static class Gate
                     "capture" => Capture(f[1]),
                     "survey" => SurveyArea(f[1], int.Parse(f[2])),
                     "try" => TryArea(f[1], uint.Parse(f[2]), int.Parse(f[3])),
+                    "load" => Capture(f[1], uint.Parse(f[2]), uint.Parse(f[3])),
                     "failure" => Failure(f[1], uint.Parse(f[2]), int.Parse(f[3]), System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(f[4]))),
                     _ => Oracle(f[1], uint.Parse(f[2]), int.Parse(f[3]), uint.Parse(f[4])),
                 };
