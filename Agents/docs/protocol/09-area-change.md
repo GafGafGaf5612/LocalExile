@@ -141,8 +141,9 @@ keeps the ids of the last list it sent (`ChooserList`).
   Watch once Hillock is dead ([12](12-quests.md) §6). `resolve` sends `LastTown` 0 until then, and the death screen
   offers only Resurrect at Checkpoint (`DeathScreenFlags` 0x04). The death screen's two buttons are separate (`Resurrect`, §7).
   Issue #4.
-- The dev servers pin non-town seeds to 1 (`Game_RANDOM_SEEDS=1` gives random seeds), because a layout must be dumped
-  from the client (`scripts/re/frida/dump-walkability-all.js`, `walk-<n>-a.bin`). The Coast at seed 1 is 1725×1725.
+- Auth gives a new instance of an area the Gateway generates itself (`ServerLevelAreas`, [re/011](../re/011-level-generation.md))
+  a random seed; any other area keeps seed 1, because its layout must be dumped from the client (`live.ps1 -Walkmaps`).
+  `Game_RANDOM_SEEDS=0` pins every area to 1. The Coast at seed 1 is 1725×1725.
 
 ## 5. Open
 

@@ -69,6 +69,12 @@ static int Dispatch(string[] args)
                     if (fs.TryReadFile(args[1], out var data)) File.WriteAllBytes(args[2], data);
                     else Console.WriteLine($"{args[1]}: not found");
                 break;
+            case "rooms":
+                // rooms [area regex]: the port's placed .arm rooms (AreaObjects.Rooms) against the client's
+                // <area>_seed<seed>.rooms.json, and its quest tile objects (AreaObjects.QuestObjects) against
+                // <area>_seed<seed>.objects.json, for every logged load the port matches by tile hash.
+                Rooms(args.Length > 1 ? args[1] : ".");
+                break;
             case "objects":
                 // objects [area regex]: the port's area transitions and waypoints (AreaObjects) against the client's
                 // <area>_seed<seed>.transitions.json, for every capture and oracle load the last gate run matched.
@@ -187,10 +193,13 @@ static int Dispatch(string[] args)
                 // tourlist [out file] [--random N]: a list for the Gateway's /tour (live.ps1 -Walkmaps): every logged
                 // (area, seed) the last gate run did not match and that has no trace yet, then with --random N seeds
                 // for each area whose seed-1 trace matches (to check them at other seeds). Default out: data/tour.txt.
+                // --supported: only the random seeds, for the areas the Gateway generates itself (ServerLevelAreas, from
+                // gate-baseline.json).
             {
                 int at = Array.IndexOf(args, "--random");
-                var rest = args.Skip(1).Where((_, i) => i + 1 != at && i + 1 != at + 1).ToList();
-                TourList(rest.FirstOrDefault() ?? Path.Combine(Root(), "data", "tour.txt"), at > 0 ? int.Parse(args[at + 1]) : 0);
+                bool supported = args.Contains("--supported");
+                var rest = args.Skip(1).Where((a, i) => i + 1 != at && i + 1 != at + 1 && a != "--supported").ToList();
+                TourList(rest.FirstOrDefault() ?? Path.Combine(Root(), "data", "tour.txt"), at > 0 ? int.Parse(args[at + 1]) : 0, supported);
             }
                 break;
             case "oracle":
@@ -207,7 +216,7 @@ static int Dispatch(string[] args)
     return 0;
 }
 
-static void TourList(string outFile, int randomSeeds)
+static void TourList(string outFile, int randomSeeds, bool supportedOnly)
 {
     string root = Root();
     string latest = Path.Combine(root, "scripts", "re", "levelgen", "gate-latest.json");
@@ -220,16 +229,20 @@ static void TourList(string outFile, int randomSeeds)
     var failed = File.Exists(failures)
         ? File.ReadLines(failures).Select(l => l.Split(' ')).Where(f => f.Length > 2).Select(f => $"{f[1]} {f[2].TrimEnd(':')}").ToHashSet()
         : [];
-    // Towns always get seed 1 (InstanceRegistry), so a tour stop at another seed never arrives.
+    // Towns and hideouts always get seed 1 (InstanceRegistry, Auth's SeedFor), so a tour stop at another seed never arrives.
     string worldAreas = Path.Combine(root, "data", "tables", "WorldAreas.json");
     var towns = File.Exists(worldAreas)
         ? JsonDocument.Parse(File.ReadAllBytes(worldAreas)).RootElement.EnumerateArray()
-            .Where(r => r.GetProperty("IsTown").GetBoolean()).Select(r => r.GetProperty("Id").GetString()!).ToHashSet()
+            .Where(r => r.GetProperty("IsTown").GetBoolean() || r.TryGetProperty("IsHideout", out var h) && h.ValueKind == JsonValueKind.True)
+            .Select(r => r.GetProperty("Id").GetString()!).ToHashSet()
         : ["1_1_town"];
+    var supported = supportedOnly
+        ? GameServer.Core.World.ServerLevelAreas.Load(Path.Combine(root, GameServer.Core.World.ServerLevelAreas.BaselineFile))
+        : null;
     foreach (var check in doc.RootElement.EnumerateObject())
     {
         var key = check.Name.Split(' ');
-        if (towns.Contains(key[1])) continue;
+        if (supported is not null || towns.Contains(key[1])) continue;
         if (key[0] != "oracle" || check.Value.GetProperty("Hash").GetString() == "match") continue;
         if (File.Exists(Path.Combine(root, "data", "walkability", $"{key[1]}_seed{key[2]}.gen.json"))) continue;
         if (failed.Contains($"{key[1]} {key[2]}")) continue;
@@ -238,12 +251,13 @@ static void TourList(string outFile, int randomSeeds)
     }
     if (randomSeeds > 0)
     {
-        lines.Add($"# {randomSeeds} random seeds per area whose seed-1 trace matches");
+        lines.Add($"# {randomSeeds} random seeds per area " + (supported is null ? "whose seed-1 trace matches" : "the Gateway generates itself"));
         foreach (var check in doc.RootElement.EnumerateObject())
         {
             var key = check.Name.Split(' ');
             if (towns.Contains(key[1])) continue;
             if (key[0] != "capture" || check.Value.GetProperty("Hash").GetString() != "match") continue;
+            if (supported is not null && !supported.Contains(key[1])) continue;
             for (int i = 0; i < randomSeeds; i++) { lines.Add($"{key[1]} {Random.Shared.Next(2, int.MaxValue)}"); random++; }
         }
     }
@@ -299,6 +313,64 @@ static void Oracle(string filter)
     }
     Console.WriteLine($"{match} of {total} match");
     foreach (var (k, n) in reasons.OrderByDescending(r => r.Value)) Console.WriteLine($"  {n} × {k}");
+}
+
+static void Rooms(string filter)
+{
+    var pairs = LoggedHashes(out _, out _, null);
+    var fs = OpenGame();
+    var files = Files();
+    string root = Root();
+    int loads = 0, same = 0, wrong = 0, rooms = 0, questLoads = 0, questSame = 0, quests = 0;
+    foreach (var ((areaId, seed), (level, hash)) in pairs)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(areaId, filter)) continue;
+        string capture = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}.rooms.json");
+        string questCapture = Path.Combine(root, "data", "walkability", $"{areaId}_seed{seed}.objects.json");
+        if (!File.Exists(capture) && !File.Exists(questCapture)) continue;
+        GenerationResult result;
+        try
+        {
+            result = LevelGenerator.Generate(files, AreaInfo.Load(p => fs.TryReadFile(p, out var d) ? d : null, areaId, level), seed);
+            if (result.Grid.Hash() != hash) continue;
+        }
+        catch (Exception) { continue; }
+        finally { ResetHooks(); }
+        if (File.Exists(questCapture))
+        {
+            questLoads++;
+            using var qd = JsonDocument.Parse(File.ReadAllText(questCapture));
+            var want = qd.RootElement.GetProperty("objects").EnumerateArray()
+                .Select(o => (o.GetProperty("objectType").GetString()!, o.GetProperty("x").GetInt32(), o.GetProperty("y").GetInt32(),
+                    o.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0)).ToHashSet();
+            var got = AreaObjects.QuestObjects(files, result).Select(o => (o.Type, o.X, o.Y, o.Code)).ToHashSet();
+            quests += want.Count;
+            if (want.SetEquals(got)) questSame++;
+            else
+            {
+                Console.WriteLine($"{areaId} {seed}: quest objects {want.Count(got.Contains)} of {want.Count}, {got.Count(g => !want.Contains(g))} extra");
+                foreach (var o in want.Where(w => !got.Contains(w)).Take(4)) Console.WriteLine($"  missing {o}");
+                foreach (var o in got.Where(g => !want.Contains(g)).Take(4)) Console.WriteLine($"  extra   {o}");
+            }
+        }
+        if (!File.Exists(capture)) continue;
+        loads++;
+        using var doc = JsonDocument.Parse(File.ReadAllText(capture));
+        var theirs = doc.RootElement.GetProperty("rooms").EnumerateArray()
+            .Select(r => new PlacedArmRoom(r.GetProperty("path").GetString()!, r.GetProperty("x").GetInt32(), r.GetProperty("y").GetInt32(),
+                r.GetProperty("width").GetInt32(), r.GetProperty("height").GetInt32(), r.GetProperty("code").GetInt32())).ToHashSet();
+        var mine = AreaObjects.Rooms(result).ToHashSet();
+        rooms += theirs.Count;
+        var missing = theirs.Where(r => !mine.Contains(r)).ToList();
+        var extra = mine.Where(r => !theirs.Contains(r)).ToList();
+        if (missing.Count == 0 && extra.Count == 0) { same++; continue; }
+        wrong++;
+        Console.WriteLine($"{areaId} {seed}: {theirs.Count - missing.Count} of {theirs.Count} rooms, {extra.Count} extra");
+        foreach (var r in missing.Take(4)) Console.WriteLine($"  missing {Path.GetFileName(r.Path)} ({r.X}, {r.Y}) {r.Width}x{r.Height} code {r.Code}");
+        foreach (var r in extra.Take(4)) Console.WriteLine($"  extra   {Path.GetFileName(r.Path)} ({r.X}, {r.Y}) {r.Width}x{r.Height} code {r.Code}");
+    }
+    Console.WriteLine($"rooms: {loads} loads with a rooms capture, {same} the same, {wrong} different ({rooms} captured rooms)");
+    Console.WriteLine($"quest objects: {questLoads} loads with an objects capture, {questSame} the same ({quests} captured objects)");
 }
 
 static void Objects(string filter)

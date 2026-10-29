@@ -142,9 +142,16 @@ static class AreaLayouts
         return new AreaLayout(hash, id, 0, 0, 197, 261, null, transitions);
     }
 
-    /// <summary>Tells scripts/walkmaps which area the next generated grid belongs to (data/walkability/current.json).</summary>
+    /// <summary>Dev: the walk-map recorder runs beside the Gateway (live.ps1 -Walkmaps sets Game_WALKMAPS=1). Only then does
+    /// the Gateway write anything for an area load (<see cref="Announce"/>) and run capture tours (/tour, CaptureTour,
+    /// TourRecords); by default it records nothing.</summary>
+    public static readonly bool Recording = Environment.GetEnvironmentVariable("Game_WALKMAPS") == "1";
+
+    /// <summary>Tells scripts/walkmaps which area the next generated grid belongs to (data/walkability/current.json),
+    /// when it runs (<see cref="Recording"/>).</summary>
     public static void Announce(AreaLayout layout, uint seed)
     {
+        if (!Recording) return;
         try
         {
             Directory.CreateDirectory(Folder);

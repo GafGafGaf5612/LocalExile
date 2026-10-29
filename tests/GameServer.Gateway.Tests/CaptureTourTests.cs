@@ -13,6 +13,7 @@ public class CaptureTourTests : IDisposable
         CaptureTour.StateFile = Path.Combine(_folder, "tour-left.txt");
         CaptureTour.FailuresFile = Path.Combine(_folder, "tour-failures.txt");
         CaptureTour.ClientLog = Path.Combine(_folder, "Client.txt");
+        TourRecords.File = Path.Combine(_folder, "stops.jsonl");
         CaptureTour.HashOf = area => area.StartsWith("1_") ? (ushort)0x1234 : null;
         File.WriteAllLines(Path.Combine(_folder, "tour.txt"), ["# a list", "1_1_1 11", "1_1_2 22", "1_1_3 33", "Unknown 44"]);
     }

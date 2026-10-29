@@ -1,8 +1,14 @@
 namespace GameServer.Data.Terrain.Generation;
 
 /// <summary>A tile object the server creates itself: an area transition or a waypoint, at a grid cell, with its
-/// object type (.ot), its virtual model, its angle and its height (the record's z, negative is up).</summary>
-public sealed record PlacedTileObject(string Type, string Model, int X, int Y, float Rotation, float Z);
+/// object type (.ot), its virtual model, its angle, its height (the record's z, negative is up) and its tile's
+/// orientation code.</summary>
+public sealed record PlacedTileObject(string Type, string Model, int X, int Y, float Rotation, float Z, int Code = 0);
+
+/// <summary>A placed .arm room as scripts/walkmaps captures it (&lt;area&gt;_seed&lt;seed&gt;.rooms.json, the room
+/// loop of the doodad stage <c>0x142040770</c>): its origin and its unturned size (room data +0x138 / +0x139) in grid
+/// cells, and its orientation code.</summary>
+public sealed record PlacedArmRoom(string Path, int X, int Y, int Width, int Height, int Code);
 
 /// <summary>The area transitions and waypoints of a generated grid, placed as <see cref="DoodadStage"/>'s tile lines
 /// place tile objects (<c>0x142041200</c>): row by row, every tile origin's objects (the record master's Reskin copy
@@ -18,7 +24,39 @@ public static class AreaObjects
 
     public static bool IsEffect(string type) => type.StartsWith(EffectsFolder, StringComparison.OrdinalIgnoreCase);
 
-    public static List<PlacedTileObject> Transitions(TerrainCache files, GenerationResult result)
+    /// <summary>The quest tile objects scripts/walkmaps records apart (&lt;area&gt;_seed&lt;seed&gt;.objects.json): a1q4's
+    /// Rhoa nests and glyph wall in The Mud Flats, The Twilight Strand's support gem chest.</summary>
+    public static readonly IReadOnlySet<string> QuestTypes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "Metadata/Chests/QuestChests/RhoaChest", "Metadata/Chests/QuestChests/RhoaChest2", "Metadata/Chests/QuestChests/RhoaChest3",
+        "Metadata/QuestObjects/WaterCave/GlyphWall", "Metadata/Chests/TutorialSupportGemChest",
+    };
+
+    /// <summary>The .arm rooms of a generated grid, in the order the doodad stage visits them (each record's rooms),
+    /// once each: what the recorder writes to &lt;area&gt;_seed&lt;seed&gt;.rooms.json.</summary>
+    public static List<PlacedArmRoom> Rooms(GenerationResult result)
+    {
+        var rooms = new List<PlacedArmRoom>();
+        foreach (var record in result.Records)
+            foreach (var r in record.Rooms)
+            {
+                if (!r.Room.Path.EndsWith(".arm", StringComparison.OrdinalIgnoreCase) || r.Orientation is < 0 or > 7) continue;
+                if (r.Room.Width == 0 || r.Room.Height == 0) continue;
+                var room = new PlacedArmRoom(r.Room.Path, r.X * 23, r.Y * 23, r.Room.Width * 23, r.Room.Height * 23, r.Orientation);
+                if (!rooms.Contains(room)) rooms.Add(room);
+            }
+        return rooms;
+    }
+
+    public static List<PlacedTileObject> Transitions(TerrainCache files, GenerationResult result) =>
+        Place(files, result, t => files.IsTransitionType(t) || IsEffect(t), tile => files.HasTransition(tile));
+
+    /// <summary>The <see cref="QuestTypes"/> objects of a generated grid, placed as <see cref="Transitions"/>.</summary>
+    public static List<PlacedTileObject> QuestObjects(TerrainCache files, GenerationResult result) =>
+        Place(files, result, QuestTypes.Contains, _ => false);
+
+    // The tile objects of the types kept; a tile is looked at when it has one of them (has) or an effect.
+    static List<PlacedTileObject> Place(TerrainCache files, GenerationResult result, Func<string, bool> keep, Func<TileDef, bool> has)
     {
         var grid = result.Grid;
         var records = result.Records;
@@ -28,7 +66,7 @@ public static class AreaObjects
             {
                 if (grid[x, y] is not { IsOrigin: true } e) continue;
                 var tile = e.Tile;
-                if (!files.HasTransition(tile) && !files.TileObjects(tile).Concat(files.SecondObjects(tile)).Any(o => IsEffect(o.Type))) continue;
+                if (!has(tile) && !files.TileObjects(tile).Concat(files.SecondObjects(tile)).Any(o => IsEffect(o.Type) || keep(o.Type))) continue;
                 int index = 0;
                 for (int k = 0; k < records.Count; k++)
                     if (x >= records[k].X && x < records[k].X + records[k].W && y >= records[k].Y && y < records[k].Y + records[k].H) index = k;
@@ -36,11 +74,11 @@ public static class AreaObjects
 
                 void Line(TileObject o, int cellX, int cellY, float angle)
                 {
-                    if (!files.IsTransitionType(o.Type) && !IsEffect(o.Type)) return;
+                    if (!keep(o.Type)) return;
                     var (cx, cy) = Orientation.Map(e.Orientation, cellX, cellY, tile.Width * 23, tile.Height * 23);
                     string model = IsEffect(o.Type) && EffectModel(files, o.Type) is { } own ? own : o.VirtualModel(tile.Path);
                     placed.Add(new PlacedTileObject(o.Type, model, x * 23 + cx, y * 23 + cy,
-                        TilePlacement.Angle(e.Orientation, angle), o.Z - e.HeightOffset * 7.8125f));
+                        TilePlacement.Angle(e.Orientation, angle), o.Z - e.HeightOffset * 7.8125f, e.Orientation));
                 }
 
                 var objects = files.TileObjects(tile);

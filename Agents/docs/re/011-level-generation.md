@@ -1443,7 +1443,8 @@ the target open, so the recorder's write of the fourth object threw and left the
   (`0x142105a70`) of those areas to `data/walkability/probes.jsonl`: the cell its caller `0x142106b00` computed, the
   node's position, tag and orientation, and the graph's sizes and orientation (2026-10-29, for the Sanctum floors;
   it replaced the overlay fit probe that settled `2_8_7_1_`).
-- **Capture tour (traces without playing):** with `live.ps1 -Walkmaps` running and a character in game,
+- **Capture tour (traces without playing):** with `live.ps1 -Walkmaps` running (the Gateway refuses `/tour` and
+  leaves a saved tour alone without it, `AreaLayouts.Recording`) and a character in game,
   `/tour data/tour.txt` sends the character through every "`<area id> <seed>`" line of the file, each in a new
   instance with that seed (the `transfer` control request's `Seed`, `InstanceRegistry.EnterNew`), waits until the
   recorder has written the load's trace, walk map and doodads (3 s without new doodads, at most 120 s), then goes on;
@@ -1456,7 +1457,12 @@ the target open, so the recorder's write of the fourth object threw and left the
   `data/walkability/tour-failures.txt` (which `tourlist` leaves out) and waits; it sends nothing more to the hung
   client. What is left is kept in `data/tour-left.txt` (character, counts, the stop under way, the rest), so after a
   restart (`live.ps1 -Walkmaps -NoBuild -NoExtract`, log in) the tour resumes at the first area load: a stop under
-  way is skipped when the client logged its failure, else tried again. A list's areas must be known to the
+  way is skipped when the client logged its failure, else tried again. Each stop also appends a record to
+  `data/tour-records/stops.jsonl` (`TourRecords.cs`): the outcome, the commit, the client's log lines of the load and
+  its tile and doodad hashes, the recorder's files, the Gateway's own generation (`ServerLevels`: tile hash, time, the
+  exception in full), every layer of the two compared (walk and projectile grids, heights, doodads, transitions, rooms,
+  quest objects) and the rooms' monster points fitted from either side's doodads; `tourloop.py` adds one for a stop it
+  drops (the client's log and its Windows crash event) and keeps each run's server logs in `logs/tour-runs/`. A list's areas must be known to the
   transition catalog (`AreaTransitionCatalog.HashOf`; the Labyrinth areas are not yet).
 - **Running levelgen:** `scripts/re/levelgen/lg.ps1 <command> …` (not `dotnet run`, which costs ~12 s a call): it
   builds into `bin/lg` only when a source changed and hands the command to the levelgen server (`levelgen serve`,
@@ -1505,6 +1511,14 @@ the target open, so the recorder's write of the fourth object threw and left the
   transitions; `loads-latest.json`, not compared with the baseline). 2026-10-29: all 1215 match in every check but
   one, 2_6_2 seed 1814151108, whose shrine took the level painter's ground (§3, the listener `0x141fef240`); fixed
   (every draw and all 246 doodads match), the full rerun not done yet.
+  2026-10-29, 5 seeds per supported area (`lg.ps1 tourlist --random 5 --supported`, 7700 stops): the port stops on
+  202 of them (`tourcheck`); 39 are parts not ported, the rest generator errors. Two sent to the client:
+  MapEndlessLedge46 1120685555 fails at the same edge in both ("Could not tilise edge"); MapAtlasDarkForest 1191983586
+  ("Could not permute edges" in the port) ends the client (uncaught C++ exception 0xe06d7363, no failure logged).
+  The tour was stopped after 475 stops (101 areas): 469 match in every layer and in the monster points; 4 do not
+  match by tile hash. 1_2_15 at 3 of 5 seeds (985067295, 493643698, 474438120): first difference at the client's
+  `n(2137)` from `0x14211532d` (the port draws `n(1)`), before the area unique rooms, with a shrine feature.
+  1_2_14_2 496072668: the client's `n(1)` from `0x142031e88` (the port `n(100)`), in the dungeon layout.
 - **Heights:** `lg.ps1 heights <area> <seed>` compares the port's cell heights with `<area>_seed<seed>.heights.bin`,
   by tile.
 - **Client failures (2026-10-27):** the gate also runs every (area, seed) the client failed to generate (the

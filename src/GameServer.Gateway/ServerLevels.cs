@@ -17,11 +17,21 @@ static class ServerLevels
     public const string UnsupportedMessage = "This map is generated on client-side and is not supported yet by the Server.";
 
     /// <summary>A generated layout: Width × Height cells, one walk value (0 … 5, walkable from 2) and one ground height
-    /// (× 7.8125 for world units) per cell, and the tile objects the server creates (area transitions, the waypoint).</summary>
-    public sealed record Level(int Width, int Height, byte[] Walk, short[] Heights, IReadOnlyList<PlacedTileObject> Objects);
+    /// (× 7.8125 for world units) per cell, the tile objects the server creates (area transitions, the waypoint), and
+    /// the client's doodads and placed .arm rooms (what the recorder's .doodads.json and .rooms.json hold: the rooms'
+    /// monster points and quest objects are fitted to them), the quest tile objects (its .objects.json) and the
+    /// projectile grid (its .projectile.bin: 0 stops projectiles).</summary>
+    public sealed record Level(int Width, int Height, byte[] Walk, short[] Heights, IReadOnlyList<PlacedTileObject> Objects,
+        IReadOnlyList<PlacedDoodad> Doodads, IReadOnlyList<PlacedArmRoom> Rooms, IReadOnlyList<PlacedTileObject> QuestObjects,
+        byte[] Projectile)
+    {
+        /// <summary>The client's tile hash of the generated grid, and how long the generation took.</summary>
+        public uint TileHash { get; init; }
+        public long Milliseconds { get; init; }
+    }
 
     /// <summary>Where the supported list comes from (the repository root is the Gateway's directory; tests replace it).</summary>
-    public static string BaselineFile { get; set; } = "scripts/re/levelgen/gate-baseline.json";
+    public static string BaselineFile { get; set; } = GameServer.Core.World.ServerLevelAreas.BaselineFile;
 
     static readonly bool Enabled = Environment.GetEnvironmentVariable("Game_SERVER_LEVELS") != "0";
     static readonly object Gate = new();
@@ -29,6 +39,15 @@ static class ServerLevels
     static TerrainCache? _files;
     static GameFileSystem? _fs;
     static readonly ConcurrentDictionary<(string Area, uint Seed), Level?> Generated = new();
+    // The order they were generated in: with random seeds every new instance is a new (area, seed), so only the last
+    // Kept stay (a level is several MB); an older one is generated again when asked for.
+    static readonly Queue<(string Area, uint Seed)> Order = new();
+    const int Kept = 24;
+    // Why the last generations that failed did (the exception in full), for the capture tour's records.
+    static readonly ConcurrentDictionary<(string Area, uint Seed), string> Errors = new();
+
+    /// <summary>The exception of a failed generation of (area, seed), while it is among the last ones asked for.</summary>
+    public static string? Error(string areaId, uint seed) => Errors.GetValueOrDefault((areaId, seed));
 
     /// <summary>Whether the Gateway generates this area itself (<see cref="BaselineFile"/>).</summary>
     public static bool IsSupported(string areaId)
@@ -40,47 +59,13 @@ static class ServerLevels
     /// <summary>Drops the supported list, so the next check reads <see cref="BaselineFile"/> again (tests).</summary>
     internal static void Reload() { lock (Gate) _supported = null; }
 
-    /// <summary>The supported areas of a gate baseline: each "capture &lt;area&gt;" whose tile hash, both grids, every
-    /// draw the port makes, the doodads, the cell heights and the transitions match (a check without a capture does not
-    /// count against it), with every "oracle &lt;area&gt; &lt;seed&gt;" of the area matching too.</summary>
-    internal static HashSet<string> LoadSupported(string file)
-    {
-        var supported = new HashSet<string>(StringComparer.Ordinal);
-        try
-        {
-            if (!File.Exists(file)) return supported;
-            using var doc = JsonDocument.Parse(File.ReadAllText(file));
-            var failedOracle = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var p in doc.RootElement.EnumerateObject())
-            {
-                var r = p.Value;
-                string hash = r.GetProperty("Hash").GetString() ?? "";
-                if (p.Name.StartsWith("oracle ", StringComparison.Ordinal))
-                {
-                    if (hash != "match") failedOracle.Add(p.Name.Split(' ')[1]);
-                    continue;
-                }
-                if (!p.Name.StartsWith("capture ", StringComparison.Ordinal) || hash != "match") continue;
-                int Int(string name, int none) => r.TryGetProperty(name, out var v) ? v.GetInt32() : none;
-                string? first = r.TryGetProperty("FirstDiff", out var f) ? f.GetString() : null;
-                bool draws = first is null || first.EndsWith(" (port stopped)", StringComparison.Ordinal);
-                bool grids = Int("Walk", -1) == 0 && Int("Projectile", -1) == 0;
-                int captured = Int("Captured", 0);
-                bool doodads = captured < 0 || (Int("Placed", 0) == captured && Int("Matched", 0) == captured);
-                if (draws && grids && doodads && Int("Heights", -1) <= 0 && Int("Objects", -1) <= 0)
-                    supported.Add(p.Name["capture ".Length..]);
-            }
-            supported.ExceptWith(failedOracle);
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException or KeyNotFoundException)
-        {
-            Console.WriteLine($"[gateway] server levels: {file}: {ex.Message}");
-        }
-        return supported;
-    }
+    /// <summary>The supported areas of a gate baseline (<see cref="GameServer.Core.World.ServerLevelAreas.Load"/>).</summary>
+    internal static HashSet<string> LoadSupported(string file) =>
+        GameServer.Core.World.ServerLevelAreas.Load(file, m => Console.WriteLine($"[gateway] server levels: {m}"));
 
     /// <summary>The generated layout of (area, seed), or null when the area is not supported or generation failed
-    /// (the Gateway then falls back to the capture). Generated once per (area, seed) and kept.</summary>
+    /// (the Gateway then falls back to the capture). Generated once per (area, seed) and kept while among the last
+    /// <see cref="Kept"/>.</summary>
     public static Level? For(string areaId, uint seed)
     {
         if (!IsSupported(areaId)) return null;
@@ -88,9 +73,22 @@ static class ServerLevels
         lock (Gate)
         {
             if (Generated.TryGetValue((areaId, seed), out known)) return known;
-            return Generated[(areaId, seed)] = Generate(areaId, seed);
+            var level = Generated[(areaId, seed)] = Generate(areaId, seed);
+            Order.Enqueue((areaId, seed));
+            while (Order.Count > Kept)
+            {
+                var old = Order.Dequeue();
+                Generated.TryRemove(old, out _);
+                Errors.TryRemove(old, out _);
+            }
+            return level;
         }
     }
+
+    /// <summary>The generated layout of (area, seed) standing in for a capture missing from <paramref name="folder"/>:
+    /// only for the Gateway's own capture folder (data/walkability), never for a test's.</summary>
+    public static Level? InPlaceOf(string folder, string areaId, uint seed) =>
+        Path.GetFullPath(folder) == Path.GetFullPath("data/walkability") ? For(areaId, seed) : null;
 
     static Level? Generate(string areaId, uint seed)
     {
@@ -102,16 +100,19 @@ static class ServerLevels
             var result = LevelGenerator.Generate(files, area, seed);
             var walk = Walkability.Build(result.Grid, t => files.Walk(t.Path));
             // The doodad stage stamps the doodads' collision into the grids (re/011 §6c).
-            new DoodadStage(files, result.Random, result.Grid, walk, []).Run(result.Records);
+            var doodads = new DoodadStage(files, result.Random, result.Grid, walk, []);
+            doodads.Run(result.Records);
             var heights = CellHeights.Build(result.Grid, t => files.Walk(t.Path));
             var objects = AreaObjects.Transitions(files, result);
             Console.WriteLine($"[gateway] server levels: generated {areaId} seed {seed} ({walk.Width}x{walk.Height} cells, " +
-                $"{objects.Count} tile object(s)) in {clock.ElapsedMilliseconds} ms");
-            return new Level(walk.Width, walk.Height, walk.Walk, heights, objects);
+                $"{objects.Count} tile object(s), {doodads.Placed.Count} doodads) in {clock.ElapsedMilliseconds} ms");
+            return new Level(walk.Width, walk.Height, walk.Walk, heights, objects, doodads.Placed, AreaObjects.Rooms(result),
+                AreaObjects.QuestObjects(files, result), walk.Projectile) { TileHash = result.Grid.Hash(), Milliseconds = clock.ElapsedMilliseconds };
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[gateway] server levels: {areaId} seed {seed} not generated ({ex.GetType().Name}: {ex.Message.Split('\n')[0]})");
+            Errors[(areaId, seed)] = ex.ToString();
             return null;
         }
     }

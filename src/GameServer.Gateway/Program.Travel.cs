@@ -363,6 +363,8 @@ partial class Program
     // a restart (data/tour-left.txt) resumes at the character's first area load.
     static async Task ContinueTour(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool starting = false)
     {
+        // Tours record with scripts/walkmaps: without it a saved tour (data/tour-left.txt) is left alone.
+        if (!AreaLayouts.Recording) return;
         string character = CharacterName(conn);
         if (!starting && CaptureTour.Resume(character) is { } resumed)
         {
@@ -376,6 +378,7 @@ partial class Program
             CaptureTour.MarkArrived(character);
             bool ok = await CaptureTour.WaitForCapture(character, conn.Layout.Id, conn.Seed);
             Console.WriteLine($"[gateway] {remote} tour: {conn.Layout.Id} seed {conn.Seed} {(ok ? "captured" : "NOT captured (120 s; is live.ps1 -Walkmaps running?)")}");
+            TourRecords.Write(conn.Layout.Id, conn.Seed, ok ? "captured" : "not captured", layout: conn.Layout);
         }
         // An area the tour did not send the player to, unless the tour waits for the client to come back.
         else if (!starting && !CaptureTour.Waiting(character)) return;

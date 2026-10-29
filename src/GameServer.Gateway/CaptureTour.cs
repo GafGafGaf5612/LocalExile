@@ -151,6 +151,7 @@ static class CaptureTour
         t.Missed++;
         try { File.AppendAllText(FailuresFile, $"{DateTime.Now:s} {area} {seed}: the client did not arrive ({failure})\n"); }
         catch (IOException) { }
+        TourRecords.Write(area, seed, "client failed", failure);
     }
 
     /// <summary>Waits until scripts/walkmaps has written this load's files: the generation trace and the walk map

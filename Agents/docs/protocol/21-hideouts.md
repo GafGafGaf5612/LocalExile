@@ -98,7 +98,7 @@ component, so in a hideout it needs the 6 bytes (without them: "Buffer Underflow
 `HideoutDoodad` record, `WaypointObject.Hideout`.
 
 **Instances:** a private instance per character like other areas (Auth re-enters the character's live one); hideouts
-always use seed 1, also with `Game_RANDOM_SEEDS=1` (`WorldAreaHideouts`).
+always use seed 1, also where other areas get random seeds (`WorldAreaHideouts`).
 
 ## 3. Going there
 

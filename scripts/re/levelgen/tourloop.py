@@ -4,14 +4,18 @@
 # remembered login, else the LOCALEXILE_PASSWORD environment variable) and plays the character, which starts the tour or resumes
 # the saved one (data/tour-left.txt). When the client dies, shows an exception or makes no progress for --stall
 # seconds, the stop under way goes to data/walkability/tour-failures.txt (unless the Gateway already put it there), the
-# client and the servers are restarted and the tour goes on. Ends when the tour is finished. Progress: logs/tourloop.log.
-import argparse, datetime, json, os, re, subprocess, sys, time
+# client and the servers are restarted and the tour goes on. Ends when the tour is finished. Progress: logs/tourloop.log;
+# the server and recorder logs of each run (live.ps1 deletes them on start) are kept in logs/tour-runs/<start time>/.
+import argparse, datetime, json, os, re, shutil, subprocess, sys, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 STATE = ROOT / "data" / "tour-left.txt"
 FAILURES = ROOT / "data" / "walkability" / "tour-failures.txt"
 LOG = ROOT / "logs" / "tourloop.log"
+RUNS = ROOT / "logs" / "tour-runs"
+RECORDS = ROOT / "data" / "tour-records" / "stops.jsonl"
+CLIENT_LOG = ROOT / "Client" / "logs" / "Client.txt"
 GATEWAY_LOG = ROOT / "logs" / "live-gateway.log"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 CONTROL = ROOT / "scripts" / "dev" / "client_control.py"
@@ -104,11 +108,51 @@ def drop_current(reason):
     STATE.write_text("\n".join(out) + "\n", encoding="utf-8")
     with FAILURES.open("a", encoding="utf-8") as f:
         f.write(f"{datetime.datetime.now():%Y-%m-%dT%H:%M:%S} {current}: the client did not arrive ({reason})\n")
+    record_drop(current, reason)
     log(f"dropped {current}: {reason}")
+
+
+def record_drop(current, reason):
+    """The tour record of a stop the Gateway could not finish (client, recorder or Gateway gone, no progress): the
+    client's log from that load's "Generating level" line on (its crash or error, if it logged one)."""
+    area, _, seed = current.partition(" ")
+    lines = []
+    try:
+        with CLIENT_LOG.open(encoding="utf-8", errors="replace") as f:
+            text = f.read().splitlines()
+        at = max((i for i, l in enumerate(text) if f'area "{area}" with seed {seed}' in l), default=None)
+        lines = text[at:at + 400] if at is not None else text[-80:]
+    except OSError:
+        pass
+    # A client that died has a Windows "Application Error" event (exception code, faulting module and offset: 0xe06d7363
+    # is a C++ exception nothing caught); its log stops at the load's first line.
+    crash = ps("Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000; StartTime=(Get-Date).AddMinutes(-15)} "
+               "-ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'Game\\.patched' } | Select-Object -First 1 "
+               "| ForEach-Object { $_.TimeCreated.ToString('s') + ' ' + ($_.Message -replace '\\s+', ' ') }").stdout.strip()
+    RECORDS.parent.mkdir(parents=True, exist_ok=True)
+    with RECORDS.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"time": f"{datetime.datetime.now():%Y-%m-%dT%H:%M:%S}", "area": area, "seed": int(seed or 0),
+                            "outcome": "dropped", "reason": reason, "client": {"log": lines, "crash": crash or None}}) + "\n")
+
+
+def keep_logs():
+    """Copies the last run's server and recorder logs before live.ps1 deletes them."""
+    logs = [p for p in (ROOT / "logs").glob("live-*.*") if p.suffix in (".log", ".err")] + list((ROOT / "logs").glob("walkmaps.*"))
+    logs = [p for p in logs if p.stat().st_size > 0]
+    if not logs:
+        return
+    folder = RUNS / datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    folder.mkdir(parents=True, exist_ok=True)
+    for p in logs:
+        try:
+            shutil.copy2(p, folder / p.name)
+        except OSError as e:
+            log(f"could not keep {p.name}: {e}")
 
 
 def start(account, password, character, tour_file, first):
     stop_all()
+    keep_logs()
     r = ps("& scripts/dev/live.ps1 -Walkmaps -NoBuild -NoExtract", timeout=300)
     if r.returncode != 0:
         log(f"live.ps1 failed: {(r.stdout + r.stderr).strip()[-300:]}")

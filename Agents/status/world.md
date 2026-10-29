@@ -50,8 +50,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   other areas get private instances that live 6 minutes once empty.
   Code: `InstanceRegistry.cs`, `WorldAreaTowns.cs`.
   Docs: [09](../docs/protocol/09-area-change.md).
-- Walk maps and area transitions captured from the client on first visit;
-  the Gateway uses them for position estimates, spawns and area transitions.
+- Walk maps and area transitions captured from the client on first visit (optional, `live.ps1 -Walkmaps`: without
+  it nothing is recorded); the Gateway uses them for the areas it does not generate itself.
   Code: `scripts/walkmaps`, `live.ps1 -Walkmaps`.
   Docs: [GettingStarted](../GettingStarted.md) step 9, [08](../docs/protocol/08-area-transitions.md) §7.
 - Waypoints: the Waypoint object where the area's layout is captured (Lioneye's Watch built in), activated on entry
@@ -79,7 +79,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [07](../docs/protocol/07-latency-visibility-movement.md).
 - **Spawn points.** Logins, Resurrect in Town and one-way entries other than The Twilight Strand → Lioneye's Watch use
   the area's spawn: the town's fixed point, or the walkable cell farthest from any edge in a generated area.
-- **Area seeds.** Non-town areas use seed 1 unless `Game_RANDOM_SEEDS=1`; each new seed needs its own walk map.
+- **Area seeds.** A new instance of an area the Gateway generates itself gets a random seed (`Game_RANDOM_SEEDS=0`
+  pins it to 1); towns, hideouts and the areas still read from captures use seed 1.
 - **Level generator port.** `GameServer.Data/Terrain/Generation` reproduces the client's level generator: the tile
   grid, the walkability and projectile grids, the doodads, every cell's ground height (`CellHeights.cs`) and the area
   transitions and waypoints (`AreaObjects.cs`).
@@ -94,17 +95,19 @@ Part of [Status](../Status.md); what to build next in this area is in
   memories, the Sanctum floors, the Deepwater biome grid; they come with each league's server side, see the
   [roadmap](../roadmap/world.md)), and 15 the client cannot generate at any seed tried (the
   list is written to data/areas-unavailable.txt). The port matches a load of every other row.
-  A tour of 3 random seeds per matching area: all 519 match. Every traced load at another seed (1215, `lg.ps1 loads`)
-  matches in draws, grids, doodads, heights and transitions too, the last one (a shrine's ground, 2_6_2) since
-  2026-10-29.
-  The Gateway's default seed 1 is checked for every supported area; other seeds (`Game_RANDOM_SEEDS=1`) can differ.
+  A tour of 3 random seeds per matching area: all 519 match. Every traced load at another seed of that tour (1215,
+  `lg.ps1 loads`) matches in draws, grids, doodads, heights and transitions too, the last one (a shrine's ground,
+  2_6_2) since 2026-10-29. A 5-seed tour of every supported area, stopped after 475 stops (101 areas): 469 match in
+  every layer and in the rooms' monster points; 4 do not (1_2_15 at 3 seeds, 1_2_14_2 at 1), and the port cannot
+  generate 202 of the 7700 seeds (re/011 §8).
   Every load with a height capture matches cell for cell, and every one of the 186 with a transitions capture
   matches exactly (186 expected once the gate reruns: one capture was cut short by the recorder, now repaired).
   Act 5's crater effects in The Slave Pens (`GlowyFX`, `SlavePensIntroGround`: `server_only` types the client draws
   only when the server creates them) are sent at their end state (Transitionable 3); the client draws them
   (2026-10-29, seed 1).
   The Gateway generates the supported areas itself (`ServerLevels.cs`): those whose seed-1 trace passes every gate
-  check (`gate-baseline.json`); their walk grid, cell heights, transitions and waypoint need no capture.
+  check (`gate-baseline.json`); their walk grid, projectile grid, cell heights, transitions and waypoint, and the
+  doodads, rooms and quest tile objects the monster points and a1 quests are fitted to, need no capture.
   Entering any other area tells the player it is generated on the client and not supported by the server yet.
   The client's stages after the doodads (mesh variation, ground clutter, critters) are client-only and not ported.
   The Labyrinth's boss ends use the layout the client builds with seed 0; the server sends no daily layout.
@@ -113,7 +116,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- Area transitions of a generated area need a `-Walkmaps` capture for its seed.
+- Area transitions of a generated area the Gateway does not generate itself need a `-Walkmaps` capture for its seed.
   Quest objects with extra components are sent as plain AreaTransition, so The Twilight Strand's gate appears without
   its animation; the Doorman and the opening tutorial's wall are not created ([12](../docs/protocol/12-quests.md) §6).
   Only quests a1q1 and a1q4 are scripted; the client builds the quest tracker from the flags.
