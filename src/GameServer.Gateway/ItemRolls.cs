@@ -12,6 +12,9 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 {
     public const int Prefix = 1, Suffix = 2;
 
+    /// <summary>Mods.dat GenerationType for the two Eldritch influences: Searing Exarch and Eater of Worlds.</summary>
+    public const int ExarchImplicit = 28, EaterImplicit = 29;
+
     /// <summary>A Words.dat row: the key the client looks it up by (HASH32), its text and spawn weights.</summary>
     public sealed record Word(uint Key, string Text, int List, IReadOnlyList<(string Tag, int Weight)> SpawnWeights);
 
@@ -101,6 +104,37 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 
     /// <summary>The rare per-side limit: jewel classes allow two prefixes and two suffixes, other rare bases three.</summary>
     static int MaxAffixesPerSide(ItemCatalog.BaseType type) => type.Class is "Jewel" or "AbyssJewel" ? 2 : 3;
+
+    /// <summary>The Eater of Worlds implicits an Eldritch Ichor of this tier can add: the tier's ordinary and
+    /// Unique/Pinnacle Presence variants that the base's tags allow.</summary>
+    public IReadOnlyList<(ModCatalog.Mod Mod, int Weight)> EldritchIchorPool(ItemCatalog.BaseType type, int tier)
+    {
+        if (tier is < 1 or > 4) return [];
+        return [.. catalog.Mods.All
+            .Where(m => m.GenerationType == EaterImplicit && IsEldritchTier(m.Id, tier))
+            .Select(m => (m, m.WeightFor(type.Tags))).Where(p => p.Item2 > 0)];
+    }
+
+    static bool IsEldritchTier(string id, int tier) =>
+        id.EndsWith($"EldritchImplicit{tier}") || id.EndsWith($"UniquePresence{tier}") ||
+        id.EndsWith($"PinnaclePresence{tier}");
+
+    /// <summary>Eldritch Ichor: adds an Eater of Worlds implicit of the ichor's tier to eligible armour, replacing the
+    /// other implicit modifiers except Searing Exarch ones.</summary>
+    public Item? EldritchIchor(Item item, ItemCatalog.BaseType type, int tier, Random random)
+    {
+        if (tier is < 1 or > 4 || item.Rarity is not (ItemRarity.Normal or ItemRarity.Magic or ItemRarity.Rare) ||
+            type.Class is not ("Helmet" or "Body Armour" or "Gloves" or "Boots") ||
+            !TryModifiable(item, out _)) return null;
+        var pool = EldritchIchorPool(type, tier);
+        if (pool.Count == 0) return null;
+        var chosen = Pick(pool, random);
+        var kept = item.Mods.Where(m => m.Section != ModSection.Implicit ||
+            catalog.Mods.ByHash(m.Hash)?.GenerationType == ExarchImplicit).ToList();
+        int at = kept.FindLastIndex(m => m.Section == ModSection.Implicit) + 1;
+        kept.Insert(at, chosen.Roll(ModSection.Implicit, random));
+        return item with { Mods = kept };
+    }
 
     /// <summary>Orb of Chance, the documented LocalExile rule: a modifiable normal weapon or armour piece becomes
     /// rare (30%, 4-6 affixes and a rare name) or magic (2-4 affixes, at most two of each side). Refused targets

@@ -19,6 +19,22 @@ static class CurrencyEffects
     public const string RegalOrb = "Metadata/Items/Currency/CurrencyUpgradeMagicToRare";
     public const string ExaltedOrb = "Metadata/Items/Currency/CurrencyAddModToRare";
     public const string OrbOfAnnulment = "Metadata/Items/Currency/CurrencyRemoveMod";
+    public const string LesserEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor1";
+    public const string GreaterEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor2";
+    public const string GrandEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor3";
+    public const string ExceptionalEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor4";
+
+    /// <summary>The Eater of Worlds implicit tier an Eldritch Ichor adds (Lesser 1 … Exceptional 4).</summary>
+    public static int? EldritchIchorTier(string id) => id switch
+    {
+        LesserEldritchIchor => 1, GreaterEldritchIchor => 2, GrandEldritchIchor => 3, ExceptionalEldritchIchor => 4,
+        _ => null,
+    };
+
+    /// <summary>Eldritch Ichor: adds an Eater of Worlds implicit to body armour, boots, gloves or a helmet, replacing
+    /// the other implicit modifiers except Searing Exarch ones. Normal, magic and rare items only.</summary>
+    public static Item? EldritchIchor(Item item, ItemCatalog.BaseType type, int tier, ItemRolls rolls, Random random) =>
+        rolls.EldritchIchor(item, type, tier, random);
 
     /// <summary>Orb of Annulment: one random unprotected explicit affix leaves a magic or rare item; implicits, the
     /// other affixes, rarity and name stay. Corrupted/mirrored/unsupported/unmodifiable bases and items without an

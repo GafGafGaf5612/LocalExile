@@ -209,6 +209,13 @@ Part of [Status](../Status.md); what to build next in this area is in
   CoE's official Vaal outcome table remains separate work; the admission and boundary are documented.
   Ordinary/Shift inventory/stash dispatch and save reloads have automated coverage; native re-acceptance is pending.
   See [13](../docs/protocol/13-items.md), "Vaal Orb and corruption", and [admission](../docs/re/vaal-coe.md).
+- **Eldritch Ichors (Lesser, Greater, Grand, Exceptional):** add the tier's Eater of Worlds implicit to body armour,
+  boots, gloves or helmet, replacing every other implicit except Searing Exarch ones; normal/magic/rare only.
+  Unique/corrupted/mirrored, non-armour and unsupported/unmodifiable targets are refused before spending.
+  CoE base-key/tier/presence checks, all four tier suffixes and ordinary/Shift inventory/stash dispatch have automated
+  coverage. A separate Eldritch dominance state and the Ember/Conflict family remain separate, and native tooltip
+  acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Eldritch Ichors", and [evidence](../docs/re/eldritch-ichor-coe.md).
 - **Glassblower's Bauble (verified live, 2026-10-21):** +1% flask quality up to 20%; Scouring resets it.
   See [13](../docs/protocol/13-items.md), "Glassblower's Bauble".
 - **Fracturing Orb (verified live, 2026-10-21):** one random mod of a rare item with 4+ mods is fractured and kept by
@@ -233,6 +240,6 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Most uniques and special mods (#60), and unique drops/chancing; only Mageblood has a definition so far;
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
-  Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, Glassblower's Bauble,
-  Fracturing Orb, Mirror of Kalandra, Gemcutter's Prism and Orb of Regret;
+  Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, the four Eldritch Ichors,
+  Glassblower's Bauble, Fracturing Orb, Mirror of Kalandra, Gemcutter's Prism and Orb of Regret;
   support gems and links ([13](../docs/protocol/13-items.md) "Open").
