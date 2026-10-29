@@ -519,12 +519,18 @@ See [the source comparison and evidence limits](../re/transmutation-coe.md).
 affixes as the official orb: 1-2, at most one prefix and one suffix, each tier drawn by weight (`ItemRolls.Roll`).
 Anything but a magic item with mods is refused, nothing spent.
 
-### Orb of Augmentation (2026-10-21, verified live)
+### Orb of Augmentation (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyAddModToMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Augmentation` adds one affix to a magic
-item (`ItemRolls.AddAffix`): drawn by weight from the base's pool, no family already on it, at most one prefix and one
-suffix (the magic limit, as the Orb of Alteration). Old affixes and rarity stay. A full item, or anything
-but a magic item, is refused and nothing is spent.
+`CurrencyAddModToMagic`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Augmentation` delegates to
+`ItemRolls.Augment`: a magic item with a free prefix or suffix gets one affix drawn by weight from the ordinary pool
+(`ItemRolls.AffixesToAdd`: no family already on it, at most one prefix and one suffix, as the Orb of Alteration).
+Old affixes, rarity, implicits, quality, sockets, gems and charges stay.
+The base must be known and serializable, with Mods and neither its base nor its class marked `Unmodifiable`;
+corrupted and mirrored items are refused too.
+A full item, a non-magic item, or a base whose open side has no ordinary affix is refused before spending.
+That last refusal is LocalExile policy: CoE's engine still spends the orb and adds nothing on such an item.
+The level-1 Driftwood Wand pools and simulated probabilities agree with CoE beta; see
+[the source comparison](../re/augmentation-coe.md).
 
 ### Regal Orb (2026-10-21, verified live)
 

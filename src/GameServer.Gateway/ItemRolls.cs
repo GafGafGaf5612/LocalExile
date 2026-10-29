@@ -24,15 +24,32 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
             .Where(m => m.Domain == t.ModDomain && m.GenerationType is Prefix or Suffix && m.Level <= itemLevel && !m.EssenceOnly)
             .Select(m => (m, m.WeightFor(t.Tags))).Where(p => p.Item2 > 0)]);
 
+    /// <summary>The item and its base accept affix changes: the item is not corrupted or mirrored, has Mods, and its
+    /// base is known, serializable, has Mods and is not unmodifiable.</summary>
+    bool TryModifiable(Item item, out ItemCatalog.BaseType type)
+    {
+        type = null!;
+        if (item.Corrupted || item.Mirrored || !item.Components.Contains("Mods") ||
+            catalog.ByHash(item.TypeHash) is not { } found || !found.Supported || !found.Components.Contains("Mods") ||
+            found.Unmodifiable) return false;
+        type = found;
+        return true;
+    }
+
     /// <summary>Transmutation's validated normal-to-magic upgrade. Refused targets return null before rolling or
     /// spending: no unknown/unmodifiable bases or empty ordinary affix pools. Ordinary magic counts stay 50/50.</summary>
     public Item? Transmute(Item item, Random random)
     {
-        if (item.Rarity != ItemRarity.Normal || item.Corrupted || item.Mirrored || !item.Components.Contains("Mods") ||
-            catalog.ByHash(item.TypeHash) is not { } type || !type.Supported || !type.Components.Contains("Mods") ||
-            type.Unmodifiable || Pool(type, item.ItemLevel).Count == 0) return null;
+        if (item.Rarity != ItemRarity.Normal || !TryModifiable(item, out var type) ||
+            Pool(type, item.ItemLevel).Count == 0) return null;
         return Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
     }
+
+    /// <summary>Augmentation's validated one-affix addition to a magic item. Refused targets return null before
+    /// rolling or spending: no unknown/unmodifiable bases, and no free weighted affix (a full item, or an open side
+    /// with no eligible mods).</summary>
+    public Item? Augment(Item item, Random random) =>
+        item.Rarity == ItemRarity.Magic && TryModifiable(item, out _) ? AddAffix(item, 1, random) : null;
 
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
@@ -145,13 +162,22 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     public Item? AddTaggedAffix(Item item, int maxEach, Random rng, string tag, bool respectMetamods = true) =>
         AddAffixCore(item, maxEach, rng, respectMetamods, tag);
 
-    Item? AddAffixCore(Item item, int maxEach, Random rng, bool respectMetamods, string? requiredTag)
+    /// <summary>The affixes <see cref="AddAffix"/> may add: the base's pool at the item's level, without families
+    /// already on the item, without a side that already has <paramref name="maxEach"/>, and filtered by the item's
+    /// metamods and an optional Tags.dat tag.</summary>
+    public IReadOnlyList<(ModCatalog.Mod Mod, int Weight)> AffixesToAdd(Item item, int maxEach, bool respectMetamods = true,
+        string? requiredTag = null)
     {
-        if (catalog.ByHash(item.TypeHash) is not { } t) return null;
+        if (catalog.ByHash(item.TypeHash) is not { } t) return [];
         var have = item.Mods.Where(m => m.Section == ModSection.Explicit).Select(m => catalog.Mods.ByHash(m.Hash)).OfType<ModCatalog.Mod>().ToList();
         var rules = new MetacraftRules(item, catalog.Mods);
-        var allowed = Pool(t, item.ItemLevel).Where(p => (!respectMetamods || rules.Allows(p.Mod)) && have.Count(h => h.GenerationType == p.Mod.GenerationType) < maxEach &&
-            !have.Any(h => h.Families.Intersect(p.Mod.Families).Any()) && (requiredTag is null || p.Mod.Tags.Contains(requiredTag))).ToList();
+        return [.. Pool(t, item.ItemLevel).Where(p => (!respectMetamods || rules.Allows(p.Mod)) && have.Count(h => h.GenerationType == p.Mod.GenerationType) < maxEach &&
+            !have.Any(h => h.Families.Intersect(p.Mod.Families).Any()) && (requiredTag is null || p.Mod.Tags.Contains(requiredTag)))];
+    }
+
+    Item? AddAffixCore(Item item, int maxEach, Random rng, bool respectMetamods, string? requiredTag)
+    {
+        var allowed = AffixesToAdd(item, maxEach, respectMetamods, requiredTag);
         if (allowed.Count == 0) return null;
         var added = Pick(allowed, rng);
         // Prefixes before suffixes, as Roll orders them.

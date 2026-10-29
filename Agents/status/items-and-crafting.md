@@ -156,8 +156,13 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Orb of Alteration (verified live, 2026-10-21):** a magic item gets 1-2 new affixes (one prefix, one suffix at
   most).
   See [13](../docs/protocol/13-items.md), "Orb of Alteration".
-- **Orb of Augmentation (verified live, 2026-10-21):** +1 affix on a magic item, up to one prefix and one suffix.
-  See [13](../docs/protocol/13-items.md), "Orb of Augmentation".
+- **Orb of Augmentation:** +1 weighted affix on a magic item, up to one prefix and one suffix, with the same admission
+  checks as Transmutation: a known, serializable, non-`Unmodifiable` base with Mods; corrupted/mirrored, full items
+  and open sides without ordinary affixes are refused before spending.
+  CoE beta pool and simulated-probability checks, ordinary/Shift inventory/stash dispatch and save reloads have
+  automated coverage. The old live check (2026-10-21) predates these admission checks; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Orb of Augmentation", and
+  [evidence](../docs/re/augmentation-coe.md).
 - **Regal Orb (verified live, 2026-10-21):** magic → rare, affixes kept, +1 affix, rare name.
   See [13](../docs/protocol/13-items.md), "Regal Orb".
 - **Exalted Orb (verified live, 2026-10-21):** +1 affix on a rare item, up to 6 (three of each kind).

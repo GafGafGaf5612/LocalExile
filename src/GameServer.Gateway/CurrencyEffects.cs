@@ -35,10 +35,10 @@ static class CurrencyEffects
         item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") || rolls.AddAffix(item, 3, random) is not { } added ? null
             : added with { Rarity = ItemRarity.Rare, Identified = true, NameWords = rolls.RareName(item, random) };
 
-    /// <summary>Orb of Augmentation: a magic item with a free prefix or suffix (at most one of each) gets one more affix;
-    /// its affixes and rarity stay. Anything else is refused.</summary>
-    public static Item? Augmentation(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Magic || !item.Components.Contains("Mods") ? null : rolls.AddAffix(item, 1, random);
+    /// <summary>Orb of Augmentation: a modifiable magic item with a free prefix or suffix (at most one of each) gets
+    /// one more affix from the ordinary weighted pool; its affixes and rarity stay. Anything else is refused before
+    /// the inventory handler spends an orb.</summary>
+    public static Item? Augmentation(Item item, ItemRolls rolls, Random random) => rolls.Augment(item, random);
 
     /// <summary>Orb of Alteration (as the official one): a magic item with mods gets new affixes, 1-2 with at most one
     /// prefix and one suffix, each tier drawn by weight. Anything else is refused.</summary>
