@@ -71,6 +71,15 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         return Roll(item, ItemRarity.Magic, random, respectMetamods: true) with { Identified = true };
     }
 
+    /// <summary>Alchemy's validated normal-to-rare upgrade: 4-6 weighted affixes and a rare name. Flasks are
+    /// magic-only and cannot become rare.</summary>
+    public Item? Alchemy(Item item, Random random)
+    {
+        if (item.Rarity != ItemRarity.Normal || item.Components.Contains("Flask") || !TryModifiable(item, out var type) ||
+            Pool(type, item.ItemLevel).Count == 0) return null;
+        return Roll(item, ItemRarity.Rare, random) with { Identified = true };
+    }
+
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.
@@ -99,9 +108,13 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
         var result = item with { Rarity = rarity, Mods = kept, NameWords = [] };
         if (catalog.ByHash(item.TypeHash) is not { } t || !t.Components.Contains("Mods") || rarity is not (ItemRarity.Magic or ItemRarity.Rare))
             return result;
+        // CoE beta rare counts: affixNumberGeneration[6] = [2/3, 1/4, 1/12] for 4, 5 or 6 affixes.
+        // Jewel classes cap at 4 (2 per side), affixNumberGeneration[4] = [.65,.35] for 3 or 4 affixes.
         var (count, maxEach) = shape ?? (rarity == ItemRarity.Magic
             ? (rng.Next(1, 3), 1)
-            : (rng.Next(12) switch { < 7 => 4, < 11 => 5, _ => 6 }, 3));
+            : t.Class is "Jewel" or "AbyssJewel"
+                ? (rng.Next(20) < 13 ? 3 : 4, 2)
+                : (rng.Next(12) switch { < 8 => 4, < 11 => 5, _ => 6 }, 3));
         var generation = new MetacraftRules(item with { Mods = kept }, catalog.Mods);
         var pool = Pool(t, Math.Min(item.ItemLevel, maxModLevel ?? item.ItemLevel))
             .Where(p => !respectMetamods || generation.Allows(p.Mod)).ToList();

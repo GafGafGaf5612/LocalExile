@@ -140,11 +140,10 @@ static class CurrencyEffects
         !item.Components.Contains("Weapon") || !item.Components.Contains("Quality") || item.Quality >= MaximumQuality ? null
             : item with { Quality = (byte)(item.Quality + 1) };
 
-    /// <summary>Orb of Alchemy: a normal item with mods becomes an identified rare one with 4-6 new random affixes and
-    /// a rare name (<see cref="ItemRolls.Roll"/>); anything else is refused.</summary>
-    public static Item? Alchemy(Item item, ItemRolls rolls, Random random) =>
-        item.Rarity != ItemRarity.Normal || !item.Components.Contains("Mods") ? null
-            : rolls.Roll(item, ItemRarity.Rare, random) with { Identified = true };
+    /// <summary>Orb of Alchemy: a modifiable normal item becomes an identified rare one with 4-6 new weighted
+    /// affixes (CoE's 2/3, 1/4, 1/12) and a rare name. Flasks are magic-only; unknown/unmodifiable bases, non-normal
+    /// items and empty pools are refused before the inventory handler spends an orb.</summary>
+    public static Item? Alchemy(Item item, ItemRolls rolls, Random random) => rolls.Alchemy(item, random);
 
     /// <summary>Chaos Orb: a rare item with mods gets all its explicit affixes rerolled (4-6 new ones, new tiers and
     /// values) and a new rare name; implicits stay. Anything else is refused.</summary>

@@ -140,11 +140,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   "Socket colours (3.29)".
   Not modelled: Tainted Chromatic/Jeweller's Orbs, Orb of Binding, the Locus of Corruption, the 25-roll bench reward,
   special item overrides.
-- **Orb of Alchemy, Chaos Orb, Divine Orb (verified live, 2026-10-21):** Alchemy makes a normal item an identified
-  rare with 4-6 random affixes and a rare name; Chaos rerolls all of a rare item's affixes (4-6, new tiers);
-  Divine keeps the affixes, tiers and order and rerolls only values.
-  Shift works for all three.
-  See [13](../docs/protocol/13-items.md), "Orb of Alchemy", "Chaos Orb", "Divine Orb".
+- **Orb of Alchemy:** a modifiable normal item becomes an identified rare with 4-6 weighted affixes (CoE's 2/3, 1/4,
+  1/12; jewels 3-4 with two per side) and a rare name. Flasks are magic-only; unknown/unsupported/unmodifiable,
+  non-normal, corrupted/mirrored and empty-pool targets are refused before spending.
+  CoE count/jewel checks, ordinary/Shift inventory/stash dispatch and save reloads have automated coverage.
+  The old live check (2026-10-21) predates these rules; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Orb of Alchemy", and [evidence](../docs/re/alchemy-coe.md).
+- **Chaos Orb, Divine Orb (verified live, 2026-10-21):** Chaos rerolls all of a rare item's affixes (now the CoE
+  4/5/6 counts and jewel caps, new tiers); Divine keeps the affixes, tiers and order and rerolls only values.
+  Shift works for both.
+  See [13](../docs/protocol/13-items.md), "Chaos Orb", "Divine Orb".
 - **Orb of Scouring (verified live, 2026-10-21):** a magic / rare / unique item becomes normal, only base mods stay.
   See [13](../docs/protocol/13-items.md), "Orb of Scouring".
 - **Orb of Transmutation:** normal to identified magic, targeting 1-2 weighted affixes at equal probability.

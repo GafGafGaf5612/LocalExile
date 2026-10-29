@@ -465,12 +465,17 @@ drawn and accepted, Chromatic leaves one socket non-white and the rest white, Je
 adds white ones, and the matching-colour +10% quality changes the gem's stats; the stat path is in
 `Program.GemSupports.cs` (`Quality`). The probabilities remain an approximation.
 
-### Orb of Alchemy (2026-10-21, verified live)
+### Orb of Alchemy (2026-10-21, verified live; CoE-checked 2026-10-30)
 
-`CurrencyUpgradeToRare` goes through the same 0x71/0x72 handler. `CurrencyEffects.Alchemy` takes only a normal item with
-a Mods component and makes it rare and identified: implicits kept, 4-6 explicit affixes rolled by `ItemRolls.Roll`
-(weighted by Mods.dat spawn weights, each mod's values rolled within its tier), and a Words.dat rare name. Anything
-else is refused and nothing is spent.
+`CurrencyUpgradeToRare` goes through the same 0x71/0x72 handler. `CurrencyEffects.Alchemy` delegates to
+`ItemRolls.Alchemy`: a modifiable normal item becomes rare and identified, implicits kept, with 4-6 explicit affixes
+from the ordinary pool (`ItemRolls.Roll`, weighted by Mods.dat spawn weights, values within each tier) and a Words.dat
+rare name.
+The shared rare count table is now CoE's: 4 affixes 2/3, 5 affixes 1/4, 6 affixes 1/12; jewel classes get 3 or 4 with
+at most two per side.
+Flasks are magic-only and refused. Unknown/unmodifiable bases, non-normal items, corrupted/mirrored items and empty
+pools are refused before spending.
+The 300-apply sample and jewel caps are in [the source comparison](../re/alchemy-coe.md).
 
 ### Chaos Orb (2026-10-21, verified live)
 
