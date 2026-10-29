@@ -877,6 +877,21 @@ partial class Program
             }
             catch (FormatException) { await conn.Commands!.Reply("Numbers only (decimal or 0x…)."); }
         })
+        .Add("atlas", "/atlas [layout] (dev: show or choose the fallback layout generic maps open)", async args =>
+        {
+            var atlas = MapDevices.Value.Atlas;
+            if (atlas is null || atlas.Layouts.Count == 0) { await conn.Commands!.Reply("No Atlas layouts: extract AtlasNode.json and WorldAreas.json."); return; }
+            if (args.Length == 0)
+            {
+                var current = atlas.Selected(CharacterName(conn));
+                await conn.Commands!.Reply($"Atlas layout: {current?.Name} ({current?.Id}); {atlas.Layouts.Count} layouts available.");
+                return;
+            }
+            string query = string.Join(' ', args);
+            if (atlas.Find(query) is not { } layout) { await conn.Commands!.Reply($"No Atlas layout \"{query}\"."); return; }
+            atlas.Select(CharacterName(conn), layout);
+            await conn.Commands!.Reply($"Atlas layout set to {layout.Name} ({layout.Id}, tier {layout.Tier}).");
+        })
         .Add("goto", "/goto <area id or name> (dev: change area as if through an area transition, e.g. /goto 1_1_3)", async args =>
         {
             string target = string.Join(' ', args);

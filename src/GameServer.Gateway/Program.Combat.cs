@@ -1185,6 +1185,10 @@ partial class Program
         var balance = conn.Ruthless ? RuthlessSettings.Current : null;
         List<ItemDrops.Drop> drops = [.. DropsFor(conn).Roll(m.Level, m.Rarity, Random.Shared, IncreasedItemRarity(conn),
             balance?.ItemDropMultiplier ?? 1, balance?.EquipmentRarityMultiplier ?? 1)];
+        // A generic map drop (approximate rates): use the open map's tier in a map, tier 1 in the campaign.
+        int mapTier = MapDevice.OpenOf(CharacterName(conn)) is { } openMap && openMap.Area.Hash16 == conn.Layout.Hash
+            ? openMap.Area.Tier : 0;
+        if (DropsFor(conn).Map(m.Level, m.Rarity, mapTier, Random.Shared) is { } mapDrop) drops.Add(mapDrop);
         // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
         if (DropsFor(conn).Gold(m.Level, m.Rarity, Random.Shared, balance?.GoldMultiplier ?? 1) is { } gold) drops.Add(gold);
         foreach (var drop in drops)

@@ -101,8 +101,10 @@ public class LeagueQuestFlagBitTests
     public void League_flag_ids_go_to_the_client_as_bit_id_minus_one()
     {
         // UnlockedMapDevice is id 350 in the client's table; its Targetable tests bit 349 (live trace 2026-10-20).
-        // DelveEncounterComplete (68) too, for Niko's Delve options (21-hideouts.md).
-        Assert.Equal([2, 199, 349, 67], Quests.League.Bits(Quests.League.EveryCharacter));
+        // DelveEncounterComplete (68) too, for Niko's Delve options, and AtlasUnlocked (296) for the hideout Atlas
+        // device (21-hideouts.md).
+        Assert.Equal([2, 199, 295, 349, 67], Quests.League.Bits(Quests.League.EveryCharacter));
         Assert.Empty(Quests.League.Bits([0]));
+        Assert.Contains("EndGameAvailable", Quests.EveryCharacter);
     }
 }

@@ -483,6 +483,8 @@ partial class Program
             }
             else if (id == InstanceMapDevice.ActivateId)
                 await ActivateMapDevice(remote, stream, ciphers, conn, InstanceMapDevice.ReadActivate(bytes));
+            else if (id == InstanceMapDevice.SelectMapId)
+                await SelectAtlasMap(remote, stream, ciphers, conn, InstanceMapDevice.ReadSelectMap(bytes));
             else if (id == InstanceStash.MoveTabId)
                 Console.WriteLine($"[gateway] {remote} <= 0x00d1 stash tab into a folder (not handled): {Convert.ToHexString(bytes)}");
             else if (id == InstanceNpcs.OptionId)

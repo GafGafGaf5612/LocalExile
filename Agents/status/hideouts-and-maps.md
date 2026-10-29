@@ -21,6 +21,15 @@ Part of [Status](../Status.md); what to build next in this area is in
   Automated tests cover raw rows/costs, every supported operation family, payment, insufficient funds and save
   rollback; station, window and the request were confirmed live.
   See [21](../docs/protocol/21-hideouts.md), Horticrafting Station.
+- Generic 3.29 maps, first slice (2026-10-27): `MapKeyTierN` items serialize their MapKey component and `/item Map
+  (Tier N)` creates one; the map device accepts them and uses `MapKeys.dat` for the tier. The native hideout Atlas
+  window (S?C 0x7b kind 0x2b) shows the four starting layouts; a node click (C?S 0x00e7) selects one and Activate opens
+  it. Every character has the epilogue quest flag `EndGameAvailable`, without which the client refuses Atlas activation.
+  Live 2026-10-29: selecting Estuary opened Estuary; Cells is the default.
+  Basic monster map drops use a local approximation.
+  Atlas progress/passives, Voidstones, map stash placement, official drop pools and map-tier area levels remain open.
+  Code: `AtlasCatalog.cs`, `MapDevice.cs`, `ItemDrops.cs`, `InstanceItems.cs`.
+  Docs: [21](../docs/protocol/21-hideouts.md), [maps](../docs/game/maps.md).
 - Portal Scroll and the Portal skill (its 2.5 s cast): outside towns and hideouts a portal opens beside the player,
   replacing the previous one; from a map it leads to the hideout, anywhere else to the last town.
   That town or hideout gets a portal back, which brings the player to the portal's cell of the same instance;
