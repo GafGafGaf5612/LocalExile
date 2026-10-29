@@ -85,10 +85,12 @@ partial class Program
             var offHit = AttackHitConverted(off, stats, MeleeAttack(conn), conversion);
             list.AddRange(off.OffStats(stats, offHit));
             AddHand(offHit, "off_hand");
-            // The hands alternate: the panel's per-use, per-second and attacks-per-second rows average both.
+            // The hands alternate: the panel's per-use, per-second and attacks-per-second rows average both, each hand
+            // weighted by its own critical chance and chance to hit (the Off Hand rows, OffHandPanelStats).
             int offSpeed = list.First(s => s.Item1 == StatKeys.OffHandAttackSpeedPct).Item2;
             var (perUse, perSecond, attacksPerSecond) = DualWieldPanel.Average(mainHit, weapon.AttackSeconds(stats),
-                offHit, DualWieldPanel.OffHandSeconds(off, offSpeed), damageFactor);
+                offHit, DualWieldPanel.OffHandSeconds(off, offSpeed), damageFactor,
+                OffHandDamageFactor(conn, stats, n => Stats.Key(n) is uint key ? stats.GetValueOrDefault(key) : 0, own: null));
             Put(StatKeys.DisplayHundredTimesDamagePerSkillUse, perUse);
             Put(StatKeys.HundredTimesDamagePerSecond, perSecond);
             Put(StatKeys.HundredTimesAttacksPerSecond, attacksPerSecond);
@@ -105,13 +107,19 @@ partial class Program
         void AddHand(GameServer.Core.World.DamagePacket hit, string hand)
         {
             foreach (var (stat, value) in PanelStats.HandDamage(hit, hand))
-                if (Stats.Key(stat) is uint key)
-                {
-                    int index = list.FindIndex(s => s.Item1 == key);
-                    if (index >= 0) list[index] = (key, value);
-                    else list.Add((key, value));
-                }
+                if (Stats.Key(stat) is uint key) Put(key, value);
         }
+    }
+
+    // The off hand's critical-weighted, hit-chance-weighted damage factor for the dual-wield average, from the Off Hand
+    // rows already worked out (OffHandPanelStats; rows: the published ones, or a selected gem's); null when no off hand
+    // is swung, so the average falls back to the main hand's factor.
+    static double? OffHandDamageFactor(ClientState conn, IReadOnlyDictionary<uint, int> player, Func<string, int> rows,
+        IReadOnlyDictionary<uint, int>? own)
+    {
+        if (rows("skill_uses_off_hand") == 0) return null;
+        return CriticalStrikePolicy.DamageFactor(CriticalProhibitedBy(player, attack: true, own) ? 0 : rows("off_hand_critical_strike_chance"),
+            rows("off_hand_critical_strike_multiplier"), CriticalExtraRollsFor(conn, player, own), rows("off_hand_chance_to_hit_%"));
     }
 
     static AttackAccuracyProfile OrdinaryAccuracy(ClientState conn, IReadOnlyDictionary<uint, int> stats,
@@ -197,8 +205,7 @@ partial class Program
         foreach (var (stat, value) in PanelStats.Compute(Get, n => mainLocal.GetValueOrDefault(n), n => offLocal.GetValueOrDefault(n),
             playerLevel: conn.Pools.Level)
             .Concat(PanelStats.FromPools(Get, conn.Pools))
-            .Concat(PanelStats.Defence(Get, conn.Pools, Monsters.BaseDamage(conn.Pools.Level) ?? 0,
-                Monsters.BaseAccuracy(conn.Pools.Level) ?? 0))
+            .Concat(PanelStats.Defence(Get, conn.Pools, Monsters.BaseDamage(conn.Pools.Level), Monsters.BaseAccuracy(conn.Pools.Level)))
             .Concat(PanelStats.Recovery(Get, conn.Pools.Life, conn.Pools.Mana))
             .Concat(LeechLimits.Compute(Get, conn.Pools.Life, conn.Pools.Mana, conn.Pools.EnergyShield,
                 name => Stats.Key(name) is uint key && rawOverrides.TryGetValue(key, out int value) ? value : null,
@@ -517,7 +524,14 @@ partial class Program
             }
             else if (SkillsFor(conn).IsAttack(effect) || SkillsFor(conn).IsSpell(effect))
             {
-                var supportedHit = SupportedHit(conn, id);
+                // One read of the gem's hit inputs serves its hit, its ailment rows and (dual-wielded) the off hand's.
+                // Reap's more damage per Blood Charge held scales the hit itself, as AreaSkillHit does, so the damage
+                // ranges, the ailment rows and the per-use/per-second rows agree.
+                double bloodMore = BloodChargeDamageMore(conn, name => Stats.Key(name) is uint k ? own.GetValueOrDefault(k) : 0);
+                var inputs = SupportedHitInputsFor(conn, id);
+                SupportedHitInputs? offInputs = null;
+                if (inputs is not null && bloodMore != 1) inputs = inputs with { Raw = inputs.Raw.Scale(bloodMore) };
+                var supportedHit = inputs is null ? GameServer.Core.World.DamagePacket.Empty : SupportedHitFrom(inputs, suppress: true);
                 double seconds = SkillsFor(conn).IsAttack(effect) ? SupportedAttackSeconds(conn, id) : Math.Max(.001, (CastMs(conn, effect, id) ?? 0) / 1000.0);
                 var finalPlan = SkillHitPlan.ForSkill(SkillsFor(conn), effect, supported.Level, supported.Quality);
                 int criticalChance = SupportedCriticalChance(conn, id);
@@ -526,9 +540,7 @@ partial class Program
                 double damageFactor = CriticalStrikePolicy.DamageFactor(
                     CriticalProhibitedBy(characterInputs, SkillsFor(conn).IsAttack(effect), own) ? 0 : criticalChance,
                     criticalMultiplier, CriticalExtraRollsFor(conn, characterInputs, own),
-                    SkillsFor(conn).IsAttack(effect) ? accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false) : 100)
-                    // Reap's more damage per Blood Charge held (the hits take the same multiplier in AreaSkillHit).
-                    * BloodChargeDamageMore(conn, name => Stats.Key(name) is uint k ? own.GetValueOrDefault(k) : 0);
+                    SkillsFor(conn).IsAttack(effect) ? accuracy.Chance(Monsters.BaseEvasion(conn.Pools.Level) ?? 0, false, false) : 100);
                 var ranges = SkillsFor(conn).IsAttack(effect)
                     ? AttackPanelStats.Compute(finalPlan, supportedHit, 1 / seconds, damageFactor)
                     : SpellPanelStats.Compute(finalPlan, supportedHit, 1 / seconds,
@@ -553,9 +565,12 @@ partial class Program
                             stats.GetValueOrDefault(StatKeys.MainHandAttackSpeedPct), own, effect) is { } offHand
                         && OffhandWeaponFor(conn) is { } offWeapon)
                     {
-                        var offHit = SupportedOffHandHit(conn, id, offWeapon);
+                        offInputs = SupportedHitInputsFor(conn, id, weapon: offWeapon);
+                        var offHit = offInputs is null ? GameServer.Core.World.DamagePacket.Empty : SupportedHitFrom(offInputs, suppress: true);
+                        var offRows = offHand.ToDictionary(r => r.Stat, r => r.Value);
                         var (perUse, perSecond, attacksPerSecond) = DualWieldPanel.Average(supportedHit, seconds, offHit,
-                            SupportedOffHandAttackSeconds(conn, id, offWeapon), damageFactor);
+                            SupportedOffHandAttackSeconds(conn, id, offWeapon), damageFactor,
+                            OffHandDamageFactor(conn, characterInputs, n => offRows.GetValueOrDefault(n), own));
                         foreach (var (field, value) in offHand.Concat(OffHandDamageRows(offHit)))
                             if (Stats.Key(field) is uint key)
                                 stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;
@@ -581,14 +596,13 @@ partial class Program
                     if (Stats.Key("secondary_critical_strike_chance") is uint sc) stats[sc] = criticalChance;
                     if (Stats.Key("secondary_critical_strike_multiplier") is uint sm) stats[sm] = criticalMultiplier;
                 }
-                // The damaging-ailment rows of this skill's hit, per hand for a (dual-wielded) attack.
+                // The damaging-ailment rows of this skill's hit, per hand for a (dual-wielded) attack, from the same inputs.
                 string ailmentHand = SkillsFor(conn).IsAttack(effect) ? "main_hand" : secondary ? "secondary" : "spell";
-                var ailmentRows = SupportedAilmentRows(conn, id, ailmentHand);
+                var ailmentRows = inputs is null ? [] : SupportedAilmentRowsFrom(inputs, ailmentHand);
                 // A spell inherits the default attack's hand rows with the player's stats: clear them, as the hit rows are.
                 if (!SkillsFor(conn).IsAttack(effect))
                     ailmentRows.InsertRange(0, AilmentPanelStats.Rows("main_hand").Concat(AilmentPanelStats.Rows("off_hand")).Select(n => (n, 0)));
-                if (SkillsFor(conn).IsAttack(effect) && OffhandWeaponFor(conn) is { } offHandWeapon)
-                    ailmentRows.AddRange(SupportedAilmentRows(conn, id, "off_hand", offHandWeapon));
+                if (offInputs is not null) ailmentRows.AddRange(SupportedAilmentRowsFrom(offInputs, "off_hand"));
                 foreach (var (stat, value) in ailmentRows)
                     if (Stats.Key(stat) is uint key)
                         stats[key] = panelSources.Overrides.Contains(key) ? panelSources.Raw.GetValueOrDefault(key) : value;

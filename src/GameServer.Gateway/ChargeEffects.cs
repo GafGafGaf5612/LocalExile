@@ -148,6 +148,12 @@ static class ChargeEffects
         new("stun_threshold_+%_per_brutal_charge", ChargeType.Endurance, ["stun_threshold_+%"], Special: true),
     ];
 
+    static readonly HashSet<string> Expanded = [.. PerCharge.Select(r => r.Stat)];
+
+    /// <summary>Whether a per-charge stat is one <see cref="Expand"/> turns into a stat the server calculates with (so a
+    /// consumer gating on unsupported stats must not refuse it: PlayerHitRecovery's stun threshold and recovery).</summary>
+    public static bool Expands(string stat) => Expanded.Contains(stat);
+
     /// <summary>Stats that apply while the character has none of a type, or at least one.</summary>
     public sealed record Condition(string Stat, ChargeType Type, bool WhenNone, string[] Targets);
 

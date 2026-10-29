@@ -834,7 +834,8 @@ with automated composition checks; none of them is natively validated on this br
   with `armour_differs_against_hits`), `chance_to_evade_%`, `ward_delay`, `mana_recharge_rate_per_minute` and
   `omniscience_for_attribute_requirements`, against DefaultMonsterStats damage/accuracy at the character's level.
   Formulas: `DamageModel.ArmourReduction` + `ChargeEffects.Reduction` capped 90; `DamageModel.EvadeChance` +
-  `chance_to_evade_attacks_%` capped 95 (PoB EvadeChanceCap); `WardState.Delay` in milliseconds;
+  `chance_to_evade_attacks_%` capped 95 (PoB EvadeChanceCap); without a DefaultMonsterStats row for the level the
+  estimate and evade rows are left out rather than estimated against a 0-damage, 0-accuracy attacker; `WardState.Delay` in milliseconds;
   `EnergyShield.RechargePerMinute` on maximum mana. The projectile armour scales the pools' final armour by
   (100 + increased + projectile increase) / (100 + increased); shield-only and more operators are not re-applied.
   `chance_to_dodge_spells_%` and `life_recharge_rate_per_minute` have no 3.29 source and stay blank.
@@ -848,8 +849,10 @@ with automated composition checks; none of them is natively validated on this br
 - Off hand (`Program.OffHandPanel.cs`): `skill_uses_off_hand` and the hand's accuracy, chance to hit, attack speed,
   critical chance/multiplier and twelve damage ranges for the default attack and attack gems, from the shared buckets
   with the off-hand item's local modifiers (and the gem's own accuracy/critical increases and supported hit). Per use,
-  DPS and attacks per second average the two hands' own values (`DualWieldPanel`, PoB's AVERAGE combination); the
-  off hand's swing time is its own duration at the off-hand speed, with the gem's supports.
+  DPS and attacks per second average the two hands' own values (`DualWieldPanel`, PoB's AVERAGE combination), each
+  hand weighted by its own critical chance, multiplier and chance to hit (the Off Hand rows); the off hand's swing
+  time is its own duration at the off-hand speed, with the gem's supports. `GemSkills` reads a gem's hit inputs once
+  (`SupportedHitInputsFor`) for its hit, its ailment rows and the off hand's.
 - Secondary damage: a spell with `display_skill_deals_secondary_damage` (Vaal Detonate Dead) fills `secondary_*` damage
   and critical rows from its supported hit; a flagged skill without spell base damage (Bear Trap, Herald of Ice's
   shatter) gets `Program.SecondaryPanel.cs`: its `secondary_*_base_*_damage` through conversion with the generic, area
@@ -882,7 +885,8 @@ Blood Charges need Reap.
   converted type (Character.ot's reductions, Frenzy speed, Power critical, the "per Frenzy, Power or Endurance Charge"
   total); the `Special` rules take the count: `chance_to_deal_triple_damage_%_per_brutal_charge` →
   `base_chance_to_deal_triple_damage_%` (the gambler's hit roll) and `stun_threshold_+%_per_brutal_charge` →
-  `stun_threshold_+%` (`PlayerHitRecovery.Chance`; the stat is no longer an unsupported stun gate). The coefficients
+  `stun_threshold_+%` (`PlayerHitRecovery.Chance`; every stat `ChargeEffects.PerCharge` expands is excluded from the
+  unsupported stun gate, `ChargeEffects.Expands`, which also lets `stun_recovery_+%_per_frenzy_charge` stun). The coefficients
   include `PanelStatDefaults` (3 / 10 / 8 / 8 / 12) through `PanelStatDefaults.Default`, since `BaseStats` adds those
   defaults to the published sources after `WithCharges`.
 - `ChargeEffects.DamageMore(ailment: true)`: `ailment_damage_+%_final_per_affliction_charge` × `current_affliction_charges`
@@ -919,9 +923,10 @@ and the two per-charge coefficient rows gated by `show_blood_charge_info`.
 - Mechanics: `AreaSkillHit` counts the hits that landed and the sweep's kills, then `BloodCharges.Settle` takes one per
   kill and gives one when any hit enemy survived, within 0 and the published maximum; `SendBloodCharges` swaps the
   buff and resends the stats and skills. The charges held multiply the sweep's hits (`BloodChargeDamageMore`, with the
-  caller's `damageMore`), the skill's Offence rows (`GemSkills`' damage factor) and its cost (`PayMana`). Rows:
-  count, maximum (base 5 + raw sources, published once in `CharacterPlayerStatsSnapshot`) and the show flag while a
-  socketed gem has the per-charge damage stat. Death clears them.
+  caller's `damageMore`), the skill's Offence hit (its raw packet, so the damage ranges, the ailment rows and the
+  per-use/per-second rows agree) and its cost (`PayMana`). Rows: count, maximum (base 5 + raw sources, published
+  once in `CharacterPlayerStatsSnapshot`) and the show flag while a gem socketed in an active item uses the charges
+  (decided once per GrantedEffects row, `UsesBloodCharges`; the stat snapshot runs on every hit). Death clears them.
 - Not modelled: a duration (none in the tables or PoB), carrying them across areas, Vaal Reap's temporary maximum,
   Reap's physical damage over time debuff, its life cost (the server pays mana). Not natively validated.
 

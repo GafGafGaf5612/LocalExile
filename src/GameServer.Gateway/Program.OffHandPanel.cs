@@ -55,11 +55,6 @@ partial class Program
     static IEnumerable<(string Stat, int Value)> OffHandDamageRows(DamagePacket hit)
     {
         var ranges = PanelStats.HandDamage(hit, "off_hand").ToDictionary(r => r.Stat, r => r.Value);
-        foreach (string type in new[] { "total", "physical", "fire", "cold", "lightning", "chaos" })
-            foreach (string bound in new[] { "minimum", "maximum" })
-            {
-                string stat = $"off_hand_{bound}_{type}_damage";
-                yield return (stat, ranges.GetValueOrDefault(stat));
-            }
+        foreach (string stat in PanelStats.DamageRows("off_hand")) yield return (stat, ranges.GetValueOrDefault(stat));
     }
 }

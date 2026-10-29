@@ -2503,7 +2503,8 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   state, limits, gains, expiry and area carry stay the standard type's. `ChargeEffects.Expand(converted)` gives the
   standard per-charge and "with no / any … charges" stats zero charges of the type and the `Special` rules the count:
   `chance_to_deal_triple_damage_%_per_brutal_charge` → `base_chance_to_deal_triple_damage_%` (the hit's gambler roll)
-  and `stun_threshold_+%_per_brutal_charge` → `stun_threshold_+%` (the stun chance; no longer an unsupported gate),
+  and `stun_threshold_+%_per_brutal_charge` → `stun_threshold_+%` (the stun chance; every stat `PerCharge` expands is
+  excluded from `PlayerHitRecovery.UnsupportedStat`, `ChargeEffects.Expands`, Frenzy's stun recovery included),
   with `PanelStatDefaults`' coefficients counted. `ChargeEffects.DamageMore(ailment: true)` multiplies damage with
   ailments by `ailment_damage_+%_final_per_affliction_charge` × `current_affliction_charges` (the ailment panel rows;
   no server path applies player ailment damage yet). `Display` sends `current_brutal/affliction/absorption_charges`
@@ -2516,7 +2517,8 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   its hit kills (`BloodCharges.Settle`, run by `AreaSkillHit` after the sweep's kills); the maximum is Character.ot's
   `maximum_blood_scythe_charges` 5 (PoB Misc.lua) plus the raw stat (the Reap enchantment). Each charge held is the
   skill's own `blood_scythe_damage_+%_final_per_charge` (15%, +0.25 per quality) more damage on its hits and on its
-  Offence rows, and `blood_scythe_cost_+%_final_per_charge` (20%) more cost at `PayMana` (the server pays Reap's cost
+  Offence rows (the hit's raw packet is scaled, so the ranges, ailment rows and per-use rows agree), and
+  `blood_scythe_cost_+%_final_per_charge` (20%) more cost at `PayMana` (the server pays Reap's cost
   from mana), one multiplier of value × charges (pinned PoB act_str.lua). Rows: `current_blood_scythe_charges`,
   `maximum_blood_scythe_charges` and `show_blood_charge_info` (1 while a socketed gem has the per-charge stat; the Blood
   Charges rows are gated by it); HUD: BuffDefinitions 1822 `blood_scythe_charge` with the count as stacks, re-sent on

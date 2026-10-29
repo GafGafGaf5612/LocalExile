@@ -295,6 +295,15 @@ static class PanelStats
     /// in total. The client shows whole numbers, so each range is rounded down. An empty packet adds no rows, which
     /// leaves those rows blank, as the game does for an attack that cannot happen.
     /// </summary>
+    /// <summary>The twelve damage row names of a hand context (main_hand, off_hand, secondary): total then each type,
+    /// minimum then maximum, for callers that clear or fill every row.</summary>
+    public static IEnumerable<string> DamageRows(string hand)
+    {
+        foreach (string type in new[] { "total", "physical", "fire", "cold", "lightning", "chaos" })
+            foreach (string bound in new[] { "minimum", "maximum" })
+                yield return $"{hand}_{bound}_{type}_damage";
+    }
+
     public static List<(string Stat, int Value)> HandDamage(DamagePacket packet, string hand)
     {
         var result = new List<(string, int)>();
@@ -371,35 +380,40 @@ static class PanelStats
     /// Nothing in 3.29 applies recharge to Life, so the Life row stays blank.</item>
     /// <item>Omniscience for attribute requirements: Omniscience × "can be satisfied by % of Omniscience".</item>
     /// </list>
-    /// <paramref name="referenceDamage"/> and <paramref name="referenceAccuracy"/> are the reference monster's values
-    /// (0 when the tables are missing: the estimates then show no reduction and full evasion of a 0-accuracy attacker).
+    /// <paramref name="referenceDamage"/> and <paramref name="referenceAccuracy"/> are the reference monster's values;
+    /// null (no DefaultMonsterStats row for the level) leaves the rows that need them out rather than estimating
+    /// against a 0-damage, 0-accuracy attacker.
     /// </summary>
     public static List<(string Stat, int Value)> Defence(Func<string, int> get, CharacterStats.Pools pools,
-        int referenceDamage, int referenceAccuracy)
+        int? referenceDamage, int? referenceAccuracy)
     {
         var result = new List<(string, int)>();
         int additional = ChargeEffects.Reduction(get).Physical;
         static int Estimate(int armour, int damage, int extra) =>
             Math.Clamp(DamageModel.ArmourReduction(armour, damage) + Math.Max(0, extra), 0, DamageModel.DamageReductionCap);
-        result.Add(("display_estimated_physical_damage_reduciton_%", Estimate(pools.Armour, referenceDamage, additional)));
-        if (get("physical_damage_reduction_rating_+%_against_projectiles") is int projectilePct and not 0)
+        if (referenceDamage is int damage)
         {
-            // The projectile-only increase joins the ordinary increases; the pools hold their total, so scale by ratio.
-            long baseline = 100L + pools.ArmourPct;
-            int armour = baseline <= 0 ? pools.Armour
-                : (int)Math.Clamp((long)pools.Armour * Math.Max(0, baseline + projectilePct) / baseline, 0, int.MaxValue);
-            result.Add(("physical_damage_reduction_rating_against_projectiles", armour));
-            result.Add(("armour_differs_against_projectiles", 1));
-            result.Add(("display_estimated_physical_damage_reduciton_against_projectiles_%", Estimate(armour, referenceDamage, additional)));
+            result.Add(("display_estimated_physical_damage_reduciton_%", Estimate(pools.Armour, damage, additional)));
+            if (get("physical_damage_reduction_rating_+%_against_projectiles") is int projectilePct and not 0)
+            {
+                // The projectile-only increase joins the ordinary increases; the pools hold their total, so scale by ratio.
+                long baseline = 100L + pools.ArmourPct;
+                int armour = baseline <= 0 ? pools.Armour
+                    : (int)Math.Clamp((long)pools.Armour * Math.Max(0, baseline + projectilePct) / baseline, 0, int.MaxValue);
+                result.Add(("physical_damage_reduction_rating_against_projectiles", armour));
+                result.Add(("armour_differs_against_projectiles", 1));
+                result.Add(("display_estimated_physical_damage_reduciton_against_projectiles_%", Estimate(armour, damage, additional)));
+            }
+            if (get("additional_physical_damage_reduction_%_against_hits") is int againstHits and not 0)
+            {
+                result.Add(("armour_differs_against_hits", 1));
+                result.Add(("display_estimated_physical_damage_reduction_against_hits_%",
+                    Estimate(pools.Armour, damage, additional + againstHits)));
+            }
         }
-        if (get("additional_physical_damage_reduction_%_against_hits") is int againstHits and not 0)
-        {
-            result.Add(("armour_differs_against_hits", 1));
-            result.Add(("display_estimated_physical_damage_reduction_against_hits_%",
-                Estimate(pools.Armour, referenceDamage, additional + againstHits)));
-        }
-        result.Add(("chance_to_evade_%", Math.Clamp(DamageModel.EvadeChance(pools.Evasion, referenceAccuracy)
-            + get("chance_to_evade_attacks_%"), 0, EvadeChanceCap)));
+        if (referenceAccuracy is int accuracy)
+            result.Add(("chance_to_evade_%", Math.Clamp(DamageModel.EvadeChance(pools.Evasion, accuracy)
+                + get("chance_to_evade_attacks_%"), 0, EvadeChanceCap)));
         if (pools.Ward > 0)
             result.Add(("ward_delay", (int)Math.Clamp(Math.Round(WardState.Delay(get) * 1000), 0, int.MaxValue)));
         if (get("energy_shield_recharge_apply_to_mana") != 0)

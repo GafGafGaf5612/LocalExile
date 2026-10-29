@@ -8,11 +8,14 @@ using GameServer.Core.World;
 /// </summary>
 static class DualWieldPanel
 {
+    /// <summary><paramref name="damageFactor"/> weights the main hand's hits (critical chance and multiplier, chance to
+    /// hit); <paramref name="offDamageFactor"/> the off hand's own, which differ when the weapons' local critical or
+    /// accuracy stats do (null: the same as the main hand's).</summary>
     public static (int PerUse, int PerSecond, int HundredTimesAttacksPerSecond) Average(DamagePacket mainHit, double mainSeconds,
-        DamagePacket offHit, double offSeconds, double damageFactor)
+        DamagePacket offHit, double offSeconds, double damageFactor, double? offDamageFactor = null)
     {
         var main = SpellDamage.Display((mainHit.MinTotal, mainHit.MaxTotal), 1 / mainSeconds, damageFactor);
-        var off = SpellDamage.Display((offHit.MinTotal, offHit.MaxTotal), 1 / offSeconds, damageFactor);
+        var off = SpellDamage.Display((offHit.MinTotal, offHit.MaxTotal), 1 / offSeconds, offDamageFactor ?? damageFactor);
         return (Native((main.PerUse + off.PerUse) / 2.0), Native((main.PerSecond + off.PerSecond) / 2.0),
             Native(100 * (1 / mainSeconds + 1 / offSeconds) / 2));
     }

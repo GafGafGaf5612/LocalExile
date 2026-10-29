@@ -165,8 +165,11 @@ partial class Program
 
     static GameServer.Core.World.DamagePacket SupportedHitFor(ClientState conn, ushort skillId, bool suppress, bool? area = null,
         SkillCatalog.Unarmed? weapon = null)
+        => SupportedHitInputsFor(conn, skillId, area, weapon) is { } inputs ? SupportedHitFrom(inputs, suppress) : GameServer.Core.World.DamagePacket.Empty;
+
+    // The supported hit from inputs already worked out (GemSkills reads one gem's inputs once for its hit and ailment rows).
+    static GameServer.Core.World.DamagePacket SupportedHitFrom(SupportedHitInputs inputs, bool suppress)
     {
-        if (SupportedHitInputsFor(conn, skillId, area, weapon) is not { } inputs) return GameServer.Core.World.DamagePacket.Empty;
         var hit = PlayerHitDamage.Resolve(inputs.Raw, inputs.Get, inputs.Conversion, spell: !inputs.Attack,
             melee: inputs.Melee, area: inputs.Area, projectile: inputs.Projectile,
             supportModifiers: inputs.Modifiers, skillTypes: inputs.Types);
@@ -178,8 +181,10 @@ partial class Program
     // an attack with that hand's weapon, or a spell's / secondary-damage skill's hit.
     static List<(string Stat, int Value)> SupportedAilmentRows(ClientState conn, ushort skillId, string hand,
         SkillCatalog.Unarmed? weapon = null)
+        => SupportedHitInputsFor(conn, skillId, weapon: weapon) is { } inputs ? SupportedAilmentRowsFrom(inputs, hand) : [];
+
+    static List<(string Stat, int Value)> SupportedAilmentRowsFrom(SupportedHitInputs inputs, string hand)
     {
-        if (SupportedHitInputsFor(conn, skillId, weapon: weapon) is not { } inputs) return [];
         var context = new AilmentPanelStats.Context(hand, Spell: !inputs.Attack, inputs.Melee, inputs.Area, inputs.Projectile);
         return AilmentPanelStats.Compute(context, inputs.Raw, inputs.Conversion, inputs.Get);
     }

@@ -251,7 +251,20 @@ public class PanelStatsTests
             Assert.NotNull(Stats.Value.Key(name));
     }
 
-    static Dictionary<string, int> Defence(CharacterStats.Pools pools, int damage, int accuracy, params (string Stat, int Value)[] stats)
+    [Fact]
+    public void Without_a_reference_monster_the_estimate_rows_are_left_out()
+    {
+        var pools = new CharacterStats.Pools(1, 100, 100, 0, 0) with { Armour = 5000, Evasion = 500 };
+        var none = Defence(pools, null, null, ("physical_damage_reduction_rating_+%_against_projectiles", 20),
+            ("additional_physical_damage_reduction_%_against_hits", 5));
+        Assert.DoesNotContain(none.Keys, k => k.Contains("estimated") || k.Contains("against_projectiles") || k.Contains("against_hits"));
+        Assert.False(none.ContainsKey("chance_to_evade_%"));
+        var damageOnly = Defence(pools, 100, null);
+        Assert.True(damageOnly.ContainsKey("display_estimated_physical_damage_reduciton_%"));
+        Assert.False(damageOnly.ContainsKey("chance_to_evade_%"));
+    }
+
+    static Dictionary<string, int> Defence(CharacterStats.Pools pools, int? damage, int? accuracy, params (string Stat, int Value)[] stats)
     {
         var given = stats.ToDictionary(s => s.Stat, s => s.Value);
         return PanelStats.Defence(n => given.GetValueOrDefault(n), pools, damage, accuracy).ToDictionary(s => s.Stat, s => s.Value);

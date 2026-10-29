@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
@@ -7,15 +8,24 @@ partial class Program
     // Reap's Blood Charges (BloodCharges): held on the connection (ClientState.BloodCharges, under the Monsters lock),
     // settled by the skill's area sweep (AreaSkillHit), shown by BuffDefinitions 1822 and the Charges tab rows.
 
+    // Whether a GrantedEffects row uses Blood Charges (its per-charge damage stat, a constant at every level), decided
+    // once per row: CharacterPlayerStats asks on every hit, and resolving a stat set each time would cost a crowd's hits.
+    static readonly ConcurrentDictionary<(bool Ruthless, int Effect), bool> BloodChargeEffects = new();
+
+    static bool UsesBloodCharges(ClientState conn, int effect) => BloodChargeEffects.GetOrAdd((conn.Ruthless, effect),
+        key => BloodCharges.Uses(name => Stats.Key(name) is uint k
+            ? SkillsFor(conn).EffectStats(key.Effect, 1).Where(s => s.Item1 == k).Select(s => s.Item2).FirstOrDefault() : 0));
+
     // The Charges tab's rows: the count, the maximum (Character.ot's 5 plus the raw maximum_blood_scythe_charges sources,
-    // the Reap enchantment) and show_blood_charge_info while a socketed gem uses the charges. get reads the sources before
-    // this publication, so the base adds once.
+    // the Reap enchantment) and show_blood_charge_info while a gem socketed in an active item uses the charges. get reads
+    // the sources before this publication, so the base adds once.
     static List<(string Stat, int Value)> BloodChargePanelRows(ClientState conn, Func<string, int> get)
     {
         int held;
         lock (conn.Monsters) held = conn.BloodCharges;
-        bool shown = GemSkillEffects(conn).Any(g => SkillsFor(conn).EffectStats(g.Effect, g.Level, g.Quality)
-            .Any(s => s.Item2 != 0 && Stats.Name(s.Item1) == BloodCharges.DamagePerCharge));
+        var inactive = InactiveItems.GetValueOrDefault(CharacterName(conn));
+        bool shown = ItemsOf(conn).SocketedGemsByItem().Any(g => inactive?.Contains(g.ItemId) != true
+            && ItemsFor(conn).GemEffects(g.Gem).Any(effect => UsesBloodCharges(conn, effect)));
         return
         [
             (BloodCharges.Current, held),

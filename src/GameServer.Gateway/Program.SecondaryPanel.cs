@@ -32,16 +32,9 @@ partial class Program
         var rows = new List<(string, int)> { ("display_skill_deals_secondary_damage", 1) };
         // The skill inherits the default attack's hand rows with the player's stats: clear them, as a spell does.
         foreach (string hand in new[] { "main_hand", "off_hand" })
-        {
-            foreach (string type in new[] { "total", "physical", "fire", "cold", "lightning", "chaos" })
-                foreach (string bound in new[] { "minimum", "maximum" })
-                    rows.Add(($"{hand}_{bound}_{type}_damage", 0));
-            rows.AddRange(AilmentPanelStats.Rows(hand).Select(n => (n, 0)));
-        }
+            rows.AddRange(PanelStats.DamageRows(hand).Concat(AilmentPanelStats.Rows(hand)).Select(n => (n, 0)));
         var ranges = PanelStats.HandDamage(hit, "secondary").ToDictionary(r => r.Stat, r => r.Value);
-        foreach (string type in new[] { "total", "physical", "fire", "cold", "lightning", "chaos" })
-            foreach (string bound in new[] { "minimum", "maximum" })
-                rows.Add(($"secondary_{bound}_{type}_damage", ranges.GetValueOrDefault($"secondary_{bound}_{type}_damage")));
+        rows.AddRange(PanelStats.DamageRows("secondary").Select(stat => (stat, ranges.GetValueOrDefault(stat))));
         rows.Add(("secondary_critical_strike_chance", chance));
         rows.Add(("secondary_critical_strike_multiplier", multiplier));
         rows.Add(("display_hundred_times_damage_per_skill_use", SpellDamage.Display((hit.MinTotal, hit.MaxTotal), 0, factor).PerUse));
