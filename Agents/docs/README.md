@@ -74,6 +74,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [game/timeless-jewels.md](game/timeless-jewels.md) | Legion timeless jewels: item data, seed/conqueror rules, node replacement algorithm, radius geometry and implementation plan |
 | [game/timeless-jewel-list.md](game/timeless-jewel-list.md) | generated full list of timeless keystones, notables, small passives, 96 additions and 16 Militant Faith devotion mods with support status |
 | [game/cluster-jewel-list.md](game/cluster-jewel-list.md) | generated full list of cluster notables, small-passive themes and keystones with support status |
+| [game/tattoos.md](game/tattoos.md) | all 100 tattoos: mechanics, target/limit rules, acquisition, interactions and the full per-item status table |
 | [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |
 | [game/league-modes.md](game/league-modes.md) | Hardcore deaths, SSF isolation, Ruthless native rules and editable balance |
 

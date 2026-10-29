@@ -222,3 +222,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Saving quest progress.
   Quest passive/refund rewards and native Labyrinth/Altar acquisition (#151) remain missing.
   Remaining special ascendancy gameplay and broader Phrecia client compatibility are separate work.
+- Tattoos: the 100-item 3.29.3b catalogue is documented in
+  [tattoos](../docs/game/tattoos.md), but the server has no item source, apply/remove flow or
+  passive-replacement state. The seven Forbidden ascendancy tattoos use a separate client flow and are event-only;
+  all 100 rows are `not implemented`.
