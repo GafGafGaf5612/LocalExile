@@ -122,7 +122,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
             PanelDefaultsAssertNative(LevelPanelPublished(game), actorLimit);
             var gems = ((IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)typeof(Program)
                 .GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic, binder: null,
-                    types: [typeof(string)], modifiers: null)!.Invoke(null, [game.Character])!).ToArray();
+                    types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [game.State])!).ToArray();
             var all = ProgramValue<IReadOnlyList<GrantedSkill>>("PlayerSkills", game.State);
             var selected = Assert.Single(all, s => s.Id == Assert.Single(gems, g => g.Effect == skills.EffectRow(effect)).Id);
             var other = Assert.Single(all, s => s.Id == Assert.Single(gems, g => g.Effect == skills.EffectRow("Fireball")).Id);

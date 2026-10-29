@@ -343,7 +343,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         game.State.Pools = Program.PoolsFor(game.State, 100);
         var gems = ((IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)typeof(Program)
             .GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic, binder: null,
-                types: [typeof(string)], modifiers: null)!.Invoke(null, [game.Character])!).ToArray();
+                types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [game.State])!).ToArray();
         var selected = Assert.Single(gems);
         Assert.Equal(spell ? "Fireball" : "BurningArrow", skills.EffectId(selected.Effect));
         if (!spell)

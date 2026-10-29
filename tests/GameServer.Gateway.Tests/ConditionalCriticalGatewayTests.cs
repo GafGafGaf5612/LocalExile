@@ -130,7 +130,7 @@ public partial class ConditionalCriticalGatewayTests
         {
             var gems = (IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)
                 typeof(Program).GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic,
-                    binder: null, types: [typeof(string)], modifiers: null)!.Invoke(null, [Conn.Character])!;
+                    binder: null, types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [Conn])!;
             var gem = Assert.Single(gems, g => g.Id == Skill);
             return ((Task)Method("AreaSkillHit").Invoke(null,
                 ["accuracy-area-contact-test", writer.GetStream(), ciphers, Conn, Skill, gem, (32, 32), (34, 32),

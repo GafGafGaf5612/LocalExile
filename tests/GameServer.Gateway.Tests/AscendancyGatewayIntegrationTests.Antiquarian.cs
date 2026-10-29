@@ -65,6 +65,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         Assert.Equal(38, game.State.Pools.AttackSpeedPct);
         Assert.Equal(25, game.State.Pools.MovementVelocityPct);
         Assert.Equal(10, AntiquarianStat(game.State, "base_additional_physical_damage_reduction_%"));
+        uint damageKey = Program.Stats.Key("damage_+%")!.Value;
+        Assert.Equal(0, game.State.StatSourcesCache!.Sources.GetValueOrDefault(damageKey));
+        Assert.Equal(100, AntiquarianStat(game.State, "damage_+%"));
+        Assert.Equal(0, game.State.StatSourcesCache.Sources.GetValueOrDefault(damageKey));
         double deadline = game.State.Antiquarian.AdrenalineUntil;
         game.State.Ward.Restore();
         Program.DamagePlayerHit(game.State, 1, 0, now + .1, Program.CharacterPlayerStats(game.State));

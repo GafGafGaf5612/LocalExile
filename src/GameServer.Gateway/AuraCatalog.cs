@@ -50,7 +50,7 @@ static class AuraCatalog
         ["Envy"] = 828,
     };
 
-    static string Family(string effectId) => effectId switch
+    public static string Family(string effectId) => effectId switch
     {
         "GraceHardMode" => "Grace", "DeterminationHardMode" => "Determination", _ => effectId,
     };

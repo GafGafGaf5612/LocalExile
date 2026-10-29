@@ -46,7 +46,16 @@ Tests use explicit simulation time and held output; waiting for a network send i
 Non-projectile sweeps retain one damage snapshot plus their shared critical roll, but resample critical chance and
 prohibitions per contact so an intervening source change keeps the branch's existing behavior.
 
-The merge report and alternatives are in [the issue #75 review](../dev/issue75-review.md#upstream-merge-resolution).
+Gambler's less-damage factor applies once in the outgoing packet; its contact roll applies luck/triple damage
+without reapplying that factor. Resistance inversion joins the same typed mitigation pass that supplies leech.
+Existing impale reflection is added afterwards, without another critical, triple-damage or leech application.
+Vaal soul credit commits once with lethal Life/Dead state, before network publication, using the shared death
+boundary. Keeping a second impale/accuracy block from main would duplicate those mechanics and lose the branch's
+entropy, actual-roll storage and typed leech. Pending gem releases retain the combined stun/freeze interruption
+generation as well as the shared critical roll; already released flights keep their existing lifecycle.
+
+The merge reports and alternatives are in [the issue #75 review](../dev/issue75-review.md#upstream-merge-resolution)
+and [the later main integration](../dev/issue75-review.md#main-merge-league-modes-gambler-and-vaal-souls).
 These automated composition checks do not replace native validation of the merged runtime.
 
 ## Continuation and hit admission

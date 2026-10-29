@@ -211,12 +211,13 @@ partial class Program
             var baseHit = contact.IsArea ? shot.AreaHit ?? shot.Hit : shot.Hit;
             var packet = new SkillDamageContext(shot.Spell ? SkillHitKind.Spell : SkillHitKind.Attack,
                 CharacterPlayerStats(Conn)).Hit(baseHit).Scale(more);
-            var rolled = packet.Roll(random);
+            var gambler = GamblerFor(CharacterPlayerStats(Conn));
+            var rolled = (gambler with { DamageMorePct = 0 }).RollOutgoingHit(packet, random);
             int chance = contact.Projectile.Form > 0 ? shot.SecondFormCriticalChance ?? shot.CriticalChance : shot.CriticalChance;
             // Base chance/multiplier belong to release; conditional owner state is read at this contact.
             bool critical = RollCriticalStrike(Conn, chance, shot.SkillStats, attack: !shot.Spell, skillRoll: shot.CriticalRoll)
                 && (shot.Spell || EvasionEntropy.ConfirmsCritical(hitChance, Conn.AttackAccuracyRandom));
-            var (damage, _) = MonsterDamage(target, rolled, critical, !shot.Spell, shot.ResistanceMods, shot.Penetration, out var taken);
+            var (damage, _) = MonsterDamage(target, rolled, critical, !shot.Spell, shot.ResistanceMods, shot.Penetration, out var taken, gambler.InvertsResistance(random));
             if (critical) damage = DamageModel.CriticalDamage(damage, CriticalMultiplierOn(target, shot.CriticalMultiplier));
             LeechOnHitLocked(Conn, target, taken, damage, shot.Leech);
             var settings = (critical ? shot.CriticalImpaleSettings : null) ?? shot.ImpaleSettings ?? new(shot.ImpaleChance);

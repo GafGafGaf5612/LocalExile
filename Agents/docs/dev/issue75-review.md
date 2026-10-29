@@ -734,6 +734,71 @@ All saves, client installations, profiles and existing logs were preserved. The 
 this local merge commit. Ward and the incoming features add implementation, but do not automatically certify their
 ledger entries or complete the wider 357-stat objective.
 
+## Main merge: league modes, Gambler and Vaal souls
+
+The owner requested resolution of a second in-progress merge, from local `main` into `issue-75-character-stats`.
+The incoming commit was also verified against a fresh fetch of `upstream/main`:
+
+- Local parent: `8a22be05adbe509df92f0a02909c3cae1612f37f` (the preceding stats/projectile integration).
+- Incoming parent: `0f49c07d85ba02ba004b535db5e7a36966dbe300` (upstream PR #341 merge).
+- Common ancestor: `6a5697ff2731d2e3fafa83b27fa5ff1e71290149`.
+
+There were 17 conflicted paths. The original index, binary diffs, conflicted files and all three versions were
+saved under ignored `artifacts/issue75-main-merge-0f49c07d/` before editing. The merge retains both histories and
+all incoming nonconflicting work. The pre-existing untracked `config/pob-server.json` is outside the merge commit.
+The Markdown inventory checks all 92 unique tracked documents, including the new module references and the
+existing Agents instructions/status/roadmap. No publishing, remote writes or history rewriting is part of this task.
+
+Resolution decisions and alternatives:
+
+- Keep one projectile/area/default-attack damage pipeline. Gambler's damage penalty applies once, followed by its
+  luck/triple roll and resistance inversion. Retain entropy, the shared skill critical roll and independent accuracy
+  confirmation. The typed post-mitigation packet still supplies leech; impale reflection is separate and cannot
+  receive another critical/triple multiplier or leech event. Keeping both conflict blocks would roll attacks and
+  apply impales twice; replacing the branch block would lose its actual-roll storage and source-specific recovery.
+- Credit Vaal souls at the same lethal mutation for default attacks and the shared hit path, preserving the
+  once-only corpse guard and current requirement snapshot. Keep corpse impales, Hardcore progress guards and
+  Vaal transfer/restoration. The alternative old projectile corpse clear/removal would discard the branch lifecycle.
+- Retain the connection-aware gem enumeration and ordinary/Ruthless catalogs throughout the branch's added
+  weapon, defence, critical and charge consumers. Preserve saved local defence rolls, fractional Ward conversion,
+  active-hand filtering, raw damage and selected-stat snapshots. Reverting to minimum-only defences or ordinary
+  catalogs would lose either the stats fixes or the incoming mode rules.
+- Share the equipment requirement resolver with Vaal checks, retaining wide attribute buckets and local requirement
+  modifiers. Publish inactive-item cache state only from the normal character-stat entry point; restoring the old
+  publication inside the shared resolver would introduce a side effect into current-equipment requirement reads.
+- Keep one resource writer with leech, Energy Shield, Fortification, temporary recovery and incoming ailments.
+  Shock scales RF burn; lethal ignite retains Hardcore persistence and epoch-checked death publication. Ruthless
+  periodic persistence runs after projectile catch-up. Preserve instant-leech notifications and the combined
+  stun/freeze interruption generation; replacing either with the old single-purpose version loses the other feature.
+- Keep the native successful flask-use sound acknowledgement and full-pool refusal/resynchronization, while
+  retaining the branch's captured level, independent hybrid recovery and Mageblood effect scaling. Restoring main's
+  older recovery call would silently omit per-level effect sources.
+
+The module decisions are recorded in [projectiles](../game/projectile-framework.md#issue-75-integration),
+[league modes](../game/league-modes.md) and [damage/recovery](../protocol/20-damage.md#composition-with-the-upstream-projectile-runtime).
+Existing native observations in incoming documentation remain tied to their original revisions.
+
+Validation: the final solution build has zero warnings/errors. Core **727**, Data **18** and Gateway **5,174**
+pass: **5,919 tests, no failures/skips**, with all suites unfiltered and Gateway limited to four workers.
+Four added regression cases combine Gambler critical damage/inversion, direct-only leech, retained impales and
+once-only Vaal credit with held output, plus saved maximum defence rolls/fractional Ward in ordinary and Ruthless.
+The focused combined pass contains 227 tests. Final receipts are `results/core-final.trx`, `data-final.trx` and
+`gateway-final.trx`; the clean build log is `build-fourth.log` under the artifact folder above.
+
+The initial Gateway attempt could not initialize because this checkout's `data/` held only tracked `schema/`;
+generated data now lives under the shared `../build/data/`. Decision: copy only 952 extracted table/module files
+into this checkout temporarily, without saves, keys, runtime changes or production-path changes. The alternative
+startup/extraction would involve the shared client and runtime unnecessarily. After validation, those independent
+copies are retained under the ignored artifact folder's `validation-data/`, restoring the checkout's data layout.
+Their source, paths and hashes are recorded in `temporary-data.json`. The first usable full run passed 5,047 and
+failed 123: all failures were six test helpers selecting the old string-based gem method. They now use the actual
+connection-based API; no assertions or test cases were removed. Failed receipts remain preserved.
+
+No native client or development servers were launched or stopped; current-build native revalidation remains pending.
+The local client/runtime configuration and existing client junction were preserved. The exact stat ledger remains
+357 entries, **82 partial and 275 pending**, with zero certified complete. The broader goal remains paused after
+this local merge commit.
+
 ## Autonomous decisions and shared validation resources
 
 The owner authorized choosing safe reasonable options while unavailable, recording the decision and alternative,

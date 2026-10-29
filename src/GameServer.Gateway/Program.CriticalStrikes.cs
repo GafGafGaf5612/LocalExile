@@ -72,9 +72,9 @@ partial class Program
     {
         lock (conn.Monsters)
         {
-            int effect = SkillEffectId(conn, skillId) is { } id ? Skills.EffectRow(id) : -1;
+            int effect = SkillEffectId(conn, skillId) is { } id ? SkillsFor(conn).EffectRow(id) : -1;
             var own = skillId == SkillCatalog.FirstSkillId
-                ? Skills.EffectStats(effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2)
+                ? SkillsFor(conn).EffectStats(effect, 1).ToDictionary(kv => kv.Item1, kv => kv.Item2)
                 : SupportedSkill(conn, skillId).Stats;
             return new(CriticalExtraRollsFor(conn, CharacterPlayerStats(conn), own));
         }
@@ -87,6 +87,6 @@ partial class Program
         long extra = key is uint k ? (long)player.GetValueOrDefault(k) + (own?.GetValueOrDefault(k) ?? 0) : 0;
         return CriticalStrikePolicy.Multiplier(conn.Pools.CriticalStrikeMultiplier, extra,
             WeaponProfileFor(conn, activeSet: true).Unarmed, MeleeAttack(conn, effect),
-            effect >= 0 && Skills.IsSpell(effect));
+            effect >= 0 && SkillsFor(conn).IsSpell(effect));
     }
 }

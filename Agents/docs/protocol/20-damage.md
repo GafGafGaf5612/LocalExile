@@ -293,6 +293,12 @@ Class selection and Phrecia client compatibility are separate work; this does no
 
 ## 2d. Behemoth: attack damage from final armour
 
+Forest Tracking (Daughter of Oshabi node 6281) now shares this increased-attack calculation.
+Client key 2434, `attack_damage_+%_per_450_evasion`, contributes 3 per complete 450 final evasion.
+Both armour and evasion contributions add to the raw attack increase before one signed clamp.
+Final evasion after Iron Reflexes supplies no evasion groups; the resulting armour can still supply Steel Willed groups.
+See [Forest Tracking](../game/ascendancies.md#forest-tracking-attack-damage) for scope and lifecycle checks.
+
 Steel Willed (3.29.3b PassiveSkills graph node 2103) grants
 `attack_damage_+%_per_450_physical_damage_reduction_rating` with value 2, stat key 13019.
 `ArmourAttackDamage` adds `floor(max(0, final armour) / 450) * value` to resolved `attack_damage_+%` once.
@@ -936,13 +942,21 @@ Decision: port these consumers into the new engine; keeping the removed flight t
 and lose upstream continuation/secondary-area rules. The [framework guide](../game/projectile-framework.md#issue-75-integration)
 and [merge report](../dev/issue75-review.md#upstream-merge-resolution) record the contracts and validation.
 
+The later main integration also retains incoming ignite/shock and Hardcore death handling in the same resource
+writer, alongside leech, Energy Shield, Fortification and temporary recovery. Ruthless periodic pool persistence
+samples after projectile catch-up at that boundary. Instant-leech notifications remain visible, while a lethal
+ailment uses its epoch-checked death publication instead of sending a second ordinary Life update. Keeping main's
+separate wall-time sample would bypass the branch's chronological recovery boundary. Gambler rolls and typed
+mitigation are composed as described in the [projectile module](../game/projectile-framework.md#issue-75-integration).
+
 ## 6. Not modelled yet
 
-- Energy shield, exposure, shock and other damage-taken modifiers; monster armour (the monsters' base resistances are
-  in, §4, with unconditional penetration).
-- General character-added flat damage beyond the maximum-mana lightning grant, and unsupported skill-specific
-  increased/more/effectiveness mechanics. Weapon-local flat ranges are in §2a; existing supports retain their own pipeline.
-- Ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking bookkeeping.
+- Exposure, full monster armour and specialized damage-taken modifiers; ordinary player Energy Shield and the
+  supported incoming shock path are implemented. The monsters' base resistances are in §4, with penetration.
+- Remaining skill-specific increased/more/effectiveness mechanics beyond the documented packet and support paths.
+  Weapon-local and character flat ranges retain conversion history and their separate scopes.
+- General outgoing ailment application, duration and effect; critical ailments; bleed movement bonus; poison stacking.
+  Supported incoming elemental ailments are bounded by [Gambler](../game/gambler.md#incoming-elemental-ailments).
 - Per-monster damage conversion and monster-specific mitigation.
 - Damage reflection, specialized leech conversions/conditions, life/mana gain on hit, and recoup. Ordinary leech is in §5b.
 - Party/minion damage and the full support-gem effect set.
@@ -1099,3 +1113,12 @@ instead of the previous 22-point steps. OfflineWitch's selected Energy Shield ma
 second (3.7 at 185 ES); that regeneration correctly continues while recharge is interrupted. A temporary zero-regen
 control recovered nothing during the recharge delay. See [recovery timing](../re/recovery-timing.md) for evidence and
 measurement limits. Recovery-cadence PR #159 is merged; this change extends its existing recovery loop.
+
+## Incoming ordinary elemental ailments
+
+The Gateway's supported monster melee contact now calls `ApplyPlayerAilmentsLocked` after hit mitigation/block.
+`PlayerElementalAilments` owns ordinary ignite/chill/freeze/shock on the pauseable connection clock.
+Risk Aversion's final avoidance stats are consumed independently per eligible ailment, with no lucky avoidance.
+The resource writer integrates strongest ignite with live resistance, ES and lethal Life damage; RF remains nonlethal.
+Chill changes action timing/movement, freeze cancels/gates actions, and shock increases subsequent damage taken.
+See [Gambler's exact source, threshold, formula and presentation limits](../game/gambler.md).

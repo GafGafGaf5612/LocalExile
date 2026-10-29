@@ -8,7 +8,7 @@ using GameServer.Core.World;
 /// (Agents/docs/protocol/11-skills.md). Reads data/tables (game data, loaded on first use). Without the tables it
 /// knows only the default attack, PlayerMelee at level 1 (GEPL 4474, GESSPL 4430 in 3.29.3b).
 /// </summary>
-sealed class SkillCatalog(string folder = "data")
+sealed class SkillCatalog(string folder = "data", bool ruthless = false)
 {
     /// <summary>The ids the server gives its skills (+0x40). Basic actions use their ActionTypes HASH16 instead, so these
     /// must not collide with the type's basic actions (Character.ot: Move 0x2909, Interaction 0x0266 …). 0x0101 did: a
@@ -17,6 +17,23 @@ sealed class SkillCatalog(string folder = "data")
 
     private readonly Lazy<Tables?> _tables = new(() => Tables.Load(folder));
     private readonly StatCatalog _stats = new(folder);
+
+    // Both sets of effects already have their own native rows and per-level stat sets. Only name-based lookups
+    // require resolution; explicit row-based calls retain their exact identity (including monster effects).
+    private readonly Lazy<Dictionary<int, int>> _modeEffects = new(() =>
+    {
+        var result = new Dictionary<int, int>();
+        string path = Path.Combine(folder, "tables", "GemEffects.json");
+        if (!ruthless || !File.Exists(path)) return result;
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var r in doc.RootElement.EnumerateArray())
+            foreach (string name in new[] { "GrantedEffect", "GrantedEffect2" })
+                if (r.TryGetProperty(name, out var regular) && regular.ValueKind == JsonValueKind.Number
+                    && r.TryGetProperty(name + "Hardmode", out var alternate) && alternate.ValueKind == JsonValueKind.Number
+                    && regular.GetInt32() >= 0 && alternate.GetInt32() >= 0)
+                    result.TryAdd(regular.GetInt32(), alternate.GetInt32());
+        return result;
+    });
 
     /// <summary>Each GrantedEffects row's additional stat sets (StatSet2), when it has any.</summary>
     private readonly Lazy<Dictionary<int, int[]>> _extraSets = new(() =>
@@ -40,6 +57,8 @@ sealed class SkillCatalog(string folder = "data")
     /// record without it would make the client misread it.</summary>
     GrantedSkill? WithExtraSets(GrantedSkill skill, Tables t, int effectRow, int level)
     {
+        // Both Find paths use catalog identity and raw stored uses, never effective cost or current souls.
+        skill = skill with { VaalResourcesEnabled = VaalBudget(effectRow, level) is not null };
         if (!_extraSets.Value.TryGetValue(effectRow, out var sets)) return skill;
         var extra = new List<(uint, IReadOnlyList<(uint, int)>)>();
         foreach (int set in sets)
@@ -291,7 +310,8 @@ sealed class SkillCatalog(string folder = "data")
 
     /// <summary>A GrantedEffects row by its Id, or -1.</summary>
     public int EffectRow(string effectId) =>
-        _tables.Value is { } t && t.EffectRows.TryGetValue(effectId, out var effect) ? effect.Row : -1;
+        _tables.Value is { } t && t.EffectRows.TryGetValue(effectId, out var effect)
+            ? _modeEffects.Value.GetValueOrDefault(effect.Row, effect.Row) : -1;
 
     /// <summary>
     /// The mana a skill reserves at a level: GrantedEffectsPerLevel ManaReservationFlat (a flat amount) and
@@ -309,7 +329,19 @@ sealed class SkillCatalog(string folder = "data")
     /// <summary>The Vaal souls a use of a skill needs at a level (GrantedEffectsPerLevel VaalSouls; 0 for skills that are
     /// not Vaal skills).</summary>
     public int VaalSouls(int effectRow, int level) =>
-        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? t.VaalSouls[row] : 0;
+        _tables.Value is { } t && PickLevel(t.PerLevel, effectRow, level) is int row and >= 0 ? Math.Max(0, t.VaalSouls[row]) : 0;
+
+    public readonly record struct VaalDefinition(uint ActiveSkillsRow, int BaseCost, int StoredUses);
+
+    /// <summary>Null for non-Vaal skills or missing/invalid catalog references. Never substitutes GE/GEPL identity.</summary>
+    public VaalDefinition? VaalBudget(int effectRow, int level)
+    {
+        if (_tables.Value is not { } t || effectRow < 0 || effectRow >= t.ActiveSkills.Count
+            || t.ActiveSkills[effectRow] is not int active || active < 0) return null;
+        int row = PickLevel(t.PerLevel, effectRow, level);
+        return row >= 0 && t.VaalSouls[row] >= 0 && t.VaalStoredUses[row] > 0
+            ? new((uint)active, t.VaalSouls[row], t.VaalStoredUses[row]) : null;
+    }
 
     /// <summary>The mana a GrantedEffects Id reserves at a level, or null.</summary>
     public (int Flat, int Percent)? Reservation(string effectId, int level) =>
@@ -494,10 +526,11 @@ sealed class SkillCatalog(string folder = "data")
     {
         if (_tables.Value is not { } t)
             return effect == "PlayerMelee" && level == 1 ? new GrantedSkill(id, 4474, 4430, stats) : null;
-        if (!t.EffectRows.TryGetValue(effect, out var ge)) return null;
-        int gepl = t.PerLevel.FindIndex(r => r.Effect == ge.Row && r.Level == level);
-        int gesspl = t.StatSetsPerLevel.FindIndex(r => r.StatSet == ge.StatSet && r.Level == level);
-        return gepl < 0 || gesspl < 0 ? null : WithExtraSets(new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms), t, ge.Row, level);
+        int effectRow = EffectRow(effect);
+        if (effectRow < 0 || effectRow >= t.StatSets.Count) return null;
+        int gepl = t.PerLevel.FindIndex(r => r.Effect == effectRow && r.Level == level);
+        int gesspl = t.StatSetsPerLevel.FindIndex(r => r.StatSet == t.StatSets[effectRow] && r.Level == level);
+        return gepl < 0 || gesspl < 0 ? null : WithExtraSets(new GrantedSkill(id, (uint)gepl, (uint)gesspl, stats, (uint)t.Cooldowns[gepl].Ms), t, effectRow, level);
     }
 
     /// <summary>
@@ -720,7 +753,8 @@ sealed class SkillCatalog(string folder = "data")
         List<(int StatSet, int CastTime, bool CooldownPauses)> Effects, List<(int[] Implicit, (int, int)[] Constant)> StatSetBase,
         List<(int, int)[]> StatSetLevelStats, List<(int StatSet, int GemLevel, int PlayerLevelReq)> GemLevelReqs, List<int> ManaCost,
         List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)> Reservations, List<(int Ms, int Uses)> Cooldowns,
-        List<int> VaalSouls, Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness, List<int?> SpellCritChances, List<int> AttackSpeedMultipliers)
+        List<int> VaalSouls, List<int> VaalStoredUses, List<int?> ActiveSkills,
+        Dictionary<int, (int, int)[]> Quality, List<int> Effectiveness, List<int?> SpellCritChances, List<int> AttackSpeedMultipliers)
     {
         public static Tables? Load(string folder)
         {
@@ -738,11 +772,20 @@ sealed class SkillCatalog(string folder = "data")
             var effects = new Dictionary<string, (int, int)>();
             var statSets = new List<int>();
             var effectInfo = new List<(int, int, bool)>();
+            int activeCount = 0;
+            if (File.Exists(Table("ActiveSkills")))
+            {
+                using var active = JsonDocument.Parse(File.ReadAllBytes(Table("ActiveSkills")));
+                activeCount = active.RootElement.GetArrayLength();
+            }
+            var activeSkills = new List<int?>();
             int row = 0;
             foreach (var r in g.RootElement.EnumerateArray())
             {
                 string? id = r.GetProperty("Id").GetString();
                 int statSet = Int(r, "StatSet1");
+                int activeRow = Int(r, "ActiveSkill");
+                activeSkills.Add(activeRow >= 0 && activeRow < activeCount ? activeRow : null);
                 if (id is not null) effects.TryAdd(id, (row, statSet));
                 statSets.Add(statSet);
                 effectInfo.Add((statSet, Math.Max(0, Int(r, "CastTime")),
@@ -761,6 +804,7 @@ sealed class SkillCatalog(string folder = "data")
             var reservations = new List<(int ManaFlat, int ManaPercent, int LifeFlat, int LifePercent)>();
             var cooldowns = new List<(int, int)>();
             var vaalSouls = new List<int>();
+            var vaalStoredUses = new List<int>();
             var attackSpeedMultipliers = new List<int>();
             foreach (var r in p.RootElement.EnumerateArray())
             {
@@ -771,7 +815,8 @@ sealed class SkillCatalog(string folder = "data")
                 reservations.Add((Math.Max(0, Int(r, "ManaReservationFlat")), Math.Max(0, Int(r, "ManaReservationPercent")),
                     Math.Max(0, Int(r, "LifeReservationFlat")), Math.Max(0, Int(r, "LifeReservationPercent"))));
                 cooldowns.Add((Math.Max(0, Int(r, "Cooldown")), Math.Max(0, Int(r, "StoredUses"))));
-                vaalSouls.Add(Math.Max(0, Int(r, "VaalSouls")));
+                vaalSouls.Add(Int(r, "VaalSouls"));
+                vaalStoredUses.Add(Int(r, "VaalStoredUses"));
                 attackSpeedMultipliers.Add(r.TryGetProperty("AttackSpeedMultiplier", out var speed)
                     && speed.ValueKind == JsonValueKind.Number && speed.TryGetInt32(out int multiplier) ? multiplier : 0);
             }
@@ -798,7 +843,7 @@ sealed class SkillCatalog(string folder = "data")
                 if (Int(r, "PlayerLevelReq") is >= 0 and var req) levelReqs.Add((Int(r, "StatSet"), Int(r, "GemLevel"), req));
             }
             return new Tables(effects, statSets, perLevel, setLevels, effectInfo, baseStats, levelStats, levelReqs, mana, reservations, cooldowns,
-                vaalSouls, quality, effectiveness, spellCritChances, attackSpeedMultipliers);
+                vaalSouls, vaalStoredUses, activeSkills, quality, effectiveness, spellCritChances, attackSpeedMultipliers);
         }
     }
 }

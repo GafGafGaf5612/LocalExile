@@ -51,9 +51,8 @@ byte f0:
   a × skill record (0x1421981d0, as in the list: add or replace)
   b × u16 skill id (0x142198560: binary search of the manager's skills at +0x158 by id (+0x40), the manager's
                     vtable +0x40 runs for it, then it is erased; an unknown id is skipped)
-  u8 c, c × (u32, u32)        → manager +0x188 (ActiveSkills row → Vaal souls: FUN_141eea5b0 compares the souls a
-                                use needs with the entry's count)
-  u8 d, d × (u32, u32, u32)
+  u8 c, c × (u32 ActiveSkills row, u32 capacity)                 → soul seeds, current = 0
+  u8 d, d × (u32 ActiveSkills row, u32 current, u32 NEW capacity) → soul updates, OLD-capacity clamp
   ```
   After login the Gateway sends every skill change this way (`SendSkills`): all the player's skills as records and the
   ids that left. It remembers the ids the client has per connection (`ClientSkillIds`, from the player object and every
@@ -62,9 +61,14 @@ byte f0:
 `0x142197b10`:
 ```
 u8 n,  n × skill record (0x142196ce0, through 0x1421981d0: insert sorted by id, replacing an equal id, then slot 7)
-u8 m,  m × (u32 ActiveSkills row (0x101-byte rows), u32, u32) → manager +0x188, the Vaal souls (not used)
+u8 m,  m × (u32 ActiveSkills row (0x101-byte rows), u32 capacity, u32 current) → manager +0x188
 u32 k, k × (u16 skill id, u32 c, c × (f32 remaining base s, f32 total base s, f32 rate, u32 flags))
 ```
+
+Both soul readers preserve existing entries when their lists are empty.
+Collection, explicit removal resets, capacity seeding and the native consumers are documented in
+[27-vaal-souls.md](27-vaal-souls.md).
+The implementation has automated coverage; native acceptance is pending and unsupported Vaal casts remain refused.
 
 Skill record (`0x142196ce0`):
 ```
@@ -74,12 +78,22 @@ GEPL reference (0x1424a0dc0):
   u32  GrantedEffectsPerLevel row (0x78-byte rows)
   stat-set reference (0x1424a0990): u8 a, [u8 if a], u32 GrantedEffectStatSetsPerLevel row (0xb8-byte rows)
   one more stat-set reference per entry of the effect's additional stat sets (GrantedEffects row → its list count)
-u8   flags: bit0 → u32 parent object id ("Skill parent object did not exist" if unknown) + u16; bit1, bit2 → instance flags
+u8   flags: bit0 → u32 parent object id ("Skill parent object did not exist" if unknown) + u16
+            bit1 (0x02) → retain native Vaal soul inputs; bit2 → constructor parameter13 bit1
 u8   n supports, n × (GEPL reference, u32)
 u32, u32, u32 cooldown ms, u8                       → skill +0xc0, +0xc4, +0xc8, +0xcc (0x141ee73d0)
 compact n × (compact stat key, compact value)      the skill's own stats
 per additional stat set: the same stats list
 ```
+At `0x1421975f0..0x142197610`, clear wire bit1 and nonzero raw GEPL +0x2c stored uses set `dil = 1`.
+At `0x1421976e8..0x1421976f6`, constructor parameter13 is `(wireBit2 * 2) | dil`.
+Constructor `0x141ee7571..0x141ee75ba` zeros soul inputs +0xe8/+0xec/+0xf0 when parameter13 bit0 is set.
+Otherwise it retains GEPL +0x28 base souls, +0x2c stored uses and the selected soul multiplier.
+`GrantedSkill.VaalResourcesEnabled` defaults false and emits only wire bit1 for catalog Vaal resource definitions.
+Both catalog lookup paths derive it from raw stored uses, independently of effective cost, capacity or current souls.
+Ordinary partners, attacks and supports keep their existing layout; parent bit0 and third bit2 remain clear.
+The literal primary constructor regression is source evidence; native Vaal acceptance is still pending.
+
 The additional stat sets are the GrantedEffects row's `StatSet2` list (Volcanic Fissure has one). Each needs its
 reference after the first and its stat list after the skill's own: a record without them made the client misread the
 rest and crash when Volcanic Fissure was socketed (live 2026-10-23). `GrantedSkill.ExtraStatSets` carries them
@@ -845,7 +859,7 @@ Title "You have died!" (ClientStrings ids are row + 1). Live 2026-10-17:
 |---|---|
 | 0x0c (standard league) | "Resurrect in Town", "Resurrect at Checkpoint" |
 | 0x00 | "Resurrect" |
-| 0x01 (hardcore) | "Exit" ("Exit to the character selection screen": sends C→S 0x153, not implemented yet) |
+| 0x01 (hardcore) | "Exit" ("Exit to the character selection screen": sends C→S 0x153) |
 | 0x02 | hides the screen |
 
 bit3 turns the left button into "Resurrect in Town", bit2 adds the checkpoint button (not with bit0); a third
@@ -858,6 +872,11 @@ object has full life); at the checkpoint → 0x1b1 full life first (a teleport s
 dead was ignored), then 0x1b7 next to the area's waypoint if the character has activated it, else to the area's arrival point
 (`AreaLayout.Checkpoint`). `Game_LEAGUE=hardcore` sends 0x01;
 `/death_screen [flags]` previews any variant.
+
+Actual Hardcore deaths commit migration to the matching softcore league, preserving SSF.
+Hardcore Ruthless deaths are permanent and remain stored in Void.
+Resurrection packets are refused for the old Hardcore connection, including forged packets.
+See [league modes](../game/league-modes.md) for persistence, stale-ticket checks and storage-failure retry.
 
 ## 8. Stat keys
 
@@ -891,11 +910,17 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   message's flags, the client's **"Always Attack Without Moving"** setting (live 2026-10-25: 0x400 with it off, 0x401
   with it on; the setting itself also arrives as C→S 0x16 command 8):
   - bit 0 set: the player swings from where it stands; the server echoes 0x1ab there and pays at the swing.
-  - bit 0 clear: the client is **attack-moving** — it walks to the aimed point itself and sends no C→S 0x25 Move for
-    that walk. The server walks its estimate after it (`Walk.Order`) and answers 0x1ab from that estimate, like a
-    move's echo. A point with a living monster on it within the skill's hit radius is a swing (the client aims at the
-    cell, not at the object: Holy Strike on a monster sends 0x25, live 2026-10-25): the server walks into the
-    weapon's reach and only then pays and hits. An empty point never swings, so running costs no mana.
+  - bit 0 clear: a point **within the weapon's reach** is a swing at the ground, even with nothing standing there (live
+    2026-10-26: standing and swinging at empty ground must cost the skill's mana, as it does on the client); the server
+    echoes 0x1ab in place, pays the cost and runs the skill's area hit. A point **beyond** the reach is an
+    **attack-move** — the client walks to the aimed point itself and sends no C→S 0x25 Move for that walk, so the server
+    walks its estimate after it (`Walk.Order`) and answers 0x1ab from that estimate, like a move's echo; it costs no
+    mana. A monster inside the skill's hit radius adds nothing to the decision: within reach the point is a swing (the
+    hit still covers every monster within the skill's radius of it, the client aiming at the cell rather than the
+    object: Holy Strike on a monster sends 0x25, live 2026-10-25), beyond reach it is an attack-move.
+    The client spends the skill's mana on every use it starts, including an attack-move it only walks for, so the
+    Gateway answers an attack-move with the authoritative mana (S→C 0x1b1, at most four a second); otherwise the orb
+    falls behind the server's and recovery flasks are refused as "full" ([13](13-items.md) §8).
   On a monster: C→S 0x24; an attack walks into the weapon's reach first (`Walk.Approach`, the swing is echoed on
   arrival, unlike a spell) and a spell casts from where it stands. An attack with "Always Attack Without Moving" on
   casts in place. On the player itself (Righteous Fire): C→S 0x24 with the player's id as the target; the server
@@ -2524,8 +2549,8 @@ Automated parsed-dispatch coverage does not constitute native verification.
 - A 30 Hz server loop: `TickRate` only bounds the attack time; hits use timers and the monster AI runs every 500 ms.
 - Monsters use only their first granted effect; no ranged or spell skills, no monster skill choice.
 - A damage model: armour, evasion, resistances, crits; the player's real life from level and stats.
-- The death screen's bit4 and trailing fields (Sanctum and other modes); exit to character selection (0x153).
-- f0 0x20 (skill update), the second and third lists of f0 0x40, supports (linked support gems), gem levels.
+- The death screen's bit4 and trailing fields (Sanctum and other modes).
+- Skill record fields +0xc0/+0xc4 still have unproved semantic names.
 - Projectiles: their height above the ground and model orientation (§10), collision, the explosion, the real
   skill → projectile link; damage for ground casts.
 - The meaning of 0x53's two trailing u16.

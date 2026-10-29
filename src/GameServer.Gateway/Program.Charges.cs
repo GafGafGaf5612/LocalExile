@@ -27,10 +27,10 @@ partial class Program
         Func<string, int>? skill = null;
         if (effect >= 0)
         {
-            var own = Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
+            var own = SkillsFor(conn).EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
             skill = name => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
         }
-        ChargesOf(conn).Enqueue(new ChargeEvent.Hit(critical, spell, melee, m.Rarity, effect >= 0 ? Skills.EffectId(effect) : null,
+        ChargesOf(conn).Enqueue(new ChargeEvent.Hit(critical, spell, melee, m.Rarity, effect >= 0 ? SkillsFor(conn).EffectId(effect) : null,
             skill, Killed: m.Dead || m.Life == 0, Primary: primary));
     }
 
@@ -130,8 +130,9 @@ partial class Program
     {
         var reduction = PlayerDamageReduction(conn, stats);
         int resisted = type == DamageType.Physical ? amount : DamageModel.Mitigate(amount, resistance, maxResistance);
-        return FortificationDamageTaken(conn, PlayerHitMitigation.AfterResistance(conn.Pools, type, resisted,
-            reduction.Physical, reduction.Elemental, effectiveArmour));
+        return FortificationDamageTaken(conn, (int)Math.Round(PlayerHitMitigation.AfterResistance(conn.Pools, type, resisted,
+            reduction.Physical, reduction.Elemental, effectiveArmour)
+            * conn.ElementalAilments.DamageTakenFactor(conn.Clock.Elapsed.TotalSeconds)));
     }
 
     // What MitigateTaken applied, for the dev commands' replies: armour or resistance, and the additional reduction.
@@ -153,14 +154,14 @@ partial class Program
     // (Path of Building: 60, grown by area of effect; power 1 normal, 2 magic, 10 rare, 20 unique), when its cast is over.
     // True when the skill was one of these.
     static bool UseChargeSkill(ClientState conn, int effect, int level, int quality, (int X, int Y) at)
-        => UseChargeSkillCore(conn, effect, Skills.EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2));
+        => UseChargeSkillCore(conn, effect, SkillsFor(conn).EffectStats(effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2));
 
     static bool UseChargeSkillInstance(ClientState conn, ushort skillId, int effect, int level, int quality, (int X, int Y) at)
-        => Skills.EffectId(effect) == "EnduringCry" && UseChargeSkillCore(conn, effect, SupportedSkill(conn, skillId).Stats);
+        => SkillsFor(conn).EffectId(effect) == "EnduringCry" && UseChargeSkillCore(conn, effect, SupportedSkill(conn, skillId).Stats);
 
     static bool UseChargeSkillCore(ClientState conn, int effect, IReadOnlyDictionary<uint, int> own)
     {
-        if (Skills.EffectId(effect) != "EnduringCry") return false;
+        if (SkillsFor(conn).EffectId(effect) != "EnduringCry") return false;
         int Own(string name) => Stats.Key(name) is uint key ? own.GetValueOrDefault(key) : 0;
         int per = Own("endurance_charge_granted_per_X_monster_power_during_endurance_warcry");
         // The warcry cannot be cancelled before its contact point (cannot_cancel_skill_before_contact_point), so a later
@@ -168,7 +169,7 @@ partial class Program
         // changing its source later does not cancel this continuation. Warcry speed is the player's and the gem's.
         var player = AreaPlayerStats(conn);
         int Player(string name) => Stats.Key(name) is uint key ? player.GetValueOrDefault(key) : 0;
-        double castSeconds = Skills.CastTimeMs(effect) / 1000.0 / Math.Max(0.01, 1 + (Player("warcry_speed_+%") + Own("warcry_speed_+%")) / 100.0);
+        double castSeconds = SkillsFor(conn).CastTimeMs(effect) / 1000.0 / Math.Max(0.01, 1 + (Player("warcry_speed_+%") + Own("warcry_speed_+%")) / 100.0);
         double until = conn.Clock.Elapsed.TotalSeconds + castSeconds;
         int epoch = conn.ProjectileEpoch;
         double duration = SkillDurationModifiers.Seconds(Own("base_skill_effect_duration"), Player, Own);

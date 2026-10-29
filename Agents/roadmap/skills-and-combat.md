@@ -381,6 +381,13 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Do not inherit an owner's spell-damage restriction onto independent minions or daemons without a skill rule.
 - **Done when:** damage numbers match the character panel and the monsters' levels.
 
+### Incoming elemental ailment extensions
+
+- Ordinary supported monster basic contacts now exercise ignite/chill/freeze/shock and final avoidance.
+  Finish dedicated native buff icons and source/threshold/conditional-immunity parity before claiming a general ailment engine.
+  Hostile projectile/spell adapters and alternative-ailment sources remain separate work.
+  See [Gambler](../docs/game/gambler.md).
+
 ### Rage extensions
 
 - Generic Rage generation, limits, installed buff/count, actual damage, decay, pause and lifecycle are native-verified.
@@ -391,11 +398,27 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Measure official capped-attempt refresh behavior and area-loading timer parity before replacing policy v1.
   See [26-rage.md](../docs/protocol/26-rage.md); Vaal costs and whole-class selection remain separate mechanics.
 
+### Vaal execution and remaining soul checks
+
+- Collection, bounded shared budgets and the proved Actor payloads (#308) pass automated and bounded native checks.
+  Source checks on base `939b44fe` cover attribute/mana composition, supports, payment and current publication.
+  The proved missing skill-record bit1 is implemented from raw Vaal metadata, with parsed and socketed regressions.
+  Forty-two pinned 3.29.3b checks cover real-kill charging, the cap, cost changes, zero cost and prevention.
+  They also cover nonlethal/friendly controls and unsupported input without action echo or resource loss.
+  Remaining native acceptance covers duplicates, removal/readd, cooldown refresh and transient lifecycle.
+  Verify held death notifications, Vaal Haste/Grace aura costs, death/resurrection and slow destination loading.
+  Include attribute gear removal before inventory notifications; current automated coverage is not native proof.
+  See [27-vaal-souls.md](../docs/protocol/27-vaal-souls.md) and Status for the explicit LocalExile policies.
+  Vaal executors, payment, official distribution/capacity parity and the SGP countdown require separate work.
+  Unsupported Vaal casts remain refused; Behemoth and whole-class enablement remain separate.
+
 ### Death screen variants
 
 - **Known:** S→C 0x55 flags bit0/2/3 are mapped ([11](../docs/protocol/11-skills.md) §7);
   bit4 and the trailing u32 / u8 / u16 are not.
-- **Done when:** Sanctum and other modes show their own options; hardcore's "Exit" works (with Esc → Exit, C→S 0x153).
+- **Done when:** Sanctum and other modes show their own options.
+  Hardcore Exit (C→S 0x153) is implemented; death migration and permanent Ruthless death are tracked in
+  [league modes](../docs/game/league-modes.md).
 
 ### Skill projectiles
 

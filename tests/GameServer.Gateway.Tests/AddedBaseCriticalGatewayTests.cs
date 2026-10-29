@@ -27,7 +27,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     {
         var gems = ((IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)>)typeof(Program)
             .GetMethod("GemSkillEffects", BindingFlags.Static | BindingFlags.NonPublic, binder: null,
-                types: [typeof(string)], modifiers: null)!.Invoke(null, [game.Character])!).ToArray();
+                types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [game.State])!).ToArray();
         return Assert.Single(gems).Id;
     }
 

@@ -522,7 +522,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
         public (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)[] Gems() =>
             ((IEnumerable<(ushort, int, string, int, int, uint)>)typeof(Program).GetMethod("GemSkillEffects", Flags,
-                binder: null, types: [typeof(string)], modifiers: null)!.Invoke(null, [Character])!).ToArray();
+                binder: null, types: [typeof(ClientState)], modifiers: null)!.Invoke(null, [State])!).ToArray();
 
         public IReadOnlyList<GrantedSkill> ActorSkills() => ProgramValue<IReadOnlyList<GrantedSkill>>("PlayerSkills", State);
 

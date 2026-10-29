@@ -111,6 +111,8 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     // lock.
     public double FlinchUntil = double.NegativeInfinity;
     public bool Aggro, Dead;
+    // Soul credit alone is idempotent; this does not alter existing XP, loot, quest or charge policy.
+    public bool SoulKillProcessed;
     public (int X, int Y)? CollisionPosition;
     public (int X, int Y)? LastTarget;
     // A boss's stage (BossFights) and whether a hit has started it.
@@ -143,10 +145,17 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint Ticket => ticket;
     public uint Seed => seed;
     public string? Character { get; init; }
+    public Guid? CharacterId { get; init; }
+    public readonly Guid RuthlessVitalsSessionId = Guid.NewGuid();
     /// <summary>The account the character belongs to (Auth's resolve): its stash (AccountStash) is shared by all of them.</summary>
     public string? Account { get; init; }
     public string? League { get; init; }
     public bool Hardcore { get; init; }
+    public bool Ssf { get; init; }
+    public bool Ruthless { get; init; }
+    public double RuthlessGemExperienceCarry;
+    public bool RuthlessDeathHandled;
+    public bool HardcoreDeathRecorded;
     /// <summary>The character's last town (HASH16, from Auth's resolve): Resurrect in Town goes there. 0 before the
     /// character has entered a town (the death screen then has no Resurrect in Town).</summary>
     public ushort LastTown { get; init; }
@@ -161,8 +170,12 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Guarded by Monsters, like projectile impact commits and pause changes.
     public bool LeavingArea;
     public readonly RecentEnemyHits RecentEnemyHits = new();
+    public readonly PlayerElementalAilments ElementalAilments = new();
     public Random IncomingHitRandom = Random.Shared;
     public int IncomingHitEpoch;
+    public int DeathNotificationEpoch = -1;
+    public int FreezeGeneration;
+    public int ActionInterruptionGeneration => unchecked(HitRecovery.Generation + FreezeGeneration);
     public (int Count, int Chance)? PresentedRecentEnemyHits;
 
     // A failed transfer retains history but cannot revive a swing from before the attempted transfer.
@@ -171,7 +184,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         lock (Monsters)
         {
             IncomingHitEpoch++;
-            if (clear) RecentEnemyHits.Clear();
+            if (clear) { RecentEnemyHits.Clear(); ElementalAilments.Clear(); }
         }
     }
     public int ProjectileEpoch;
@@ -269,7 +282,7 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     /// <summary>Applies the passive movement speed to the server's walk estimate; /set_speed is a dev override.</summary>
     public void ApplyMovementSpeed() =>
-        Walk.SetSpeed(Math.Max(1, Program.WalkSpeed * (100 + Pools.MovementVelocityPct) / 100), Clock.Elapsed.TotalSeconds);
+        Walk.SetSpeed(Math.Max(1, Program.WalkSpeed * (100 + Pools.MovementVelocityPct) / 100 * ElementalAilments.ActionFactor(Clock.Elapsed.TotalSeconds)), Clock.Elapsed.TotalSeconds);
 
     /// <summary>Replaces an area transition of this connection's layout (dev changes; the walk estimate keeps going).</summary>
     public void ReplaceAreaTransition(uint id, AreaTransitionObject transition) =>
@@ -345,6 +358,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public bool RageRetired;
     public ushort RageBuff;
     public RageState.Value? SentRage;
+    // Shared Vaal row budgets and native presentation belong to this connection; guarded by Monsters.
+    public readonly VaalSoulState VaalSouls = new();
+    public bool VaalSoulsRetired;
+    public readonly Dictionary<uint, VaalSoulBudget> SentVaalSouls = [];
     // Running auras by skill id, with their buff instances and reservation. Guarded by the Monsters lock.
     public readonly Dictionary<ushort, AuraCatalog.Aura> Auras = [];
     // Only self-owned aura instances actually sent on this connection's current player object.
@@ -408,12 +425,27 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public uint PlayerMaxLife => Pools.Life;
     // The player's life as the server keeps it (PlayerObject's Life, full on creation); 0 = dead.
     public bool AuraDeathHandled;
-    public uint PlayerLife;
+    uint playerLife;
+    public uint PlayerLife
+    {
+        get => playerLife;
+        set
+        {
+            lock (Monsters)
+            {
+                // Resource loss belongs to the actual death transition, never a delayed death notification.
+                if (playerLife > 0 && value == 0) VaalSouls.ClearBalance();
+                playerLife = value;
+            }
+        }
+    }
     // Defaults to the original shared stream; an isolated connection may supply deterministic critical draws.
     internal Random CriticalRandom { get; init; } = Random.Shared;
     internal Random AttackAccuracyRandom { get; set; } = Random.Shared;
     // The player's mana as the server keeps it: spent by gem skills (mana_cost), regenerated by RunPlayerTick.
     public uint PlayerMana;
+    // When the server last sent the pool back after an attack-move, whose use the client pays for but the server only walks.
+    public double LastManaResyncAt = double.NegativeInfinity;
     public uint? SentEnergyShield;
     public bool? SentRechargeActive;
     public int? SentEsRecoveryRate;
