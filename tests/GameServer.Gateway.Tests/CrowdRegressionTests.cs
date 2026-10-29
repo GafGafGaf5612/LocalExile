@@ -52,7 +52,7 @@ public class CrowdRegressionTests
                 var host = ItemCatalog.Create(Program.Items.Find("Metadata/Items/Armours/BodyArmours/BodyStr1")!) with
                     { Sockets = [new(SocketColour.White, gem)], Links = [1] };
                 Items.Add(PlayerInventories.BodyArmour, 0, 0, host);
-                Gem = Call<IEnumerable<(ushort, int, string, int, int, uint)>>("GemSkillEffects", State.Character).Single();
+                Gem = Call<IEnumerable<(ushort, int, string, int, int, uint)>>("GemSkillEffects", State).Single();
             }
             Set("global_cannot_crit", 1); Set("physical_damage_+%", -100);
             Set("attack_minimum_added_chaos_damage", 100); Set("attack_maximum_added_chaos_damage", 100);
