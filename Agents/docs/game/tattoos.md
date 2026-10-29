@@ -1,14 +1,15 @@
 # Tattoos
 
-**Status: not implemented (documentation complete, catalogue 100/100).** The server has no tattoo item source,
-apply/remove flow or passive-replacement state, so every row below is `not implemented`. This page records the
-3.29.3b tattoo catalogue, the client mechanics and the target/limit rules so the feature can be implemented and
-verified. The `Status` column deliberately says `not implemented` for every row; after the flow exists, replace it with
-`works`, `partial` or `inert` per row and keep the reason. The reason names the extra consumer or special
-mechanic beyond the missing tattoo flow itself.
+**Status: in progress (documentation complete, catalogue 100/100; client apply/remove verified for the Firewalker
+pilot).** The client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries
+the inventory id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends
+the tattoo in `0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. The Firewalker is `works`; the
+other nine pilot stats are `partial` (server stats verified, client flow not individually re-checked); the remaining
+90 rows are `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the
+target/limit rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
 
-This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos` and
-`PassiveSkillTattooTargetSets`, cross-checked with the poewiki [Tattoo](https://www.poewiki.net/wiki/Tattoo) and
+This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos`,
+`PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki [Tattoo](https://www.poewiki.net/wiki/Tattoo) and
 [List of tattoos](https://www.poewiki.net/wiki/List_of_tattoos) pages (2026-10-29) and Path of Building's
 `src/Data/TattooPassives.lua`. Path of Building is a read-only third-party reference under `Tools/PathOfBuilding`
 (not committed).
@@ -17,20 +18,30 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
-| Current (drop-enabled) | 53 | 0 | 0 | 0 | 53 |
-| Drop-disabled | 40 | 0 | 0 | 0 | 40 |
+| Current (drop-enabled) | 53 | 1 | 8 | 0 | 44 |
+| Drop-disabled | 40 | 0 | 1 | 0 | 39 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **0** | **0** | **0** | **100** |
+| **Total** | **100** | **1** | **9** | **0** | **90** |
 
 | Status | Meaning |
 |---|---|
 | `works` | Implemented and verified with the real client. |
-| `partial` | The item/apply flow works, but part of the effect or its condition is not modelled. |
+| `partial` | Part of the feature works (item source, server apply or effect), but at least one layer is missing; the reason names it. |
 | `inert` | The item/apply flow works, but the effect has no gameplay consumer. |
 | `not implemented` | No item source, apply/remove flow or passive-replacement state. |
 
 `stat-only` in the reason column means the effect is a plain stat with no condition; it does **not** claim that the
 stat already has a gameplay consumer. The first implementation pass must audit each replacement passive's stat keys.
+
+## Implementation groups (simple to complex)
+
+| Group | Contents | State |
+|---|---|---|
+| 1. Plain stats | The ten pilot tattoos: four resistances, movement speed, armour, block, spell suppression, energy shield and maximum life. | Firewalker is end-to-end (client apply/remove + relog); the other nine have server stats and unit/live checks only. |
+| 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
+| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Not implemented. |
+| 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
+| 5. Loyalty summons | The ten Summon Spirit triggers, each limited to 1 Loyalty Tattoo. | Not implemented. |
 
 ## What a tattoo is
 
@@ -120,6 +131,56 @@ Special limits and conditions:
 - **Impossible Escape** and **Thread of Hope** can allocate passives without a connection; this is useful for the
   Makanga adjacency condition. Bypass-allocated passives must count as allocated for the adjacency check.
 
+## Client protocol (0x77 and 0x33)
+
+### Applying and removing
+
+The client sends **C->S `0x77`** (12 bytes) when an item is used on a passive:
+
+```
+u32 inventory id   (big-endian)
+u32 item id        (big-endian)
+u16 PassiveSkillGraphId
+```
+
+Captured on 2026-10-29 after right-clicking Tattoo of the Ngamahu Firewalker and clicking allocated node 21301:
+
+`0077 00000001 0000049C 5335` ? inventory 1, item 1180, node 21301.
+
+The **item type decides the action**:
+
+- a tattoo (`CurrencyItems.Action = apply_passive_tattoo`) replaces the passive;
+- an Orb of Scouring (`Metadata/Items/Currency/CurrencyConvertToNormal`) removes the tattoo and restores the
+  passive.
+
+The server answers with the consumed stack (`0xbf`), the character stats (`0x1b3`) and the passive tree (`0x33`).
+The same packet is sent on every click; the server must make repeated clicks idempotent (the first consumes the
+item and later ones fail cleanly).
+
+### The fifth list of 0x33
+
+`0x33` carries the applied tattoos in its **fifth list** (a `vec16 u32`, count then little-endian pairs):
+
+```
+node | PassiveSkillOverrides.dat HASH16 << 16
+```
+
+For the Firewalker on node 21301 the entry is `0x5C2A5335`: node `0x5335` and `Ngamahu1` HASH16 `0x5C2A`
+(23594). The client stores the pair at tree `+0x1f8` and looks the value up in `PassiveSkillOverrides.dat`.
+
+This value is **not** the BaseItemTypes row (4841) and **not** the `PassiveSkillTattoos.Override` row index (0):
+both left the node displaying its original `+10 to Strength`. Only the override row's HASH16 changed the name,
+icon and tooltip. The other lists are unchanged: second empty, third cluster jewel nodes, fourth mastery effects.
+
+### Verified client sequence
+
+1. Right-click a tattoo; the item is held on the cursor.
+2. Click an allocated passive of the right target type; the client sends `0x77`.
+3. The server consumes one tattoo, updates the stats and sends `0x33` with the tattoo pair.
+4. The node shows the replacement (`Fire Resistance`, `+6% to Fire Resistance`); relog keeps it.
+5. Right-click an Orb of Scouring, click the tattooed node; the same `0x77` removes the tattoo, restores the
+   passive and consumes one orb.
+
 ## Data model
 
 - **100 distinct tattoo names** in `BaseItemTypes` (the 100 rows whose name contains "Tattoo"). Of these, 93 use the
@@ -136,44 +197,48 @@ Special limits and conditions:
 - The currency item carries **no effect mods**: the replacement passive's stats are the effect. Path of Building's
   `TattooPassives.lua` gives the effect text and stat keys for 92 items; the eight special items (Journey Makanui and
   the seven Forbidden tattoos) need random generation or a special replacement.
-- The client's `Override` index needs decoding to the replacement passive before the server can apply the stats. The
-  target set and tribe are already available; the replacement stats for the 92 ordinary tattoos are in PoB.
+- `PassiveSkillOverrides.json` has 343 rows. `PassiveSkillTattoos.Override` indexes this table; the client needs the
+  row's `HASH16`, not the row index. Firewalker is `Override = 0` ? `Ngamahu1`, HASH16 23594; the row also carries
+  the replacement icon, stats, `RequiresAdjacent`/`MaxAdjacent` and `TattooBlockingPassive`.
+- The client's `Override` index is therefore decoded: use `PassiveSkillOverrides[Override].HASH16` in `0x33`'s
+  fifth list. The target set and tribe are already available; the replacement stats for the 92 ordinary tattoos are
+  also in PoB for the server-side stat pass.
 
 ## Implementation plan
 
-1. **Trace the client flow.** Find the C->S packet sent by right-click tattoo + left-click passive, and the state the
-   client expects back in 0x33. The current server handles item use and passive allocation separately; tattoos need a
-   target passive id and a new save field. Do not guess the packet.
-2. **Catalogue and dev source.** Add a `TattooCatalogue` generated from `BaseItemTypes`, `PassiveSkillTattoos`,
-   `PassiveSkillTattooTargetSets` and PoB's effect text. Add `/tattoo <name>` (and a list) to create the 100 items
-   with the correct stack size, icon and metadata; the seven Forbidden items need their separate currency-use path.
-3. **Save shape.** Store a per-character map from passive graph id (or expansion id for cluster/ascendancy nodes, if
-   tattoos ever target them) to tattoo item id. The map is independent of allocation, so refunding and reallocating
-   the passive preserves the tattoo. Migrate old saves with an empty map.
-4. **Apply/remove.** Validate the target set, the item limit, the 50-tattoo cap, the Makanga adjacency condition and
-   the special limits; consume the item; install the replacement stats; recompute the stats. Orb of Scouring removes
-   the tattoo and restores the original passive without refunding the point. Another tattoo overwrites the old one.
-5. **Stat replacement.** Apply the replacement passive's stats in the same pass that builds allocated passive stats.
-   The node's allocation, connections and point cost stay unchanged. The replacement must be visible to all
-   consumers: panels, damage, defences, flasks, minions, auras, charges and the character sheet.
-6. **Interactions.** Keep the timeless-conquered suppression, the Unnatural Instinct unallocated-small-passive rule,
-   the Might of the Meek/Warrior's Tale scaling and the anointment replacement rule in the same pass. A tattooed node
-   must not double-apply its original stats.
-7. **Random specials.** Journey Makanui chooses a random keystone and saves it; the seven Forbidden tattoos choose a
-   random non-multiple-choice ascendancy notable from the class's base ascendancies and save it. Use the server RNG
-   and save the result, so relog does not reroll.
-8. **Vendor recipe.** Three same-tribe tattoo items -> one random same-tribe tattoo, using the existing vendor recipe
-   path. Event-only and drop-disabled items need an explicit availability rule.
-9. **Tests.** Unit tests for the target-set map, limits, adjacency, save/load and replacement stats; live client checks
-   for apply, replace, remove, unallocate/reallocate, relog, Orb of Scouring, 50 cap, Makanga adjacency, Journey
-   Makanui and one Forbidden tattoo. Add the real-client evidence to this page when it passes.
+1. **Client flow (done for the pilot).** C->S `0x77` is the item-on-passive packet; `0x33`'s fifth list carries
+   `node | PassiveSkillOverrides.HASH16 << 16`. The client did not display the replacement until the HASH16 was sent.
+2. **Catalogue and dev source (done).** `TattooCatalogue` reads `BaseItemTypes`, `PassiveSkillTattoos`,
+   `PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`; `/tattoo <name>` creates all 100 items. The seven
+   Forbidden items still need their separate currency-use path.
+3. **Save shape (done).** The character save stores `node -> tattoo name`; the map is independent of allocation, so
+   refunding and reallocating the passive preserves the tattoo. Old saves without the field load as empty.
+4. **Apply/remove (done for the pilot).** `0x77` validates the target set, the 50-tattoo cap and the special limits,
+   consumes the item, installs the replacement stats and saves. The same packet with an Orb of Scouring removes the
+   tattoo and restores the passive without refunding the point. Makanga adjacency and the special limits are still
+   refused, not implemented.
+5. **Stat replacement (done for the 10 pilot stats).** The replacement stats are applied in the same pass that builds
+   allocated passive stats; the node's allocation, connections and point cost stay unchanged. The client displays the
+   replacement from the `0x33` fifth list; the panel stats come from the server.
+6. **Interactions (partial).** Timeless-conquered suppression and Unnatural Instinct's unallocated-small-passive rule
+   are wired into the stat pass. Might of the Meek/Warrior's Tale scaling and anointment replacement still need their
+   own checks. A tattooed node must not double-apply its original stats.
+7. **Random specials (not started).** Journey Makanui chooses a random keystone and saves it; the seven Forbidden
+   tattoos choose a random non-multiple-choice ascendancy notable from the class's base ascendancies and save it.
+   Use the server RNG and save the result, so relog does not reroll.
+8. **Vendor recipe (not started).** Three same-tribe tattoo items -> one random same-tribe tattoo, using the existing
+   vendor recipe path. Event-only and drop-disabled items need an explicit availability rule.
+9. **Tests (pilot coverage).** Unit tests cover the 100-item catalogue, the target map, the pilot stat mapping, the
+   Firewalker pool change and the `0x33` fifth-list layout. Live client checks cover apply, display, relog and Orb of
+   Scouring removal for the Firewalker. Still needed: replace, unallocate/reallocate, the 50 cap, Makanga adjacency,
+   Journey Makanui and one Forbidden tattoo.
 
 ## Full catalogue
 
-The effect text is the poewiki item text; the target is the client target set. `Status` is `not implemented` for
-every row until the flow exists. `Reason` names the extra consumer or special mechanic beyond the missing tattoo flow.
-`Source` is the Kingsmarch port for drop-enabled rows; the drop-disabled and event-only groups are not normally
-obtainable in 3.29.
+The effect text is the poewiki item text; the target is the client target set. `Status` is per row: `partial` means
+the server dev apply and stat replacement are implemented (the reason says whether the client item-use flow is
+missing), and `not implemented` means no server effect/flow yet. `Source` is the Kingsmarch port for drop-enabled
+rows; the drop-disabled and event-only groups are not normally obtainable in 3.29.
 
 ### Journey (3)
 
@@ -189,7 +254,7 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Tattoo of the Arohongui Moonwarden** | +6% to Cold Resistance | Small Dexterity | Te Onui | not implemented | stat-only |
+| **Tattoo of the Arohongui Moonwarden** | +6% to Cold Resistance | Small Dexterity | Te Onui | partial | server stats live-verified; client apply/remove not checked |
 | **Tattoo of the Arohongui Scout** | 10% chance to Avoid being Chilled<br>10% chance to Avoid being Frozen | Small Dexterity | Te Onui | not implemented | needs chill/freeze avoidance rolls |
 | **Tattoo of the Arohongui Shaman** | 5% increased Effect of Herald Buffs on you | Small Intelligence | Moti Aro | not implemented | needs Herald buff effect |
 | **Tattoo of the Arohongui Warmonger** | 5% chance to Freeze | Small Intelligence | Moti Aro | not implemented | needs freeze chance |
@@ -201,9 +266,9 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 |---|---|---|---|---|---|
 | **Tattoo of the Hinekora Deathwarden** | 6% reduced Effect of Curses on you | Small Intelligence | Moti Aro | not implemented | stat-only |
 | **Tattoo of the Hinekora Shaman** | 8% increased Mana Regeneration Rate | Small Intelligence | Moti Aro | not implemented | stat-only |
-| **Tattoo of the Hinekora Storyteller** | +3% to Chaos Resistance | Small Intelligence | Moti Aro | not implemented | stat-only |
+| **Tattoo of the Hinekora Storyteller** | +3% to Chaos Resistance | Small Intelligence | Moti Aro | partial | server stats live-verified; client apply/remove not checked |
 | **Tattoo of the Hinekora Warmonger** | Minions have 5% increased maximum Life | Small Intelligence | Moti Aro | not implemented | needs minion life |
-| **Tattoo of the Hinekora Warrior** | 3% increased maximum Energy Shield | Small Intelligence | Moti Aro | not implemented | stat-only |
+| **Tattoo of the Hinekora Warrior** | 3% increased maximum Energy Shield | Small Intelligence | Moti Aro | partial | server mapping/unit test; live client check pending |
 
 ### Kitava (5)
 
@@ -219,7 +284,7 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Tattoo of the Ngamahu Firewalker** | +6% to Fire Resistance | Small Strength | Ngakanu | not implemented | stat-only |
+| **Tattoo of the Ngamahu Firewalker** | +6% to Fire Resistance | Small Strength | Ngakanu | works | client 0x77 + 0x33 fifth list; apply/remove/relog verified |
 | **Tattoo of the Ngamahu Shaman** | 10% reduced Ignite Duration on you | Small Strength | Ngakanu | not implemented | stat-only |
 | **Tattoo of the Ngamahu Warmonger** | 5% chance to Ignite | Small Strength | Ngakanu | not implemented | needs ignite chance |
 | **Tattoo of the Ngamahu Warrior** | 5% increased Fire Damage | Small Strength | Ngakanu | not implemented | stat-only |
@@ -230,9 +295,9 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
 | **Tattoo of the Ramako Archer** | 5% increased Global Accuracy Rating | Small Dexterity | Te Onui | not implemented | stat-only |
-| **Tattoo of the Ramako Fleetfoot** | 2% increased Movement Speed | Small Dexterity | Te Onui | not implemented | stat-only |
+| **Tattoo of the Ramako Fleetfoot** | 2% increased Movement Speed | Small Dexterity | Te Onui | partial | server mapping/unit test; live client check pending |
 | **Tattoo of the Ramako Scout** | 6% increased Evasion Rating | Small Dexterity | Te Onui | not implemented | stat-only |
-| **Tattoo of the Ramako Shaman** | +2% chance to Suppress Spell Damage | Small Dexterity | Te Onui | not implemented | stat-only |
+| **Tattoo of the Ramako Shaman** | +2% chance to Suppress Spell Damage | Small Dexterity | Te Onui | partial | server mapping/unit test; live client check pending |
 | **Tattoo of the Ramako Sniper** | 5% increased Projectile Speed | Small Dexterity | Te Onui | not implemented | stat-only |
 
 ### Rongokurai (5)
@@ -243,7 +308,7 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 | **Tattoo of the Rongokurai Goliath** | 10% increased Stun Duration on Enemies | Small Strength | Ngakanu | not implemented | stat-only |
 | **Tattoo of the Rongokurai Guard** | Guard Skills have 6% increased Duration | Small Strength | Ngakanu | not implemented | needs guard-skill duration |
 | **Tattoo of the Rongokurai Turtle** | You take 5% reduced Extra Damage from Critical Strikes | Small Intelligence | Moti Aro | not implemented | stat-only |
-| **Tattoo of the Rongokurai Warrior** | 6% increased Armour | Small Strength | Ngakanu | not implemented | stat-only |
+| **Tattoo of the Rongokurai Warrior** | 6% increased Armour | Small Strength | Ngakanu | partial | server mapping/unit test; live client check pending |
 
 ### Tasalio (5)
 
@@ -281,8 +346,8 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 |---|---|---|---|---|---|
 | **Tattoo of the Valako Scout** | 10% reduced Effect of Shock on you | Small Intelligence | Moti Aro | not implemented | stat-only |
 | **Tattoo of the Valako Shaman** | 5% chance to Shock | Small Intelligence | Moti Aro | not implemented | needs shock chance |
-| **Tattoo of the Valako Shieldbearer** | +1% Chance to Block Attack Damage | Small Strength | Ngakanu | not implemented | stat-only |
-| **Tattoo of the Valako Stormrider** | +6% to Lightning Resistance | Small Intelligence | Moti Aro | not implemented | stat-only |
+| **Tattoo of the Valako Shieldbearer** | +1% Chance to Block Attack Damage | Small Strength | Ngakanu | partial | server mapping/unit test; live client check pending |
+| **Tattoo of the Valako Stormrider** | +6% to Lightning Resistance | Small Intelligence | Moti Aro | partial | server stats live-verified; client apply/remove not checked |
 | **Tattoo of the Valako Warrior** | 5% increased Lightning Damage | Small Intelligence | Moti Aro | not implemented | stat-only |
 
 ### Ancestral (1)
@@ -309,7 +374,7 @@ tattoos do not. All are drop-disabled in 3.29.
 | **Honoured Tattoo of the Hunter** | +1 to Level of all Dexterity Skill Gems | Notable (+30 Dex) | drop-disabled | not implemented | needs Dexterity gem levels |
 | **Honoured Tattoo of the Makanga** | +2% to all maximum Resistances | Small Attribute | drop-disabled | not implemented | stat-only |
 | **Honoured Tattoo of the Mountain** | +1% to maximum Fire Resistance<br>+1 to Maximum Endurance Charges | Notable (+30 Str) | drop-disabled | not implemented | needs max fire res + endurance charge cap |
-| **Honoured Tattoo of the Oak** | 2% increased maximum Life | Small Attribute | drop-disabled | not implemented | stat-only |
+| **Honoured Tattoo of the Oak** | 2% increased maximum Life | Small Attribute | drop-disabled | partial | server mapping/unit test; live client check pending |
 | **Honoured Tattoo of the Pa** | Melee Hits Fortify | Notable (+30 Str) | drop-disabled | not implemented | needs melee-hit fortify |
 | **Honoured Tattoo of the Pillager** | 3% increased Rarity of Items found | Small Attribute | drop-disabled | not implemented | stat-only |
 | **Honoured Tattoo of the Sky** | +3% to all Elemental Resistances | Small Attribute | drop-disabled | not implemented | stat-only |
@@ -381,8 +446,32 @@ Return of the Ancestors event.
 
 ## Verification log
 
-No live checks yet: the server cannot create or apply a tattoo. The first implementation should add the client trace
-and the apply/remove evidence here, then update each row's `Status` and `Reason`.
+Client checks 2026-10-29 (real 3.29.3b client):
+
+- **Tattoo apply:** right-click Tattoo of the Ngamahu Firewalker + click allocated small Strength 21301 sent
+  `0077 00000001 0000049C 5335` (inventory 1, item 1180, node 21301). The client retried the packet until the server
+  handled it.
+- **Item and stats:** the server consumed one tattoo; fire resistance 258% -> 264%.
+- **Display:** the node showed `Fire Resistance` / `+6% to Fire Resistance` only after `0x33`'s fifth list carried
+  `21301 | 23594 << 16` (`0x5C2A5335`, `Ngamahu1` HASH16). Sending the BaseItemTypes row 4841 or the override row
+  index 0 left the original `+10 to Strength`.
+- **Relog:** the node stayed Fire Resistance and fire resistance stayed 264%.
+- **Tattoo removal:** right-click Orb of Scouring + click 21301 sent the same `0x77` with the orb item. The server
+  removed the tattoo, restored `+10 to Strength`, changed fire resistance 264% -> 258%, and consumed one orb
+  (20 -> 19).
+- **Repeated clicks:** before `0x77` was handled, the client sent the same packet on every click; the first valid
+  request must consume the item and later ones must fail cleanly.
+
+Earlier server checks on 2026-10-29 (`/tattoo_apply` dev path):
+
+- **Moonwarden** on node 6363 (small Dexterity): cold resistance 211% -> 217%.
+- **Stormrider** on node 10490 (small Intelligence): lightning resistance 211% -> 217%.
+- **Storyteller** on node 11651 (small Intelligence): chaos resistance 0% -> 3%.
+- A Firewalker on an Intelligence node was refused; the passive was unchanged.
+- The passive count stayed 523 and the demo tree was left clean (`Tattoos` empty).
+
+Not yet verified through the client: replace, unallocate/reallocate, the 50 cap, Makanga adjacency, Journey Makanui,
+the seven Forbidden tattoos, and the six non-resistance pilot stats beyond their server checks.
 
 ## See also
 

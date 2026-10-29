@@ -68,6 +68,9 @@ partial class Program
             conn.MasteryEffects = (save?.MasteryEffects ?? []).Where(kv => conn.Passives.Contains(kv.Key)
                 && PassivesFor(conn).FindEffect(kv.Value) is { } effect && PassivesFor(conn).IsEffectFor(kv.Key, effect))
                 .ToDictionary(kv => kv.Key, kv => kv.Value);
+            conn.Tattoos = (save?.Tattoos ?? []).Where(kv => PassivesFor(conn).Find(kv.Key) is not null
+                && TattooCatalogue.Find(kv.Value) is not null).ToDictionary(kv => kv.Key, kv => kv.Value);
+            conn.TattooRevision++;
             conn.SavedPassiveProgress = new(conn.MainAscendancy, conn.Passives, conn.MasteryEffects, conn.RefundPoints);
             // Persist the pre-existing ordinary level/mastery normalization once. The compare protects a newer connection.
             if (!conn.SavedPassiveProgress.Matches(save ?? new CharacterSaves.Save([])))
@@ -105,10 +108,12 @@ partial class Program
         // A level change can trim the list while /set_stat builds pools outside the combat lock.
         // Mastery dictionaries are replaced as a whole, so retaining their current reference is safe.
         IReadOnlyDictionary<ushort, ushort> masteries;
+        Dictionary<ushort, string> tattoos;
         lock (conn.Monsters)
         {
             nodes = (nodes ?? conn.Passives).Concat(conn.MainAscendancy.Allocated).ToArray();
             masteries = conn.MasteryEffects;
+            tattoos = new(conn.Tattoos);
         }
         var c = SkillsFor(conn).ClassFor(conn.ClassRow);
         Dictionary<uint, int> dev;
@@ -130,7 +135,7 @@ partial class Program
         // The sum below is a pure function of these inputs (items are immutable records), and the combat paths ask for
         // it many times a second (every monster hit): reuse the last result while none of them changed.
         var sourcesKey = new StatSourcesKey([.. nodes], masteries, worn, dev, conn.ClassRow, conn.God, level ?? conn.Pools.Level,
-            before, [.. conn.ClusterPassives.Order()]);
+            before, [.. conn.ClusterPassives.Order()], conn.TattooRevision);
         if (conn.StatSourcesCache is { } cached && cached.Key.Matches(sourcesKey))
             return (new(cached.Sources), cached.Attributes, new(cached.Inactive), cached.Worn);
         // A timeless jewel replaces (or augments) the stats of allocated ordinary nodes in its radius. The item is a
@@ -147,6 +152,14 @@ partial class Program
         var nodeStats = new Dictionary<ushort, IReadOnlyList<(uint Key, int Value)>>();
         foreach (ushort node in nodes)
             if (tree.Find(node) is { } passive) nodeStats[node] = passive.Stats;
+        // An applied tattoo replaces the allocated passive's stats. A timeless jewel that replaces the node still
+        // wins (the tattoo is disabled); an augmenting timeless jewel adds its stats to the tattoo stats.
+        if (tattoos.Count > 0)
+            foreach (var (node, name) in tattoos)
+                if (allocated.Contains(node) && nodeStats.ContainsKey(node)
+                    && tree.Find(node) is { IsAscendancy: false }
+                    && TattooStats.For(name) is { } tattooStats)
+                    nodeStats[node] = tattooStats;
         var conquered = new HashSet<ushort>();
         if (timeless.Spec is { } timelessSpec)
         {
@@ -158,7 +171,7 @@ partial class Program
                 {
                     nodeStats[node] = alternate.Replaces
                         ? alternate.Stats
-                        : [.. passive.Stats, .. alternate.Stats];
+                        : [.. nodeStats[node], .. alternate.Stats];
                 }
         }
         // Radius jewels run in Path of Building's order: the first pass applies conversions, notable replacements,
@@ -274,8 +287,11 @@ partial class Program
         IReadOnlyList<(uint Key, int Value)> UnallocatedStats(ushort node, PassiveTree.Node passive)
         {
             if (suppressedNotables.Contains(node)) return [];
+            // Unnatural Instinct grants a tattoo on an unallocated small passive, not the original passive.
+            var stats = tattoos.TryGetValue(node, out string? tattooName) && TattooStats.For(tattooName) is { } tattoo
+                ? tattoo : passive.Stats;
             return effectPct.TryGetValue(node, out int pct) && pct != 0 && !passive.IsKeystone
-                ? ScaleStats(passive.Stats, pct) : passive.Stats;
+                ? ScaleStats(stats, pct) : stats;
         }
         static IReadOnlyList<(uint Key, int Value)> ScaleStats(
             IReadOnlyList<(uint Key, int Value)> stats, int pct)
@@ -448,10 +464,11 @@ partial class Program
     /// <summary>The inputs of CharacterStatSources' passive and equipment sum, compared by value (items by reference).</summary>
     internal sealed record StatSourcesKey(ushort[] Nodes, IReadOnlyDictionary<ushort, ushort> Masteries,
         GameServer.Core.Protocol.Instance.InventoryItem[] Worn, Dictionary<uint, int> Dev, int ClassRow, bool God, int Level,
-        IReadOnlySet<uint>? Before, ushort[] ClusterPassives)
+        IReadOnlySet<uint>? Before, ushort[] ClusterPassives, int TattooRevision)
     {
         public bool Matches(StatSourcesKey o) =>
-            ClassRow == o.ClassRow && God == o.God && Level == o.Level && ReferenceEquals(Masteries, o.Masteries)
+            ClassRow == o.ClassRow && God == o.God && Level == o.Level && TattooRevision == o.TattooRevision
+            && ReferenceEquals(Masteries, o.Masteries)
             && Nodes.AsSpan().SequenceEqual(o.Nodes) && ClusterPassives.AsSpan().SequenceEqual(o.ClusterPassives)
             && Worn.Length == o.Worn.Length && Worn.Zip(o.Worn).All(p => p.First.Id == p.Second.Id
                 && p.First.X == p.Second.X && ReferenceEquals(p.First.Item, p.Second.Item))
@@ -952,9 +969,13 @@ partial class Program
             var (points, refundPoints, nodes, masteries) = PassiveState(conn);
             int cluster = conn.ClusterPassives.Count;
             int unspent = points + PassivesFor(conn).PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count - cluster;
+            var tattoos = conn.Tattoos
+                .Select(kv => (Node: kv.Key, Entry: TattooCatalogue.Find(kv.Value)))
+                .Where(pair => pair.Entry is not null)
+                .ToDictionary(pair => pair.Node, pair => (ushort)pair.Entry!.OverrideHash);
             return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, PackedClass(conn), [.. nodes, .. conn.MainAscendancy.Allocated],
                     questPoints: conn.ExtraPassivePoints, refundPoints: refundPoints, ascendancyPoints: (ushort)conn.MainAscendancy.EarnedPoints, masteryEffects: masteries,
-                    clusterNodes: [.. conn.ClusterPassives]),
+                    clusterNodes: [.. conn.ClusterPassives], tattoos: tattoos),
                 $"0x0033 passive skill tree: level {conn.Pools.Level}, {points} skill point(s) ({conn.ExtraPassivePoints} extra), " +
                 $"{refundPoints} refund point(s), {nodes.Count} allocated, {cluster} cluster, {unspent} unspent; " +
                 $"ascendancy {conn.MainAscendancy.Selection?.Family}/{conn.MainAscendancy.Selection?.Id}, {conn.MainAscendancy.EarnedPoints} earned, {conn.MainAscendancy.Allocated.Count} nodes");

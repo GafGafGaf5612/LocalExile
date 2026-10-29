@@ -146,13 +146,13 @@ public static class InstanceEntities
     /// </summary>
     public static byte[] CharacterPassives(byte level, byte classByte, IReadOnlyList<ushort>? nodes = null, ushort questPoints = 0,
         ushort refundPoints = 0, ushort ascendancyPoints = 0, IReadOnlyDictionary<ushort, ushort>? masteryEffects = null,
-        IReadOnlyList<ushort>? clusterNodes = null)
+        IReadOnlyList<ushort>? clusterNodes = null, IReadOnlyDictionary<ushort, ushort>? tattoos = null)
     {
         var w = new LoginWriter().U16(CharacterPassivesId).U16(refundPoints).U16(questPoints).U16(ascendancyPoints)
             .U8(level).U8(classByte).U8(0).U8(0).U16(checked((ushort)(nodes?.Count ?? 0)));
         foreach (ushort n in (nodes ?? []).Order()) w.U8((byte)n).U8((byte)(n >> 8));
-        // The second list stays empty: the cluster jewel nodes of the expansion cells (the client's own small ids, not
-        // PassiveSkillGraphIds) go in the third, which is where the client looks for them.
+        // The second list stays empty; the cluster jewel nodes of the expansion cells (the client's own small ids,
+        // not PassiveSkillGraphIds) go in the third, which is where the client looks for them.
         w.U16(0);
         var cluster = (clusterNodes ?? []).Order().ToList();
         w.U16(checked((ushort)cluster.Count));
@@ -161,7 +161,13 @@ public static class InstanceEntities
             .Where(kv => nodes?.Contains(kv.Key) == true).OrderBy(kv => kv.Key).ToList();
         w.U16(checked((ushort)effects.Count));
         foreach (var (node, effect) in effects) w.RawU32(node | ((uint)effect << 16));
-        return w.U16(0).ToArray();
+        // The fifth list is the applied tattoos: node | PassiveSkillTattoos.Override << 16. The client stores it at
+        // tree +0x1f8 and looks the override up in PassiveSkillOverrides.dat for the replacement passive's name,
+        // icon and stats.
+        var applied = (tattoos ?? new Dictionary<ushort, ushort>()).OrderBy(kv => kv.Key).ToList();
+        w.U16(checked((ushort)applied.Count));
+        foreach (var (node, row) in applied) w.RawU32(node | ((uint)row << 16));
+        return w.ToArray();
     }
 
     /// <summary>S→C 0x22 (u32, dispatcher case 0xb): the local player's entity id (world+0x980, setter 0x142186fa0).</summary>

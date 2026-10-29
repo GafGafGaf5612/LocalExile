@@ -410,6 +410,11 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public CharacterSaves.PassiveProgressSnapshot? SavedPassiveProgress;
     // Selected mastery effects: mastery node (PassiveSkillGraphId) -> effect HASH16. Saved with the character.
     public Dictionary<ushort, ushort> MasteryEffects = [];
+    // Applied tattoos: passive node (PassiveSkillGraphId) -> tattoo name. The tattoo stays on the node when the
+    // passive is unallocated, so this map is independent of Passives. Saved with the character.
+    public Dictionary<ushort, string> Tattoos = [];
+    // Changes whenever Tattoos changes; part of the stat-source cache key.
+    public int TattooRevision;
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
     public ushort ExtraPassivePoints;
     // Refund points (0x33's first u16; Orbs of Regret), saved with the character; /add_refund_points grants them for now.

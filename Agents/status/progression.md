@@ -222,7 +222,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Saving quest progress.
   Quest passive/refund rewards and native Labyrinth/Altar acquisition (#151) remain missing.
   Remaining special ascendancy gameplay and broader Phrecia client compatibility are separate work.
-- Tattoos: the 100-item 3.29.3b catalogue is documented in
-  [tattoos](../docs/game/tattoos.md), but the server has no item source, apply/remove flow or
-  passive-replacement state. The seven Forbidden ascendancy tattoos use a separate client flow and are event-only;
-  all 100 rows are `not implemented`.
+- Tattoos: the 100-item 3.29.3b catalogue, protocol and implementation groups are documented in
+  [tattoos](../docs/game/tattoos.md). The client flow is implemented: C→S `0x77` names the inventory, item and
+  passive; `0x33`'s fifth list carries `node | PassiveSkillOverrides.HASH16 << 16`; the item is consumed and the
+  map is saved independently of allocation. Live: Firewalker on node 21301 displayed Fire Resistance, changed fire
+  resistance 258% -> 264%, survived relog, and an Orb of Scouring restored `+10 to Strength` (264% -> 258%) and
+  consumed one orb. The other nine pilot stats have server/live checks only; 90 rows remain not implemented. The
+  seven Forbidden ascendancy tattoos use a separate event-only flow.

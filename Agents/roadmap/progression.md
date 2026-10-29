@@ -15,9 +15,11 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** the ordinary tree's 21 large jewel sockets accept ordinary, magic and rare jewels (pane placement,
   save/load, global mods, refund guard); unique jewels use the same path but have no item source yet.
   See [unique-jewels.md](unique-jewels.md) for the 185-entry catalogue and the phased unique-jewel plan.
-- **Next:** tattoos: all 100 items, target/limit rules, acquisition and interactions are documented in
-  [tattoos.md](../docs/game/tattoos.md); the server still needs the item source, apply/remove flow, per-passive
-  save state and replacement-stat pass. The seven Forbidden ascendancy tattoos use a separate client flow.
+- **Next:** tattoos: all 100 items, protocol, target/limit rules and interactions are documented in
+  [tattoos.md](../docs/game/tattoos.md). The client flow is implemented and live-verified for the Firewalker:
+  C→S `0x77`, `0x33`'s fifth list, item consumption, relog and Orb of Scouring removal. Next: expand the ten-stat
+  pilot to the other simple stats, then the conditions/counting/random specials. The seven Forbidden ascendancy
+  tattoos use a separate client flow.
 - **Accuracy Mastery:** all five effects currently offered by the target client's Accuracy group are modelled
   for the existing default-attack accuracy roll ([Status](../status/skills-and-combat.md),
   [11](../docs/protocol/11-skills.md) §4–5): Accuracy = Intelligence, +3 per Dexterity instead of +2, +500 / -2 per

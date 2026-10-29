@@ -307,6 +307,8 @@ partial class Program
                 await UseFlask(remote, stream, ciphers, conn, InstanceItems.ReadUseFlask(bytes));
             else if (id == InstanceItems.UseItemOnId)
                 await UseItemOn(remote, stream, ciphers, conn, InstanceItems.ReadUseItemOn(bytes), Convert.ToHexString(bytes));
+            else if (id == InstanceItems.UseItemOnPassiveId)
+                await UseTattooOnPassive(remote, stream, ciphers, conn, InstanceItems.ReadUseItemOnPassive(bytes), Convert.ToHexString(bytes));
             else if (id == InstanceItems.UseItemTypeOnId)
             {
                 // Shift held: the currency stays on the cursor and is named by type; use a stack of it from the inventories,

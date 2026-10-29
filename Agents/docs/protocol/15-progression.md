@@ -46,10 +46,10 @@ yet confirmed on screen).
   | u8 | +0x269 | |
   | u8 flags | | bit0 → +0x91, bit1 → no lists (then `0x141ef73e0` sets only the numbers) |
   | vec16 u16 | +0x180 | **allocated nodes**: PassiveSkills.dat `PassiveSkillGraphId`, raw (little-endian), **sorted** (§2 Gold respec) |
-  | vec16 u16 | +0x180 | **the cluster jewel nodes** of the tree's expansion cells: the client's own small layout ids (202, 206 live for a Voices), not PassiveSkillGraphIds; sorted |
-| vec16 u16 | | (sent empty) |
+  | vec16 u16 | | (sent empty) |
+  | vec16 u16 | +0x1b0 | **the cluster jewel nodes** of the tree's expansion cells: the client's own small layout ids (202, 206 live for a Voices), not PassiveSkillGraphIds; sorted |
   | vec16 u32 | | mastery effects: node \| effect << 16, raw little-endian; effect is the `PassiveSkillMasteryEffects.dat` HASH16 |
-  | vec16 u32 | | (sent empty) |
+  | vec16 u32 | +0x1f8 | **applied tattoos**: node \| `PassiveSkillOverrides.dat` HASH16 << 16, raw little-endian; empty when no tattoo |
 
   The client's check `0x141ef3e60` logs "character passive skills allocated but only allowed {}.
   points_from_level={}, skill_points_from_passives={}, extra_skill_points={}" and drops unconnected nodes itself.
@@ -64,7 +64,12 @@ yet confirmed on screen).
   It saves the change
   and answers with 0x33; a refused click gets the old tree back. With `expansion` 1 the node is a cluster jewel node
   (its own small layout id, e.g. 202 and 206 for a Voices): the Gateway keeps it in the character's cluster list, saves
-  it and sends it back in 0x33's second list, and 0x36 with the flag refunds it. 32-bit ids are still refused intact.
+  it and sends it back in 0x33's third list, and 0x36 with the flag refunds it. 32-bit ids are still refused intact.
+- **C->S 0x77** (12 bytes): an item used on a passive. u32 inventory id, u32 item id, u16 `PassiveSkillGraphId`,
+  all big-endian. The item type decides: `apply_passive_tattoo` applies a tattoo, `CurrencyConvertToNormal`
+  (Orb of Scouring) removes it. Captured `0077000000010000049C5335` = inventory 1, item 1180, node 21301.
+  The Gateway answers with 0xbf, 0x1b3 and 0x33; the tattoo is carried in 0x33's fifth list as
+  `node | PassiveSkillOverrides.dat HASH16 << 16`.
 - **C→S 0x123** (3 bytes, u8 1 / 0): a panel opened or closed (sent when the tree opens and closes).
 - **C->S 0x35** (6 bytes): u16 node (big-endian, PassiveSkillGraphId), u16 effect (big-endian,
   PassiveSkillMasteryEffects.dat HASH16). Captured `003598091194` = node 38921 (Block Mastery), effect 4500
