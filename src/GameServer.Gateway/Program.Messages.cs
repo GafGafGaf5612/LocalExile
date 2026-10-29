@@ -523,7 +523,11 @@ partial class Program
             else if (id == InstanceSocial.TradeRequestId)
                 await RequestTrade(remote, stream, ciphers, conn, InstanceSocial.ReadTradeRequest(bytes));
             else if (id == InstanceSocial.PartyInviteId)
-                Console.WriteLine($"[gateway] {remote} <= 0x0093 party invite to \"{InstanceSocial.ReadPartyInvite(bytes)}\" (not handled yet)");
+                await InviteToParty(remote, conn, InstanceSocial.ReadPartyInvite(bytes));
+            else if (id == InstanceSocial.PartyAcceptId)
+                await AcceptParty(remote, conn, InstanceSocial.ReadPartyAccept(bytes));
+            else if (id == InstanceSocial.PartyLeaveId)
+                await LeaveParty(remote, conn, InstanceSocial.ReadPartyAccept(bytes));
             else if (id == InstanceSocial.FriendAddId)
                 Console.WriteLine($"[gateway] {remote} <= 0x0080 add friend \"{InstanceSocial.ReadFriendAdd(bytes).Name}\" (not handled yet)");
             else if (id == InstanceProtocol.AreaGeneratedId)
