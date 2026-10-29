@@ -1075,6 +1075,9 @@ Queued sweeps check it again after mana publication and inside each hit commit, 
 skill cannot revive old damage.
 The sweep centre is sampled from the current walk after queued sends, rather than its earlier timer position.
 Pause still rejects contacts, and each timer revalidates that its gem remains available before charging the next sweep.
+A freeze or a stun's hit recovery (`PlayerActionBlocked`) suspends the timer: no stage is paid or swept until it ends.
+A stage already paid when one lands is refused at its hit commit.
+The 0x197 updates are dropped while the player is blocked, so an interruption longer than a second ends the channel.
 
 ## 10. Projectiles (experimental)
 

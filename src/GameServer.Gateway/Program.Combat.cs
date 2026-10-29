@@ -732,6 +732,9 @@ partial class Program
                 using (conn.Performance.Lock(conn.Monsters, "channel"))
                 {
                     if (!Running() || conn.Paused || now < conn.NextChannelHitAt) continue;
+                    // A freeze or a stun's hit recovery interrupts the channelled action: no stage is paid or swept until it
+                    // ends. The client's updates are dropped meanwhile, so a longer one ends the channel by silence.
+                    if (PlayerActionBlocked(conn, now, now)) { conn.NextChannelHitAt = now + TickSeconds; continue; }
                     var activeGem = GemSkillEffects(conn).FirstOrDefault(g => g.Id == skillId);
                     if (activeGem.Name is null || activeGem.Effect != gem.Effect
                         || GemSkillInstanceDisabled(conn, activeGem.Effect, skillId) is not null)
@@ -818,6 +821,9 @@ partial class Program
         {
             double now = ProjectileWorldTime(conn);
             if (!Current()) return;
+            // A freeze or stun that landed after this stage was paid interrupts it before the sweep.
+            if (channelGeneration is not null
+                && PlayerActionBlocked(conn, conn.Clock.Elapsed.TotalSeconds, conn.Clock.Elapsed.TotalSeconds)) return;
             // Queued mana output may outlast movement: resolve a channel at its current position.
             if (channelGeneration is not null) centre = conn.Walk.Position(now);
             targets = [.. conn.Monsters.Where(e => !e.Value.Dead && e.Value.Life > 0 && Dist(e.Value.Walk.Position(now), centre) <= radius)

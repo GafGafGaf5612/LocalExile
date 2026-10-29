@@ -77,12 +77,26 @@ public class CrowdRegressionTests
         }
     }
 
+    // A freeze (a critical cold hit of the player's maximum life) or a stun's hit recovery, both longer than the
+    // channel's silence timeout.
+    static void Interrupt(ClientState state, string how)
+    {
+        double now = state.Clock.Elapsed.TotalSeconds;
+        var cold = DamagePacket.Of(DamageType.Cold, state.PlayerMaxLife, state.PlayerMaxLife);
+        lock (state.Monsters)
+            if (how == "stun") Assert.True(state.HitRecovery.Begin(now, 10));
+            else state.ElementalAilments.Apply(cold, cold, true, state.PlayerMaxLife, now, _ => 0, new Random(1));
+        Assert.True(Program.PlayerActionBlocked(state, now, now));
+    }
+
     [Theory]
     [InlineData("end")]
     [InlineData("replace")]
     [InlineData("move")]
     [InlineData("pause")]
     [InlineData("silence")]
+    [InlineData("freeze")]
+    [InlineData("stun")]
     public async Task A_queued_channel_sweep_obeys_stop_generation_pause_and_current_position(string change)
     {
         using var f = new Connection(cyclone: true);
@@ -98,7 +112,9 @@ public class CrowdRegressionTests
         try
         {
             await Until(() => f.State.PlayerMana < 1000); // Sweep has paid and is waiting to publish mana.
+            uint paid = f.State.PlayerMana;
             if (change == "end") await f.Message(InstanceProtocol.ChannelEndId, [1, 0x99]);
+            else if (change is "freeze" or "stun") Interrupt(f.State, change);
             else if (change == "replace") lock (f.State.Monsters) f.State.ChannelGeneration++;
             else if (change == "pause") f.State.Clock.Stop();
             else if (change == "silence") lock (f.State.Monsters)
@@ -115,6 +131,8 @@ public class CrowdRegressionTests
             await channel.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(f.Target.MaxLife, f.Target.Life);
             if (change != "move") Assert.Equal(newTarget.MaxLife, newTarget.Life);
+            // Interrupted, the channel paid no further stage before its silence ended it.
+            if (change is "freeze" or "stun") Assert.Equal(paid, f.State.PlayerMana);
         }
         finally
         {
@@ -122,6 +140,34 @@ public class CrowdRegressionTests
             if (held) f.Gate.Release();
             await channel.WaitAsync(TimeSpan.FromSeconds(5));
         }
+    }
+
+    [Theory]
+    [InlineData("freeze")]
+    [InlineData("stun")]
+    public async Task An_interrupted_channel_pays_and_sweeps_nothing_until_the_player_recovers(string how)
+    {
+        using var f = new Connection(cyclone: true);
+        f.State.ActionCount = 7; f.State.ChannelSkill = f.Gem.Id;
+        f.State.NextChannelHitAt = f.State.Clock.Elapsed.TotalSeconds - 1;
+        Interrupt(f.State, how);
+        f.State.LastChannelUpdateAt = f.State.Clock.Elapsed.TotalSeconds;
+        var channel = Call<Task>("RunChannel", "crowd-regression", f.Stream, f.Ciphers, f.State, f.Gem.Id, f.Gem, 7);
+        try
+        {
+            await Task.Delay(300);
+            Assert.False(channel.IsCompleted);
+            Assert.Equal(1000u, f.State.PlayerMana);
+            Assert.Equal(f.Target.MaxLife, f.Target.Life);
+            lock (f.State.Monsters)
+            {
+                f.State.ElementalAilments.Clear(); f.State.HitRecovery.Clear();
+                // The held button's updates resume with the action (they are dropped while it is blocked).
+                f.State.LastChannelUpdateAt = f.State.Clock.Elapsed.TotalSeconds;
+            }
+            await Until(() => f.State.PlayerMana < 1000 && f.Target.Life < f.Target.MaxLife);
+        }
+        finally { f.State.Closed = true; await channel.WaitAsync(TimeSpan.FromSeconds(5)); }
     }
 
     [Fact]
