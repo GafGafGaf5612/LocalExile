@@ -929,6 +929,27 @@ Tests: `BloodChargesTests` (tables, multiplier, settle rule), `BloodChargesGatew
 fixture: a surviving target gives a charge, the second hit is floor(first × 1.15), the cost at two charges is
 round(base × 1.4), a killing use takes one and gives none, the rows are hidden without the gem).
 
+## REA bundle cross-check (2026-10-29)
+
+The 3.29.3b REA reference bundle (`F:\evry\evryPath\rea-analysis\poe-3.29.3b`, REA 6.8.0 over Ghidra 12.1.3, target
+SHA-256 `78a0e227…48d5`, 116 selected functions, no runtime validation) was reviewed against the panel implementation.
+It corroborates existing notes and changes nothing here:
+
+- Stat getter `0x1424cfa40` (evidence 043, `ev_3693fc63…`): the sorted network override vector is searched first and a
+  present value, zero included, returns at once; only an absent key reaches the upstream provider at +0xe0 (an
+  indirect call, no recovered formula) or 0 without one. This is the basis of the explicit-zero publication the panel
+  rows rely on (`PlayerStatsWithCleared`, the zeroed hand/ailment rows of spells and secondary skills, the always-sent
+  special charge rows): a row the server wants blank must be sent as 0, not omitted.
+- Actor scale `0x1427ecc30` (evidence 046): keys 0x2d0 / 0x7b6 / 0x2a1a / 0x7b7 (base, capped clamped ±50, permyriad
+  ÷ 100, limit), signed half-rounding, floor −99, limit cap when non-zero — `ActorScale.Derive` line for line.
+- Buff add reader `0x141fdf870` (evidence 121): flags bit1 u32 +0x68, bit7 f32 +0x6c, bit2 u16 stacks +0x70, bit3 two
+  u16 (+0x74, +0x72), bit4 visual — the layout `InstanceEntities.AddBuff` writes for the charge and Blood Charge buffs.
+- Pool recovery `0x141e6b320` / `0x141e6a600` (evidence 049/050): (rate ÷ 60) × elapsed with fractional carry, as
+  `Agents/docs/re/recovery-timing.md` records; the per-minute recovery rows stay separate from the native predictor
+  inputs.
+- The setter `0x1424cfaf0`, the change notification `0x1424cfd00` and the skill record/list/update readers carry no
+  panel formula. The bundle's own OBSERVATIONS state it measures no official-server behaviour.
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
