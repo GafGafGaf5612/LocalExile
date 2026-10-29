@@ -80,6 +80,8 @@ public static class InstanceProtocol
         // Primary 3.29.3b writers: 0x140e29080 (u16 + u8), 0x141f935a0 (u16 + 4/2/2/4/1/1 bytes).
         0x020a => 3, 0x0059 => 16, InstanceSocial.TradeRequestId => InstanceSocial.TradeRequestLength,
         InstanceSocial.TradeRequestAcceptId => InstanceSocial.TradeRequestAcceptLength,
+        InstanceSocial.PartyAcceptId => InstanceSocial.PartyAcceptLength,
+        InstanceSocial.PartyLeaveId => InstanceSocial.PartyLeaveLength,
         InstanceChat.JoinChannelId => InstanceChat.JoinChannelLength,
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,

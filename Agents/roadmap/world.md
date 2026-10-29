@@ -11,7 +11,8 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - Continuous player recovery has its own 16 ms elapsed-game-time loop (regeneration, flasks and self RF);
   implemented, awaiting real-client visual verification.
   See Status and protocol/20-damage.md.
-- **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 500 ms loop.
+- **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 100 ms loop.
+  Queue/lock/send timings and shared per-pass blocker indexes are implemented; there is no unified instance loop yet.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.
 
 ### Remaining client-message layouts
@@ -113,7 +114,7 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Server-side world simulation** (monsters, combat): no project for it yet; add one when it is needed.
 - **Several players** in one instance: player presence, poses, life, departure and body blockers are published.
   Verify two authenticated connections together, then add party admission to private instances and shared combat.
-  Party invites (C→S 0x93) and friend requests (C→S 0x80) are read but not answered: next, S→C 0xa9 party info and the
-  friend list ([28](../docs/protocol/28-player-trade.md) "Open"). Trade between players works.
+  Trade between players and party invite / accept / leave work. Next: friend requests (C→S 0x80) and the friend list,
+  and party Decline, kicks and disconnects ([28](../docs/protocol/28-player-trade.md) "Open").
   The native remote-player body and normal/unique monster clearance have single-client checks.
   See [status/world.md](../status/world.md) and [07](../docs/protocol/07-latency-visibility-movement.md).

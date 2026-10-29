@@ -40,6 +40,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   Other Daughter of Oshabi mechanics and Phrecia client admission remain separate work.
 - **Known:** family gem levels for Herald, Vaal, Link and Raise Zombie reach the common effective skill level.
   Connected allocation/refund/reload has automated coverage (#244).
-  Family-specific execution engines, global gem bonuses and Phrecia client admission remain separate work.
+  Family-specific execution engines and Phrecia client admission remain separate work.
+- **Known:** Aristocrat's nodes all have server consumers and Gateway coverage; `Game_VERIFIED_ARISTOCRAT=1` opts in.
+  **Next:** native acceptance on a client with the reviewed combined graph, as for Gambler.
+  See [Aristocrat](../docs/game/aristocrat.md).
 - **Done when:** quest rewards persist and the native Altar can choose an ordinary ascendancy, with real-client checks.
   Implementing all 19 Phrecia classes' special gameplay is separate from this selection lifecycle.

@@ -386,6 +386,8 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     public bool FamilyStatRaises(string stat, int gemRow) =>
         _stats.Key(stat) is uint key && _families.Value.Raises((int)key - 1, gemRow);
 
+    public bool IsExceptional(int gemRow) => _families.Value.IsExceptional(gemRow);
+
     readonly Lazy<SkillGemFamilies> _families = new(() => new(folder));
 
     /// <summary>Whether a GrantedEffects row's ActiveSkill has the Warcry type.</summary>
