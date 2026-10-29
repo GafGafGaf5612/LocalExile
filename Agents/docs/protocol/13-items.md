@@ -640,10 +640,13 @@ it and is saved with the item. A corrupted item takes no currency but a Scroll o
 currency yet), and nothing removes corruption.
 
 `CurrencyCorrupt`, same handler (0x71, 0x72 with Shift). A server rule, not the official one: `CurrencyEffects.Vaal`
-takes a weapon, armour piece or jewellery (ring, amulet, belt) that is not corrupted or unique, and always corrupts it.
+delegates to `ItemRolls.Vaal`, which takes a modifiable weapon, armour piece or jewellery (ring, amulet, belt) that is
+not unique, corrupted or mirrored, and always corrupts it.
 A normal or magic item becomes rare with 4-6 new affixes and a rare name. A rare item has 1, 2, 3 or 4 random affixes
 replaced (20% each), 5 (10%) or all of them rerolled (10%: 4-6, new name) (`ItemRolls.ReplaceAffixes`: the replaced
 ones come back through `AddAffix`, at most three of each kind, so the count stays).
+Unknown/unsupported or `Unmodifiable` bases and empty pools are refused before spending.
+Official CoE Vaal outcomes are separate work; see [the admission check and boundary](../re/vaal-coe.md).
 
 ### Orb of Fusing (2026-10-21, verified live)
 

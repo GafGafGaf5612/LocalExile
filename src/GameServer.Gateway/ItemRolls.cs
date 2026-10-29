@@ -102,6 +102,30 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     /// <summary>The rare per-side limit: jewel classes allow two prefixes and two suffixes, other rare bases three.</summary>
     static int MaxAffixesPerSide(ItemCatalog.BaseType type) => type.Class is "Jewel" or "AbyssJewel" ? 2 : 3;
 
+    /// <summary>Vaal Orb, the documented LocalExile rule: a weapon, armour piece or jewellery (ring, amulet, belt)
+    /// that is modifiable, not unique and not corrupted/mirrored is always corrupted. A normal or magic item becomes
+    /// rare with 4-6 affixes; a rare one replaces 1-5 affixes or rerolls all of them. One white socket is coloured.
+    /// Refused targets return null before rolling or spending, including missing/empty pools.</summary>
+    public Item? Vaal(Item item, ItemCatalog.BaseType type, (int Str, int Dex, int Int) requirements, Random random)
+    {
+        bool target = item.Components.Contains("Weapon") || item.Components.Contains("Armour") ||
+            type.Class is "Ring" or "Amulet" or "Belt";
+        if (!target || item.Rarity == ItemRarity.Unique || !TryModifiable(item, out _) ||
+            Pool(type, item.ItemLevel).Count == 0) return null;
+        int roll = random.Next(100);
+        Item result = item.Rarity != ItemRarity.Rare || roll >= 90 ? Roll(item, ItemRarity.Rare, random)
+            : ReplaceAffixes(item, roll switch { < 20 => 1, < 40 => 2, < 60 => 3, < 80 => 4, _ => 5 }, random);
+        var sockets = result.Sockets.ToArray();
+        var whites = Enumerable.Range(0, sockets.Length).Where(i => sockets[i].Colour == SocketColour.White).ToArray();
+        if (whites.Length > 0)
+        {
+            int at = whites[random.Next(whites.Length)];
+            sockets[at] = sockets[at] with { Colour = SocketColours.Colour(requirements, random) };
+            result = result with { Sockets = sockets };
+        }
+        return result with { Corrupted = true, Identified = true };
+    }
+
     /// <summary>The item with this rarity and freshly rolled affixes (its implicits and other lists kept, earlier
     /// explicits replaced); a rare item also gets a name. Types without a Mods component, or normal / unique
     /// rarity, only get the rarity. <paramref name="shape"/> overrides the affix count and the most of each kind.

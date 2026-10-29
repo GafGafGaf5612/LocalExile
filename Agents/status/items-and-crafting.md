@@ -195,10 +195,13 @@ Part of [Status](../Status.md); what to build next in this area is in
 - **Orb of Chance (verified live, 2026-10-21):** a normal weapon / armour piece → rare (30%, 4-6 affixes) or magic
   (2-4 affixes).
   See [13](../docs/protocol/13-items.md), "Orb of Chance".
-- **Vaal Orb and corruption (verified live, 2026-10-21):** weapons, armour and jewellery are always corrupted (Base
-  +0xc7 bit 0, saved); normal / magic → rare with 4-6 affixes, a rare item gets 1-5 or all affixes rerolled;
-  a corrupted item takes no currency but Wisdom.
-  See [13](../docs/protocol/13-items.md), "Vaal Orb and corruption".
+- **Vaal Orb and corruption:** the local rule corrupts a modifiable weapon, armour piece or jewellery (Base +0xc7
+  bit 0, saved); normal / magic → rare with 4-6 affixes, a rare item gets 1-5 or all affixes rerolled, one white socket
+  is coloured. Corrupted/mirrored/unique, unsupported/`Unmodifiable` and empty-pool targets are refused before
+  spending; a corrupted item takes no currency but Wisdom.
+  CoE's official Vaal outcome table remains separate work; the admission and boundary are documented.
+  Ordinary/Shift inventory/stash dispatch and save reloads have automated coverage; native re-acceptance is pending.
+  See [13](../docs/protocol/13-items.md), "Vaal Orb and corruption", and [admission](../docs/re/vaal-coe.md).
 - **Glassblower's Bauble (verified live, 2026-10-21):** +1% flask quality up to 20%; Scouring resets it.
   See [13](../docs/protocol/13-items.md), "Glassblower's Bauble".
 - **Fracturing Orb (verified live, 2026-10-21):** one random mod of a rare item with 4+ mods is fractured and kept by

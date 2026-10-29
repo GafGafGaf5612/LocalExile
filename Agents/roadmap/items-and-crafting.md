@@ -48,6 +48,8 @@ features.
   it natively. See [the evidence](../docs/re/exalted-coe.md).
   Chaos rerolls the same rare pool, keeps metamod locks and refuses flasks/empty pools. Recheck it natively. See
   [the evidence](../docs/re/chaos-coe.md).
+  Vaal's local outcome rule has validated admission (corrupted/mirrored/unique/unsupported/empty refused); official
+  CoE Vaal outcomes remain separate. See [the boundary](../docs/re/vaal-coe.md).
 - **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
   Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
   socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).

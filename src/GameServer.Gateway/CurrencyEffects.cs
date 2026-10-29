@@ -62,27 +62,12 @@ static class CurrencyEffects
 
     public const string VaalOrb = "Metadata/Items/Currency/CurrencyCorrupt";
 
-    /// <summary>Vaal Orb (this server's rule): a weapon, armour piece or jewellery (ring, amulet, belt) that is not
-    /// corrupted or unique becomes corrupted, always. A normal or magic item becomes rare with 4-6 new affixes; a rare one
-    /// keeps its name and has 1 (20%), 2 (20%), 3 (20%), 4 (20%) or 5 (10%) affixes replaced, or all of them rerolled
-    /// (10%, 4-6 affixes, new name). 3.29: corruption also turns one white socket coloured (13-items.md).</summary>
-    public static Item? Vaal(Item item, ItemCatalog.BaseType type, (int Str, int Dex, int Int) requirements, ItemRolls rolls, Random random)
-    {
-        bool target = item.Components.Contains("Weapon") || item.Components.Contains("Armour") || type.Class is "Ring" or "Amulet" or "Belt";
-        if (!target || item.Corrupted || item.Rarity == ItemRarity.Unique || !item.Components.Contains("Mods")) return null;
-        int roll = random.Next(100);
-        Item result = item.Rarity != ItemRarity.Rare || roll >= 90 ? rolls.Roll(item, ItemRarity.Rare, random)
-            : rolls.ReplaceAffixes(item, roll switch { < 20 => 1, < 40 => 2, < 60 => 3, < 80 => 4, _ => 5 }, random);
-        var sockets = result.Sockets.ToArray();
-        var whites = Enumerable.Range(0, sockets.Length).Where(i => sockets[i].Colour == SocketColour.White).ToArray();
-        if (whites.Length > 0)
-        {
-            int at = whites[random.Next(whites.Length)];
-            sockets[at] = sockets[at] with { Colour = SocketColours.Colour(requirements, random) };
-            result = result with { Sockets = sockets };
-        }
-        return result with { Corrupted = true, Identified = true };
-    }
+    /// <summary>Vaal Orb, the documented LocalExile rule: a modifiable weapon, armour piece or jewellery (ring,
+    /// amulet, belt) that is not unique or corrupted/mirrored is always corrupted. Normal/magic become rare; rare
+    /// items replace 1-5 affixes or reroll all of them. One white socket is coloured. Missing/empty pools and
+    /// unsupported or unmodifiable bases are refused before the inventory handler spends an orb.</summary>
+    public static Item? Vaal(Item item, ItemCatalog.BaseType type, (int Str, int Dex, int Int) requirements, ItemRolls rolls, Random random) =>
+        rolls.Vaal(item, type, requirements, random);
 
     public const string GlassblowersBauble = "Metadata/Items/Currency/CurrencyFlaskQuality";
 
