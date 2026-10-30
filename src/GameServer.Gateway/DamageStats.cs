@@ -9,20 +9,16 @@ using DamageType = GameServer.Core.World.DamageType;
 /// </summary>
 static class DamageStats
 {
-    public const string SpellDamageIncreasesApplyToAttacks150 =
-        "additive_spell_damage_modifiers_apply_to_attack_damage_at_150%_value";
+    public const string SpellDamageIncreasesApplyToAttacks150 = ArcaneMight.Fixed150;
 
-    // This stat is a flag. Transfer increased/reduced spell damage into the attack's increased bucket,
+    // Arcane Might: transfer increased/reduced spell damage into the attack's increased bucket at the strongest grant's
+    // ratio (ArcaneMight: the flag, the 150% keystone, the actor/skill ratios, the wand-only and retaliation-only ones),
     // retaining half-percent values; spell-only more multipliers and speed never enter this contribution.
-    public static double SpellAttackIncrease(Func<string, int> get) =>
-        (double)get("spell_damage_+%") * Math.Max(get(SpellDamageIncreasesApplyToAttacks150) != 0 ? 150 : 0,
-            get("active_skill_additive_spell_damage_modifiers_apply_to_attack_damage_at_%_value")) / 100.0;
+    public static double SpellAttackIncrease(Func<string, int> get, bool wieldingWand = false, bool retaliation = false) =>
+        ArcaneMight.Increase(get, wieldingWand, retaliation);
 
-    public static double SpellAttackIncrease(IReadOnlyDictionary<uint, int>? stats) =>
-        SpellAttackIncrease(stats?.GetValueOrDefault(StatKeys.SpellDamageIncreasesApplyToAttacks150) ?? 0,
-            stats?.GetValueOrDefault(StatKeys.SpellDamagePct) ?? 0);
-
-    static double SpellAttackIncrease(int enabled, int increased) => enabled != 0 ? increased * 1.5 : 0;
+    public static double SpellAttackIncrease(IReadOnlyDictionary<uint, int>? stats, bool wieldingWand = false,
+        bool retaliation = false) => ArcaneMight.Increase(stats, wieldingWand, retaliation);
 
     public static DamageRange IncreaseAttackRange(DamageRange range, double increased)
     {
@@ -32,15 +28,16 @@ static class DamageStats
         return new(range.Min * percent / 100.0, range.Max * percent / 100.0);
     }
 
-    /// <summary>The additive increase bucket for an attack damage type in its actual skill context.</summary>
+    /// <summary>The additive increase bucket for an attack damage type in its actual skill context
+    /// (<paramref name="wieldingWand"/> and <paramref name="retaliation"/> select Arcane Might's conditional grants).</summary>
     public static double AttackIncrease(Func<string, int> get, DamageType type, bool melee,
-        bool area = false, bool projectile = false) =>
+        bool area = false, bool projectile = false, bool wieldingWand = false, bool retaliation = false) =>
         (double)get("damage_+%") + get("attack_damage_+%") + get($"{type.ToString().ToLowerInvariant()}_damage_+%")
         + (DamageTypes.IsElemental(type) ? get("elemental_damage_+%") : 0)
         + (melee ? get("melee_damage_+%") : 0)
         + (melee && type == DamageType.Physical ? get("melee_physical_damage_+%") : 0)
         + (area ? get("area_damage_+%") : 0) + (projectile ? get("projectile_damage_+%") : 0)
-        + SpellAttackIncrease(get);
+        + SpellAttackIncrease(get, wieldingWand, retaliation);
 
     /// <summary>"Attack skills have added lightning damage equal to % of maximum mana" (Stats.dat row 11881, client key
     /// 11882): PassiveSkills.dat graph id 22720, Whisperer "we know all", grants row 11881 with the value 6.</summary>

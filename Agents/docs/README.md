@@ -56,6 +56,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [../GettingStarted.md](../GettingStarted.md) | setup from a fresh clone, third-party tools, troubleshooting |
 | [re/tooling.md](re/tooling.md) | Ghidra headless scripts, Python helpers, GGPK dump tool, Frida through REA, recipes |
 | [re/011-level-generation.md](re/011-level-generation.md) | the client's level generator: stages, RNG, topology pick, tile hash, generation traces; the server port in progress |
+| [dev/debugging.md](dev/debugging.md) | log timestamps and archives, error stack traces, the packet history and dumps, `Game_TRACE`, client crashes, `bugreport.ps1` |
 | [dev/live-testing.md](dev/live-testing.md) | the older live-testing notes (GettingStarted supersedes them) |
 | [dev/passive-graph-data.md](dev/passive-graph-data.md) | pinned PSG format and read-only analysis exports; no client installation or gameplay integration |
 | [dev/issue75-port.md](dev/issue75-port.md) | completed character-stat jobs ported from LocalExile, source revisions, integration decisions and validation limits |
@@ -64,11 +65,18 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |
 | [game/fortification.md](game/fortification.md) | melee-hit protection and the explicit server model |
+| [game/arcane-might.md](game/arcane-might.md) | spell increased/reduced transfer to attacks, source inventory and implementation boundaries |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
 | [game/gambler.md](game/gambler.md) | Gambler node checklist, incoming elemental ailments and read-only opt-in |
 | [game/aristocrat.md](game/aristocrat.md) | Aristocrat node checklist: gem levels/quality, attribute requirements and conditional immunities |
 | [game/ascendancies.md](game/ascendancies.md) | selection, points, saves and the Phrecia play gate |
 | [game/antiquarian.md](game/antiquarian.md) | all nine node consumers, verified-graph admission, legal builds and native acceptance |
+| [game/unique-jewels.md](game/unique-jewels.md) | the 185 unique jewels, their effects and what the passive-socket server supports |
+| [game/radius-jewels.md](game/radius-jewels.md) | all 76 radius unique jewels: radius/ring model, mechanics, reusable timeless pieces and implementation plan; 42 jewels with server-side effects, 33 threshold items with client/server threshold checks, Lioneye's Fall's item source/client conversion, and the generated Impossible Escape keystone bypass |
+| [game/radius-jewel-list.md](game/radius-jewel-list.md) | generated radius unique jewel table with radius, limit, mechanism, effect and support status |
+| [game/timeless-jewels.md](game/timeless-jewels.md) | Legion timeless jewels: item data, seed/conqueror rules, node replacement algorithm, radius geometry and implementation plan |
+| [game/timeless-jewel-list.md](game/timeless-jewel-list.md) | generated full list of timeless keystones, notables, small passives, 96 additions and 16 Militant Faith devotion mods with support status |
+| [game/cluster-jewel-list.md](game/cluster-jewel-list.md) | generated full list of cluster notables, small-passive themes and keystones with support status |
 | [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |
 | [game/league-modes.md](game/league-modes.md) | Hardcore deaths, SSF isolation, Ruthless native rules and editable balance |
 

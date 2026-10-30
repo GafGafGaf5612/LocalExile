@@ -231,10 +231,9 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     }
 
     /// <summary>
-    /// A skill's damage effectiveness at a level (GrantedEffectStatSetsPerLevel DamageEffectiveness, permyriad: Flicker
-    /// Strike 7730 at level 1, 30890 at 20, 69600 at 40): an attack's share of the weapon's damage, the gem's "Deals
-    /// 77.3% of base Attack Damage" line. 0 when its row has none (the default attack) or carries a negative one, which a
-    /// few skills do; callers scale nothing then. A spell's own base damage is already final (see SpellDamage).
+    /// A skill's resolved damage effectiveness in permyriad. The exported value is an offset from 100%:
+    /// Kinetic Blast's 4000 means 14000 (140%), and Cyclone's -1840 means 8160 (81.6%). Missing data returns 0
+    /// for the callers' identity fallback. A spell's own base damage is already final (see SpellDamage).
     /// </summary>
     public int DamageEffectiveness(int effectRow, int level)
     {
@@ -583,6 +582,8 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         /// <summary>The weapon's own added elemental/chaos damage (its local added damage mods, ItemWeapons), added to
         /// every hit it makes; empty for unarmed and for weapons without such mods.</summary>
         public DamagePacket LocalAdded { get; init; } = DamagePacket.Empty;
+        public bool WieldingWand { get; init; }
+        public bool Melee { get; init; } = true;
 
         /// <summary>Unarmed attacks alternate hands, i.e. count as dual wielding, and the client adds dual wielding's 10%
         /// attack speed to the skill's main_hand_attack_speed_+% (live 2026-10-17: the skill read 10 that the server never
@@ -637,18 +638,21 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         public long IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
         {
             long increased = 0;
-            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.AttackDamagePct, StatKeys.PhysicalDamagePct,
-                StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
+            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.AttackDamagePct, StatKeys.PhysicalDamagePct])
                 increased += player?.GetValueOrDefault(k) ?? 0;
+            if (Melee) increased += (long)(player?.GetValueOrDefault(StatKeys.MeleeDamagePct) ?? 0)
+                + (player?.GetValueOrDefault(StatKeys.MeleePhysicalDamagePct) ?? 0);
             return increased;
         }
 
         /// <summary>Local typed weapon damage (or class physical damage), with the actual attack's increase buckets.</summary>
         public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player, bool melee = true, bool projectile = false)
         {
+            // Arcane Might's wand-only grant follows the weapon held (WieldingWand); every local component takes the
+            // transfer once, with the weapon's own melee context.
             int Get(string name) => Program.Stats.Key(name) is uint key ? player?.GetValueOrDefault(key) ?? 0 : 0;
             return (LocalDamage ?? DamagePacket.Of(DamageType.Physical, new(MinDamage, MaxDamage)).Add(LocalAdded)).Select((type, range) =>
-                DamageStats.IncreaseAttackRange(range, DamageStats.AttackIncrease(Get, type, melee, projectile: projectile)));
+                DamageStats.IncreaseAttackRange(range, DamageStats.AttackIncrease(Get, type, melee, projectile: projectile, wieldingWand: WieldingWand)));
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,
@@ -758,7 +762,7 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     // StatSets: each GrantedEffects row's StatSet1 (-1 when none). Effects: per GrantedEffects row its StatSet1 and CastTime.
     // StatSetBase: per GrantedEffectStatSets row its ImplicitStats and (ConstantStats, ConstantStatsValues).
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
-    // Effectiveness: per GESSPL row its DamageEffectiveness (permyriad, the attack's share of the weapon's damage).
+    // Effectiveness: resolved permyriad, 10000 + the GESSPL DamageEffectiveness offset; 0 for missing data.
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
     // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel. VaalSouls: per GEPL row its VaalSouls.
@@ -858,7 +862,10 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
             foreach (var r in s.RootElement.EnumerateArray())
             {
                 setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
-                effectiveness.Add(Int(r, "DamageEffectiveness"));
+                // PoB Export/Scripts/skills.lua: raw / 10000 + 1. Zero is 100%, negatives are real reductions.
+                effectiveness.Add(r.TryGetProperty("DamageEffectiveness", out var effectivenessValue)
+                    && effectivenessValue.TryGetInt32(out int offset)
+                        ? (int)Math.Clamp(10_000L + offset, 0, int.MaxValue) : 0);
                 int crit = Int(r, "SpellCritChance");
                 spellCritChances.Add(crit >= 0 ? crit : null);
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),
