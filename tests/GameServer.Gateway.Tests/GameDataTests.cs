@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Storage;
 
@@ -86,6 +87,67 @@ public class GameDataTests
             foreach (string file in new[] { path, path + "-wal", path + "-shm" })
                 try { File.Delete(file); } catch (IOException) { }
         }
+    }
+
+    [Fact]
+    public void The_game_data_store_round_trips_catalog_rows_and_keeps_a_seeded_flag()
+    {
+        string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"localexile-catalog-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var store = new GameDataStore(path))
+            {
+                Assert.False(store.CatalogSeeded("radius_jewel"));
+                store.PutCatalogRow("radius_jewel", "Thread of Hope|Crimson Jewel", "{\"Name\":\"Thread of Hope\"}");
+                store.PutCatalogRow("radius_jewel", "Disabled|Crimson Jewel", "{\"Name\":\"Disabled\"}", enabled: false);
+                store.MarkCatalogSeeded("radius_jewel");
+                Assert.True(store.CatalogSeeded("radius_jewel"));
+                var rows = store.LoadCatalog("radius_jewel");
+                Assert.Equal(2, rows.Count);
+                Assert.False(rows.Single(row => row.Key == "Disabled|Crimson Jewel").Enabled);
+                store.DeleteCatalogRow("radius_jewel", "Thread of Hope|Crimson Jewel");
+                store.DeleteCatalogRow("radius_jewel", "Disabled|Crimson Jewel");
+                Assert.Empty(store.LoadCatalog("radius_jewel"));
+                Assert.True(store.CatalogSeeded("radius_jewel"));
+            }
+        }
+        finally
+        {
+            foreach (string file in new[] { path, path + "-wal", path + "-shm" })
+                try { File.Delete(file); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void The_catalog_rows_round_trip_through_the_json_payload_shape()
+    {
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var radius = RadiusJewelCatalogue.All.First(entry => entry.Name == "Thread of Hope");
+        var radiusBack = JsonSerializer.Deserialize<RadiusJewelCatalogue.Entry>(JsonSerializer.Serialize(radius, options), options)!;
+        Assert.Equal(radius.Name, radiusBack.Name);
+        Assert.Equal(radius.Base, radiusBack.Base);
+        Assert.Equal(radius.ConversionMod, radiusBack.ConversionMod);
+        Assert.Equal(radius.Limit, radiusBack.Limit);
+        Assert.Equal(radius.Radius, radiusBack.Radius);
+        Assert.Equal(radius.GlobalMods, radiusBack.GlobalMods);
+        Assert.Equal(radius.Variants!.Select(v => (v.Name, v.ModId, v.Value)), radiusBack.Variants!.Select(v => (v.Name, v.ModId, v.Value)));
+
+        var timeless = TimelessJewelCatalog.All[0];
+        var timelessBack = JsonSerializer.Deserialize<TimelessJewelCatalog.Entry>(
+            JsonSerializer.Serialize(timeless, options), options)!;
+        Assert.Equal(timeless.Name, timelessBack.Name);
+        Assert.Equal(timeless.TreeVersion, timelessBack.TreeVersion);
+        Assert.Equal(timeless.MinSeed, timelessBack.MinSeed);
+        Assert.Equal(timeless.Conquerors.Select(c => (c.Name, c.Index, c.Version)),
+            timelessBack.Conquerors.Select(c => (c.Name, c.Index, c.Version)));
+
+        var unique = UniqueCatalog.Seed[0];
+        var uniqueBack = JsonSerializer.Deserialize<UniqueCatalog.Definition>(
+            JsonSerializer.Serialize(unique, options), options)!;
+        Assert.Equal(unique.Name, uniqueBack.Name);
+        Assert.Equal(unique.BaseTypeId, uniqueBack.BaseTypeId);
+        Assert.Equal(unique.ItemLevel, uniqueBack.ItemLevel);
+        Assert.Equal(unique.Mods, uniqueBack.Mods);
     }
 
     [Fact]

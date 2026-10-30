@@ -12,6 +12,7 @@ public sealed class GameDataStore : IDisposable
 {
     public sealed record ModStatOverride(string ModId, int StatIndex, int Minimum, int Maximum);
     public sealed record LimitOverride(string Key, int Value);
+    public sealed record CatalogRow(string Kind, string Key, string Payload, bool Enabled);
 
     private readonly SqliteConnection _db;
     private readonly object _gate = new();
@@ -48,6 +49,14 @@ public sealed class GameDataStore : IDisposable
                     value INTEGER NOT NULL,
                     updated_utc TEXT NOT NULL,
                     CHECK (value >= 0)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS catalog_entries (
+                    kind TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    updated_utc TEXT NOT NULL,
+                    PRIMARY KEY (kind, key)
                 ) STRICT;
                 CREATE TABLE IF NOT EXISTS item_templates (
                     id TEXT PRIMARY KEY,
@@ -154,6 +163,53 @@ public sealed class GameDataStore : IDisposable
         });
     }
 
+    public IReadOnlyList<CatalogRow> LoadCatalog(string kind)
+    {
+        lock (_gate)
+        {
+            using var command = Command("SELECT kind, key, payload, enabled FROM catalog_entries WHERE kind = $kind ORDER BY key",
+                ("$kind", kind));
+            using var reader = command.ExecuteReader();
+            var result = new List<CatalogRow>();
+            while (reader.Read())
+                result.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3) != 0));
+            return result;
+        }
+    }
+
+    public void PutCatalogRow(string kind, string key, string payload, bool enabled = true)
+    {
+        if (string.IsNullOrWhiteSpace(kind)) throw new ArgumentException("catalog kind is empty", nameof(kind));
+        if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("catalog key is empty", nameof(key));
+        Atomically(() =>
+        {
+            using var command = Command("""
+                INSERT INTO catalog_entries (kind, key, payload, enabled, updated_utc)
+                VALUES ($kind, $key, $payload, $enabled, $utc)
+                ON CONFLICT(kind, key) DO UPDATE SET
+                    payload = excluded.payload,
+                    enabled = excluded.enabled,
+                    updated_utc = excluded.updated_utc
+                """, ("$kind", kind), ("$key", key), ("$payload", payload), ("$enabled", enabled ? 1 : 0),
+                ("$utc", DateTime.UtcNow.ToString("O")));
+            command.ExecuteNonQuery();
+        });
+    }
+
+    public void DeleteCatalogRow(string kind, string key)
+    {
+        Atomically(() =>
+        {
+            using var command = Command("DELETE FROM catalog_entries WHERE kind = $kind AND key = $key",
+                ("$kind", kind), ("$key", key));
+            command.ExecuteNonQuery();
+        });
+    }
+
+    public bool CatalogSeeded(string kind) => Meta("catalog_seeded:" + kind) is not null;
+
+    public void MarkCatalogSeeded(string kind) => SetMeta("catalog_seeded:" + kind, DateTime.UtcNow.ToString("O"));
+
     public string? Meta(string key)
     {
         lock (_gate)
@@ -161,6 +217,18 @@ public sealed class GameDataStore : IDisposable
             using var command = Command("SELECT value FROM game_data_meta WHERE key = $key", ("$key", key));
             return command.ExecuteScalar() as string;
         }
+    }
+
+    public void SetMeta(string key, string value)
+    {
+        Atomically(() =>
+        {
+            using var command = Command("""
+                INSERT INTO game_data_meta (key, value) VALUES ($key, $value)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """, ("$key", key), ("$value", value));
+            command.ExecuteNonQuery();
+        });
     }
 
     private void Atomically(Action work)

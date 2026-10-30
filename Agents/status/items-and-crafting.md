@@ -88,9 +88,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   restart is needed. Verified live: setting a range and a timeless-jewel limit, listing the revision, clearing both, and
   the tables being empty again after the check.
   Limits currently cover the Historic timeless jewel, Impossible Escape, radius unique jewels and the tattoo total/group
-  caps. The item-template schema exists, but custom item templates, custom names and the admin panel are not implemented
+  caps. `catalog_entries` now seeds and reloads the unique-item, radius/threshold/unique/timeless jewel, tattoo-effect
+  and jewel-art catalogues (2 / 76 / 43 / 6 / 48 / 190 rows on the live database); the code arrays are the fresh-database
+  seed. The item-template schema exists, but custom item templates, custom names and the admin panel are not implemented
   yet.
-  Code: `GameData.cs`, `GameDataStore.cs`, `ModRangeProvider.cs`, `LimitSettings.cs`, Gateway (`Program.Commands.cs`).
+  Code: `GameData.cs`, `GameDataCatalog.cs`, `GameDataStore.cs`, `ModRangeProvider.cs`, `LimitSettings.cs`, Gateway
+  (`Program.Commands.cs`).
   Docs: [editable game data](../docs/dev/editable-game-data.md), [saves](../docs/saves.md).
 - Gold: shared by the account's characters of one league (S→C 0x2a9), saved with that league's stash, sent on area
   entry; every league has its own stash and gold, Standard keeps the account's stash from before (`AccountStash.Key`);

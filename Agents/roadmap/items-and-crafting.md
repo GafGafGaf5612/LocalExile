@@ -68,13 +68,12 @@ features.
 ## 4. Server design
 
 - **Editable game data and limits:** the SQLite overlay, snapshot/reload foundation, mod roll ranges and item limits are
-  implemented and live-checked; the next step is item templates with custom names, then the admin interface and the
-  broader server-side settings.
+  implemented and live-checked. The unique-item, radius/threshold/unique/timeless jewel, tattoo-effect and jewel-art
+  catalogues are now in `catalog_entries`, seeded from the current code arrays and swapped on `/game_data reload`.
+  The next step is item templates with custom names, then the admin interface, then NPC shops/placements and drop tables.
   The client-compatibility boundary, schema and cache plan are in
   [dev/editable-game-data.md](../docs/dev/editable-game-data.md).
   The extracted JSON stays the reference; the database only overrides it.
-  After the templates/admin panel, move the hardcoded content catalogues (uniques, radius/threshold/timeless jewels,
-  tattoo effects, NPC shops, drops) into typed tables, one family per change with a seed from the current code.
 
 ## 5. Project
 

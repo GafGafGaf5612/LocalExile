@@ -1450,7 +1450,8 @@ partial class Program
                         return;
                     case "list":
                         await conn.Commands!.Reply($"Game data revision {GameData.Current.Revision}: " +
-                            $"{GameData.Current.ModRanges.Count} mod range override(s), {GameData.Current.Limits.Count} limit override(s)");
+                            $"{GameData.Current.ModRanges.Count} mod range override(s), {GameData.Current.Limits.Count} limit override(s); " +
+                            GameDataCatalog.Summary);
                         foreach (var (key, range) in GameData.Current.ModRanges.OrderBy(kv => kv.Key.ModId).ThenBy(kv => kv.Key.Index))
                             await conn.Commands!.Reply($"  mod {key.ModId}[{key.Index}] = {range.Min}..{range.Max}");
                         foreach (var (key, value) in GameData.Current.Limits.OrderBy(kv => kv.Key))
