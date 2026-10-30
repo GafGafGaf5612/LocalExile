@@ -106,7 +106,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Visit Mine Encampment goes to Delve_Hub, which has its tile's waypoint (still drawn inactive: no 0x4c bit), Niko,
   the stash and the guild stash.
   The World panel's special pins are all shown (league quest flags for every character, the Labyrinth's waypoint
-  always activated); the Mine Encampment pin (C→S 0x17d) leads to Delve_Hub, the Hideout pin to the hideout.
+  always activated). The Hideout, Menagerie, Mine Encampment, Forbidden Sanctum, Kingsmarch, Rogue Harbour and
+  Monastery of the Keepers pins lead to their hubs, which have a clickable waypoint back, a stash, a guild stash and
+  their NPCs (Einhar, Divinia, the Kingsmarch villagers, the Heist crew, Ailith; Einhar also in every hideout).
+  The hub waypoints stay unlit (client area-type rule); The Sovereign (Deepwater) has no layout yet.
   The mine itself is not implemented.
   See [16](../docs/protocol/16-waypoints.md) §4.
   See [21](../docs/protocol/21-hideouts.md).

@@ -20,7 +20,7 @@ partial class Program
             // Immediate transfer ingress cuts the old epoch off instead of replaying overdue old-world damage.
             // Movement/combat handlers also advance atomically inside their mutation boundaries.
             bool transferIngress = id is InstanceTransfer.ChooseInstanceId or InstanceTransfer.LeaveAreaAckId
-                or InstanceWaypoints.TravelId or InstanceWaypoints.VisitHideoutId or InstanceWaypoints.VisitDelveHubId or InstanceHideouts.SelectId
+                or InstanceWaypoints.TravelId or InstanceWaypoints.VisitHideoutId or InstanceWaypoints.VisitDelveHubId or InstanceWaypoints.VisitMenagerieId or InstanceWaypoints.VisitSanctumId or InstanceWaypoints.VisitKingsmarchId or InstanceWaypoints.VisitHeistHubId or InstanceWaypoints.VisitChayulaHubId or InstanceHideouts.SelectId
                 || id == InstanceProtocol.ResurrectId && InstanceProtocol.ReadResurrectInTown(bytes)
                 || id == InstanceItems.CommandId && InstanceItems.ReadCommand(bytes).Id == InstanceItems.WarpToHideoutCommand;
             if (!transferIngress) AdvanceProjectiles(conn);
@@ -286,6 +286,38 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} <= 0x017a visit the hideout of {visit.Character} (from object 0x{visit.Waypoint:x}, u8 {visit.Flag})");
                 // Only the player's own hideout exists (no parties or other players' hideouts yet).
                 await WarpToHideout(remote, stream, ciphers, conn, "World panel Hideout button");
+            }
+            else if (id == InstanceWaypoints.VisitMenagerieId)
+            {
+                // The World panel's Menagerie pin: the same layout as 0x17a (whose Menagerie, waypoint object, u8).
+                var visit = InstanceWaypoints.ReadVisitHideout(bytes);
+                Console.WriteLine($"[gateway] {remote} <= 0x017b visit the Menagerie of {visit.Character} (from object 0x{visit.Waypoint:x}, u8 {visit.Flag})");
+                if (AreaTransitionCatalog.HashOf(WaypointCatalog.MenagerieHub) is { } menagerie)
+                    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(menagerie, 0, false, AtSpawn: true), "World panel Menagerie pin");
+            }
+            else if (id == InstanceWaypoints.VisitChayulaHubId)
+            {
+                Console.WriteLine($"[gateway] {remote} <= 0x0182 World panel Monastery of the Keepers pin");
+                if (AreaTransitionCatalog.HashOf(WaypointCatalog.ChayulaHub) is { } monastery)
+                    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(monastery, 0, false, AtSpawn: true), "World panel Monastery of the Keepers pin");
+            }
+            else if (id == InstanceWaypoints.VisitHeistHubId)
+            {
+                Console.WriteLine($"[gateway] {remote} <= 0x0184 World panel Rogue Harbour pin");
+                if (AreaTransitionCatalog.HashOf(WaypointCatalog.HeistHub) is { } harbour)
+                    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(harbour, 0, false, AtSpawn: true), "World panel Rogue Harbour pin");
+            }
+            else if (id == InstanceWaypoints.VisitKingsmarchId)
+            {
+                Console.WriteLine($"[gateway] {remote} <= 0x0181 World panel Kingsmarch pin");
+                if (AreaTransitionCatalog.HashOf(WaypointCatalog.Kingsmarch) is { } kingsmarch)
+                    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(kingsmarch, 0, false, AtSpawn: true), "World panel Kingsmarch pin");
+            }
+            else if (id == InstanceWaypoints.VisitSanctumId)
+            {
+                Console.WriteLine($"[gateway] {remote} <= 0x017e World panel Forbidden Sanctum pin");
+                if (AreaTransitionCatalog.HashOf(WaypointCatalog.SanctumHub) is { } sanctum)
+                    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(sanctum, 0, false, AtSpawn: true), "World panel Forbidden Sanctum pin");
             }
             else if (id == InstanceWaypoints.VisitDelveHubId)
             {

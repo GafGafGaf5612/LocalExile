@@ -275,6 +275,56 @@ partial class Program
             await SpawnDelveCrawler(remote, stream, ciphers, conn);
             await conn.Commands!.Reply($"Delve Crawler 0x{conn.DelveCrawlerObject:x} at {conn.DelveCrawlerAt}");
         })
+        .Add("wp_place", "/wp_place [x y degrees] (dev: move and turn this area's waypoint; without arguments shows where it is)", async args =>
+        {
+            if (conn.Layout.Waypoint is not { } waypoint) { await conn.Commands!.Reply("This area has no waypoint"); return; }
+            if (args.Length == 0)
+            {
+                await conn.Commands!.Reply($"Waypoint at ({waypoint.GridX}, {waypoint.GridY}), {waypoint.Rotation * 180 / MathF.PI:0.#}°");
+                return;
+            }
+            if (args.Length != 3 || !int.TryParse(args[0], out int x) || !int.TryParse(args[1], out int y) || !float.TryParse(args[2],
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float degrees))
+                throw new ArgumentException("/wp_place [x y degrees]");
+            float radians = degrees * MathF.PI / 180;
+            conn.MoveWaypoint(waypoint with { GridX = x, GridY = y, Rotation = radians });
+            await Send(remote, stream, ciphers, InstanceProtocol.Teleport(WaypointCatalog.ObjectId, x, y, 0x7fffffff), $"waypoint to ({x}, {y})");
+            await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(WaypointCatalog.ObjectId, radians), $"waypoint turned {degrees}°");
+            await conn.Commands!.Reply($"Waypoint at ({x}, {y}), {degrees}°");
+        })
+        .Add("wp_state", "/wp_state active <n> | bits all|none|area|<bit> | model <.ao> (dev: recreate this area's waypoint with StateMachine \"active\" n or another model, or send 0x4c with all, no, this area's or one bit, to find what lights it)", async args =>
+        {
+            if (conn.Layout.Waypoint is not { } waypoint) { await conn.Commands!.Reply("This area has no waypoint"); return; }
+            string usage = "/wp_state active <n> | bits all|none|area|<bit> | model <.ao>";
+            if (args.Length != 2) throw new ArgumentException(usage);
+            if (args[0] == "bits")
+            {
+                int count = WaypointCatalog.Areas.Entries.Count;
+                List<int> bits = args[1] switch
+                {
+                    "all" => [.. Enumerable.Range(0, InstanceWaypoints.BitsetLength * 8)],
+                    "none" => [],
+                    "area" => WaypointCatalog.Areas.BitOf(conn.Layout.Hash) is int own ? [own] : [],
+                    var n when int.TryParse(n, out int bit) => [bit],
+                    _ => throw new ArgumentException(usage),
+                };
+                await Send(remote, stream, ciphers, InstanceWaypoints.Waypoints(bits), $"0x004c waypoints: {bits.Count} bits (/wp_state, {count} waypoint areas)");
+                await conn.Commands!.Reply($"0x4c sent with {bits.Count} bit(s)");
+                return;
+            }
+            var changed = args[0] switch
+            {
+                "active" when int.TryParse(args[1], out int active) => waypoint with { Active = active },
+                "model" => waypoint with { Model = args[1] },
+                _ => throw new ArgumentException(usage),
+            };
+            conn.MoveWaypoint(changed);
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(WaypointCatalog.ObjectId), "0x02bb remove the waypoint (/wp_state)");
+            await Send(remote, stream, ciphers, InstanceEntities.CreateObject(WaypointCatalog.ObjectId,
+                InstanceEntities.ObjectTypeHash(WaypointObject.MetadataPath), changed.Blob()), $"0x02b9 create waypoint {changed} (/wp_state)");
+            await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(WaypointCatalog.ObjectId), null);
+            await conn.Commands!.Reply($"Waypoint recreated: active {changed.Active}, model {changed.Model}");
+        })
         .Add("sulphite", "/sulphite <amount 0-65535> (dev: the character's Voltaxic Sulphite, saved and sent as the Delve data 0x228)", async args =>
         {
             if (args.Length != 1 || !ushort.TryParse(args[0], out ushort amount)) throw new ArgumentException("/sulphite <amount 0-65535>");
@@ -1326,6 +1376,20 @@ partial class Program
             await SpawnNpc(remote, stream, ciphers, conn, npc, x, y, (deg ?? 0) * MathF.PI / 180);
         })
         // Turns an NPC: it is created again with the new facing (0x2bb, then 0x2b9).
+        .Add("npc_place", "/npc_place <name> <x> <y> <degrees> (dev: move and turn an NPC here)", async args =>
+        {
+            if (args.Length < 4 || !int.TryParse(args[^3], out int x) || !int.TryParse(args[^2], out int y)) throw new ArgumentException("/npc_place <name> <x> <y> <degrees>");
+            float deg = float.Parse(args[^1], System.Globalization.CultureInfo.InvariantCulture);
+            string name = string.Join(' ', args[..^3]);
+            KeyValuePair<uint, SpawnedNpc> found;
+            lock (conn.Npcs) found = conn.Npcs.FirstOrDefault(n => n.Value.Npc.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+            if (found.Value is not { } npc) { await conn.Commands!.Reply($"No NPC {name} here."); return; }
+            lock (conn.Npcs) conn.Npcs.Remove(found.Key);
+            conn.RemoveBlocker(found.Key);
+            await Send(remote, stream, ciphers, InstanceProtocol.RemoveObject(found.Key), $"0x02bb remove npc 0x{found.Key:x} {npc.Npc.Name}");
+            await SpawnNpc(remote, stream, ciphers, conn, npc.Npc, x, y, deg * MathF.PI / 180);
+            await conn.Commands!.Reply($"{npc.Npc.Name} at ({x}, {y}), {deg}°");
+        })
         .Add("npc_face", "/npc_face <name> <degrees> (turn an NPC here)", async args =>
         {
             if (args.Length < 2) throw new ArgumentException("name and degrees");
