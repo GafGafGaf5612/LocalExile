@@ -10,5 +10,8 @@ static class OrdinaryRangedAttack
     public const uint WandImpactAnimation = 0;
     public const double WandImpactSeconds = 0.5;
 
+    // DefaultArrow has no impact clip; the stopped arrow object stays this long where it hit (a feel value, not measured).
+    public const double ArrowStuckSeconds = 1.0;
+
     public static string? ProjectileId(WeaponProfile weapon) => weapon.Bow ? Arrow : weapon.Wand ? Wand : null;
 }

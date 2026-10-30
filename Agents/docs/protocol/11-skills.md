@@ -612,6 +612,14 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   sequence 0xffff.
   Its busy period covers the full attack duration from the actual action send; contact still occurs halfway through:
   the hit lands if the monster lives and the player is still within reach + 2 (0x1af, then 0x1b1 on the player).
+  A mortar skill (Sand Spitter: `monster_mortar_attack`, GrantedEffects SkillID 183 → MonsterMortar 183 →
+  `Metadata/Projectiles/SandspitterMortarProjectile`, 1170 units/s) releases a server projectile object at that
+  halfway point instead (`Program.ProjectileHostile.cs`): it is lobbed at the player's cell on the shared runtime,
+  team 2 so no monster is in its way, and the same contact pipeline commits the hit when it lands on a player
+  within the splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells; the skill's stats carry no radius). The
+  client creates no projectile of its own for a monster's action (Frida 2026-10-29: 27 Sand Spitter attacks, no
+  client-side object), so without the server's object there is nothing to see. Weapon projectile skills
+  (`monster_projectile_weapon`, SkillID 0) take their projectile from the monster's weapon art, not resolved yet.
   A pending swing reserves its generation through contact, so a blocked send gate cannot reserve duplicate attacks.
   Contact checks the original monster, action generation, life, range, pause and area lifetime at the send gate.
   Boss stages and emergence retain their own timing; the next ordinary action waits for stage completion's final
@@ -916,8 +924,10 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   attacker's `ProcessDamagePackageInternal` (vtable +0x230), which plays the effects; 0x1b1 stays authoritative on
   life. The server sends it before 0x1b1 on the default attack and on attack-gem hits (flags 0x4201, kind 3) and on a
   monster's hit on the player (kind 3, sequence 0xffff, flags 0x4201 plus 0x0040 when blocked and 0x0020 when critical,
-  code = the largest damage component: 0 Physical, 1 Cold, 2 Fire, 3 Lightning, 4 Chaos; `HitCode`); spells and
-  projectiles skip it. The monster hit used to go out as 0x4601 with a 450 ms duration and kind 2. The static decode
+  code = the largest damage component: 0 Physical, 1 Cold, 2 Fire, 3 Lightning, 4 Chaos; `HitCode`) and on an
+  ordinary arrow's or wand bolt's contact (kind 3 with the shot's own action sequence, flags 0x4001 plus 0x0020 on a
+  critical strike, code by type, the angle from the flight direction: blood and particles without the main-hand bit,
+  whose weapon effect is the melee impact sound); spells and gem projectiles skip it. The monster hit used to go out as 0x4601 with a 450 ms duration and kind 2. The static decode
   (`research/poe-rea-reference`, `Agents/docs/re/action-hit-packet-3.29.3b.md` §§1–4) shows that kind bit 0 clear
   only queues the package until an action with that sequence consumes it, which the fabricated 0xffff never
   guarantees, and that 0x0400 asks the client to stun the target itself, with its own avoidance roll, through the
@@ -1151,8 +1161,11 @@ components: one from the 0x2b9 handler (`0x142187c8a` → `0x141ebe190`), one fr
 client built three before the server's three, so it predicts every primary projectile of the volley, from its own
 position. The server therefore sends no object for a gem use's primary projectiles (`ProjectileOffense.ClientPredicted`,
 `ProjectileSession.Publish`) and still simulates them; continuation children and area effects still go out. The
-client made no explosion object of its own. Ordinary bow arrows and wand bolts (`ScheduleOrdinaryRanged`) keep their server object:
-whether the client predicts them is not checked. Trace: `scripts/re/frida/trace-projectile-create.js`.
+client made no explosion object of its own. Ordinary bow arrows and wand bolts (`ScheduleOrdinaryRanged`) keep their server object,
+and rightly so: across 40 default-attack arrows on 2026-10-29 the same trace saw no client-created projectile at all
+(only the 36 server `DefaultArrow` objects), and none for a monster's action either (27 Sand Spitter attacks). The
+default attack is not predicted the way a gem's volley is. Trace: `scripts/re/frida/trace-projectile-create.js`
+(load `common.js` and the trace in one script: `run.py` gives each file its own scope).
 
 The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
 nothing by itself: its slot 17 reads nothing and almost every other slot is a bare `ret`.
@@ -1360,8 +1373,13 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   [Projectile](https://www.poewiki.net/wiki/Projectile) and [Avoidance](https://www.poewiki.net/wiki/Avoidance) pages;
   older mirrored descriptions disagree, and no primary GGG statement or official-server trace was found.
   Official evasion-continuation parity remains unverified. Null contact predicates preserve existing gem behavior.
-  Ordinary arrows send ranged life/flinch/death notifications without the melee `0x1af 0x4201` sound or Fireball
-  explosion. Before-controls on 2026-10-25 showed object arrows created at bow-clip elapsed ~0.012 s and melee
+  Ordinary arrows send ranged life/flinch/death notifications and, since 2026-10-29, a `0x1af` with flags 0x4001 (no
+  main-hand bit, so not the melee `0x4201` weapon sound) for the target's blood and particles; no Fireball
+  explosion. The arrow object is created at the release point and its first move runs from there: the late lazy
+  snapshot used to create it where the simulation already had it, one to ten cells past the bow (live 2026-10-29,
+  "arrows do not come out of my body"). After an enemy or wall contact the stopped arrow stays one second
+  (`OrdinaryRangedAttack.ArrowStuckSeconds`) before removal, as the arrow left in its target.
+  Before-controls on 2026-10-25 showed object arrows created at bow-clip elapsed ~0.012 s and melee
   damage before flight impact, while a ground arrow crossed the same monster with no damage. On the combined
   runtime, actual right-click ground/object after-checks each caused one hit only at the native arrow stop:
   ground aim (363,224) hit at (296,221) for 13; object aim (300,220) hit at (296,220) for 6, without melee

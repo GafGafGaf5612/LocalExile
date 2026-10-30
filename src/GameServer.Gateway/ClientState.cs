@@ -26,6 +26,10 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
     public bool Ranged { get; init; }
+    /// <summary>A ranged skill's projectile (SkillCatalog.MonsterProjectile): the shot flies from the monster at the
+    /// attack's contact and lands its hit when it reaches the player (Program.ProjectileHostile.cs). Null keeps the
+    /// instant contact at half the attack time.</summary>
+    public SkillCatalog.MonsterProjectileInfo? Projectile { get; init; }
     /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
     /// These also go on the monster's Stats component.</summary>
     public IReadOnlyList<(uint, int)> Stats()

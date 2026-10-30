@@ -34,6 +34,9 @@ partial class Program
         /// sound and particles); the object then stays for <see cref="ImpactLifetime"/> quanta of game time.</summary>
         public uint? ImpactClip { get; init; }
         public long ImpactLifetime { get; init; } = 60000;
+        /// <summary>Keep the stopped object for <see cref="ImpactLifetime"/> without a clip: an arrow left in its target
+        /// or a wall (DefaultArrow has stuck/bounce art the client plays only for its own arrows).</summary>
+        public bool StayOnImpact { get; init; }
     }
 
     static partial void RegisterProjectileSkillDefinitions(Dictionary<string, ProjectileSkillDefinition> definitions,

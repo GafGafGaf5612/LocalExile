@@ -1,0 +1,78 @@
+using System.Net.Sockets;
+using GameServer.Core.Projectiles;
+using GameServer.Core.Protocol.Login;
+
+/// <summary>A monster's projectile attack in flight: the monster that released it, its attack and the AI action it belongs
+/// to. The player is its only target (<c>Program.HostileHit</c>); the monster's own damage pipeline commits the hit when
+/// the flight reaches the player, or, for a mortar, when it lands on them.</summary>
+sealed record HostileProjectileOffense(uint MonsterId, SpawnedMonster Monster, MonsterAttack Attack, int Action, string Label);
+
+partial class Program
+{
+    // The mortar's splash. Sand Spitter's skill carries no radius stat (is_area_damage, projectile_uses_contact_position
+    // and a 3-cell spread only), so this is a development default like the Kinetic Blast fallbacks, in cells.
+    internal const double MonsterMortarRadiusCells = 10;
+
+    static double MonsterMortarRadius() =>
+        double.TryParse(Environment.GetEnvironmentVariable("Game_MONSTER_MORTAR_RADIUS"), out double radius) && radius > 0
+            ? radius : MonsterMortarRadiusCells;
+
+    /// <summary>The use for a monster's ranged attack released now: from the monster toward the player's current cell. A
+    /// mortar lands there and damages the area; a straight shot flies on past it. Team 2, so only the player (and friendly
+    /// actors) are in its way, never the other monsters. The client draws nothing of its own for a monster's action
+    /// (Frida 2026-10-29), so the server's object is the projectile the player sees.</summary>
+    internal static ProjectileUse MonsterProjectileUse(ProjectileSession session, uint id, SpawnedMonster m, MonsterAttack a,
+        SkillCatalog.MonsterProjectileInfo projectile, int action)
+    {
+        var conn = session.Conn;
+        double now = session.Runtime.Now / (double)ProjectileRuntime.QuantaPerSecond;
+        var from = ProjectileSession.Vector(m.Walk.Position(now));
+        var aim = ProjectileSession.Vector(conn.Walk.Position(now));
+        double speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, _ => 0, _ => 0,
+            Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
+        double distance = Math.Max(1, (aim - from).Length);
+        var profile = new ProjectileProfile(projectile.Metadata)
+        {
+            Speed = speed, Radius = projectile.CollisionRadius, Count = 1, Lobbed = projectile.Lobbed,
+            // A lobbed shot's range is its landing distance; a straight one flies on past the aim.
+            Range = projectile.Lobbed ? distance : Math.Max(distance, a.Range) * 1.5 + 5,
+            DirectDamage = !projectile.Lobbed,
+            EndArea = projectile.Lobbed ? new ProjectileAreaRecipe("monster mortar", MonsterMortarRadius()) : null,
+            EndAreaReasons = projectile.Lobbed
+                ? new HashSet<ProjectileEndReason> { ProjectileEndReason.Landing, ProjectileEndReason.Terrain } : null,
+        };
+        var owner = session.ActorKey(id, m);
+        // A target closer than the muzzle must not end up behind the released projectile.
+        var origin = from + (aim - from).Unit * Math.Min(1.5, distance / 2);
+        return new ProjectileUse(profile, owner, owner, 2, origin, aim)
+            { Payload = new HostileProjectileOffense(id, m, a, action, $"{m.Label} {projectile.Metadata}") };
+    }
+
+    // The release at the attack's contact: the shot leaves toward where the player stands now and the flight then owns
+    // contact and damage (HostileHit). The AI action must still be current when the runtime releases it.
+    static void LaunchMonsterProjectile(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn,
+        uint id, SpawnedMonster m, MonsterAttack a, SkillCatalog.MonsterProjectileInfo projectile, int action)
+    {
+        var session = ProjectilesFor(remote, stream, ciphers, conn);
+        session.Advance();
+        session.Schedule(session.Runtime.Now, () => MonsterActionCurrent(conn, id, m, action) && !InGracePeriod(conn),
+            () => MonsterProjectileUse(session, id, m, a, projectile, action));
+    }
+
+    // Called under the XP -> Monsters lock by the runtime. Only the player takes a monster's projectile; a friendly monster in
+    // its way is passed through. The monster's damage pipeline (CommitMonsterHitLocked) owns evasion, block, armour,
+    // ailments, recovery and the hit packet; the presentation follows through the session's ordered outbox.
+    static ProjectileHitResult HostileHit(ProjectileSession session, ProjectileDamage contact, HostileProjectileOffense shot)
+    {
+        var conn = session.Conn;
+        if (contact.Target.Id != PlayerId || conn.PlayerLife == 0 || InGracePeriod(conn)) return ProjectileHitResult.Miss;
+        double now = contact.At / (double)ProjectileRuntime.QuantaPerSecond;
+        var here = conn.Walk.Position(now);
+        var from = ((int)Math.Round(contact.Position.X), (int)Math.Round(contact.Position.Y));
+        var outcome = CommitMonsterHitLocked(session.remote, conn, shot.MonsterId, shot.Monster, shot.Attack, now, here, from, checkRange: false);
+        if (outcome is null) return ProjectileHitResult.Miss;
+        session.Packet(outcome.HitPacket, $"0x01af monster 0x{shot.MonsterId:x} projectile hit on the player ({shot.Label})");
+        session.Enqueue(() => PresentMonsterHit(session.remote, session.stream, session.ciphers, conn, shot.MonsterId, outcome));
+        return outcome.Blocked ? ProjectileHitResult.Blocked : ProjectileHitResult.Hit;
+    }
+}

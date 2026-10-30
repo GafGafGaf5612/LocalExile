@@ -138,7 +138,6 @@ public class OrdinaryWandAttackTests
                 [(InstanceProtocol.UseSkillAtLocationId, packet)], [], conn).WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal((10, 10), conn.Walk.Destination);
             var launch = await created.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(1000u, launch.Life);
             uint finalLife = await damaged.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(finalLife < 1000);
             await removed.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -150,12 +149,23 @@ public class OrdinaryWandAttackTests
             int removeAt = Array.FindIndex(writes, p => p.AsSpan().SequenceEqual(InstanceProtocol.RemoveObject(launch.Id)));
             Assert.True(actionAt >= 0 && createAt > actionAt);
             Assert.Equal(InstanceProtocol.EnterWakeZoneId, BinaryPrimitives.ReadUInt16BigEndian(writes[createAt + 1]));
-            // The runtime's glide pins the start cell before the move: one write, 0x1b7 then 0x1ba.
-            byte[] glide = writes[createAt + 2];
-            int stop = InstanceProtocol.Teleport(launch.Id, 0, 0).Length;
-            Assert.Equal(InstanceProtocol.TeleportId, BinaryPrimitives.ReadUInt16BigEndian(glide));
-            Assert.Equal(InstanceProtocol.MoveToId, BinaryPrimitives.ReadUInt16BigEndian(glide.AsSpan(stop)));
-            Assert.True(damageAt > createAt + 2 && removeAt > damageAt);
+            // After the creation and wake writes comes either the first glide (one 0x1ba alone from the release cell;
+            // ArrowPresentationTests pins that contract with held output) or, when the output ran late enough for the
+            // bolt to have landed already, its impact stop (0x1b7). Either way nothing else is written in between.
+            int moveAt = Array.FindIndex(writes, p => p.Length >= 6 && BinaryPrimitives.ReadUInt16BigEndian(p) == InstanceProtocol.MoveToId
+                && BinaryPrimitives.ReadUInt32BigEndian(p.AsSpan(2)) == launch.Id);
+            if (moveAt >= 0)
+            {
+                // The output caught the flight: its first glide follows the wake write as one 0x1ba alone, from the release
+                // cell (ArrowPresentationTests pins that with held output), and the damage lands after it.
+                Assert.Equal(createAt + 2, moveAt);
+                Assert.Equal(InstanceProtocol.MoveTo(launch.Id, 0, 0, 1).Length, writes[moveAt].Length);
+                Assert.True(damageAt > moveAt);
+                Assert.Equal(1000u, launch.Life);   // the target was whole when the bolt appeared: damage waits for contact
+            }
+            // A late output skips the glide and shows the bolt at its landing instead; the damage still follows the
+            // creation and the removal the damage.
+            Assert.True(damageAt > createAt + 1 && removeAt > damageAt);
             lock (conn.Monsters) Assert.DoesNotContain(launch.Id, conn.ProjectileObjects);
         }
         finally { conn.Closed = true; PlayerInventories.Forget(character); }

@@ -201,7 +201,8 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
 
 - Ordinary supported monster basic contacts now exercise ignite/chill/freeze/shock and final avoidance.
   Finish dedicated native buff icons and source/threshold/conditional-immunity parity before claiming a general ailment engine.
-  Hostile projectile/spell adapters and alternative-ailment sources remain separate work.
+  Hostile spell adapters and alternative-ailment sources remain separate work; monster mortar shots already run the
+  contact pipeline at their landing (status: Skills and combat, "Monster projectiles").
   See [Gambler](../docs/game/gambler.md).
 
 ### Rage extensions
@@ -253,7 +254,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Earlier native packet/collision controls need retesting on the new path; actor positions still use integer walk
   estimates and shared projectile radii; Gateway actor radii are zero, making area coverage center-based even
   for large monsters. Calibrate combat body geometry against the available movement `ObjectSize` data.
-  Live hostile projectile adapters remain future work.
+  Monster projectiles beyond mortars: `monster_projectile_weapon`, `monster_snipe` and `monster_puncture` skills
+  (109 varieties' first effect) take their projectile from the monster's weapon art (MonsterVarieties
+  `Weapon1_ItemVisualIdentityKeys`, e.g. `SkeletonArrow1`), a link the server does not read yet, so those monsters
+  still hit instantly at half the attack time with no visible shot. Monster spell projectiles
+  (`MonsterProjectileSpell`) are a separate adapter. The mortar splash radius is a development default; the
+  monster's attack animation contact (the release time) is still half the attack time.
 - **Start:** user-run Fireball/KB checks from the skill guide, including return, terrain and overlapping explosions.
   Calibrate cluster radial distribution, counter-clockwise sequence timing and native art against client evidence.
   Build a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas

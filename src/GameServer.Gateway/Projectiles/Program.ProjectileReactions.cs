@@ -26,6 +26,16 @@ partial class Program
         // monster walking while the server's estimate has stopped (11-skills.md "Hit reaction").
         if (HitReaction.TryFlinch(target, damage, now, random) is not null)
             session.Packet(InstanceProtocol.ActorAnimation(id, (float)(target.FlinchUntil - now), PlayerHitRecovery.TakeHitAnimation));
+        if (shot.HitPacket)
+        {
+            // S→C 0x1af before the life update, as the melee default attack sends it: an immediate package (kind 3) for the
+            // shot's action with blood (0x0001) and the generic particles (0x4000) of its largest damage type, the critical
+            // bit when it crit, and no main-hand bit, which would play the melee weapon's impact sound (11-skills.md).
+            var direction = contact.Projectile.Direction;
+            ushort flags = (ushort)(0x4001 | (critical ? 0x0020 : 0));
+            session.Packet(InstanceProtocol.ActionHit(PlayerId, shot.ActionSequence ?? 0xffff, id, flags: flags, kind: 0x03,
+                code: HitCode(shot.Hit), angle: HitAngle((int)Math.Round(direction.X * 1000), (int)Math.Round(direction.Y * 1000))));
+        }
         session.Packet(InstanceProtocol.LifeUpdate(id, hit.Life),
             $"projectile {shot.Label} {contact.Stage} t={now:0.000000} use={contact.Projectile.UseId} entity={contact.Projectile.Id}"
             + $" phase={contact.Phase} form={contact.Projectile.Form} at={contact.Position}"

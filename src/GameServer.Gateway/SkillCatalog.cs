@@ -496,6 +496,56 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         return result;
     });
 
+    /// <summary>A monster skill's projectile (Projectiles.dat Id, speed in world units per second, whether it is lobbed at
+    /// the aim, collision radius in cells). Speed is the row's ProjectileSpeed; <c>Lobbed</c> flights land where they were
+    /// aimed and damage an area there.</summary>
+    public sealed record MonsterProjectileInfo(string Metadata, int Speed, bool Lobbed, double CollisionRadius);
+
+    /// <summary>The projectile of a monster's granted effect: for a mortar skill (ActiveSkills Id <c>monster_mortar*</c>)
+    /// the GrantedEffects row's SkillID is the MonsterMortar row that names it (every Sand Spitter variant: SkillID 183 →
+    /// MonsterMortar 183 → <c>Metadata/Projectiles/SandspitterMortarProjectile</c>, 1170). Weapon projectile attacks
+    /// (<c>monster_projectile_weapon</c>, <c>monster_snipe</c>: SkillID 0 for all) take their projectile from the monster's
+    /// weapon art, which is not resolved here: null, and such a monster keeps its instant contact.</summary>
+    public MonsterProjectileInfo? MonsterProjectile(int effectRow) =>
+        _monsterProjectiles.Value.TryGetValue(effectRow, out var projectile) ? projectile : null;
+
+    private readonly Lazy<Dictionary<int, MonsterProjectileInfo>> _monsterProjectiles = new(() =>
+    {
+        string TablePath(string name) => Path.Combine(folder, "tables", name + ".json");
+        var result = new Dictionary<int, MonsterProjectileInfo>();
+        if (!File.Exists(TablePath("GrantedEffects")) || !File.Exists(TablePath("ActiveSkills"))
+            || !File.Exists(TablePath("MonsterMortar")) || !File.Exists(TablePath("Projectiles"))) return result;
+        using var projectiles = JsonDocument.Parse(File.ReadAllBytes(TablePath("Projectiles")));
+        var rows = projectiles.RootElement.EnumerateArray().Select(r => (
+            Id: r.TryGetProperty("Id", out var id) ? id.GetString() ?? "" : "",
+            Speed: r.TryGetProperty("ProjectileSpeed", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetInt32() : 0,
+            Radius: r.TryGetProperty("CollisionRadius", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 1)).ToList();
+        using var mortars = JsonDocument.Parse(File.ReadAllBytes(TablePath("MonsterMortar")));
+        var mortarRows = new Dictionary<int, int>();
+        foreach (var r in mortars.RootElement.EnumerateArray())
+            if (r.TryGetProperty("Id", out var id) && id.ValueKind == JsonValueKind.Number
+                && r.TryGetProperty("Projectile", out var p) && p.ValueKind == JsonValueKind.Number)
+                mortarRows.TryAdd(id.GetInt32(), p.GetInt32());
+        using var active = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkills")));
+        var mortarSkills = active.RootElement.EnumerateArray().Select((r, i) => (r, i))
+            .Where(a => a.r.TryGetProperty("Id", out var id) && id.GetString() is { } name
+                && name.StartsWith("monster_mortar", StringComparison.Ordinal))
+            .Select(a => a.i).ToHashSet();
+        using var effects = JsonDocument.Parse(File.ReadAllBytes(TablePath("GrantedEffects")));
+        int row = -1;
+        foreach (var e in effects.RootElement.EnumerateArray())
+        {
+            row++;
+            if (!e.TryGetProperty("ActiveSkill", out var a) || a.ValueKind != JsonValueKind.Number || !mortarSkills.Contains(a.GetInt32())) continue;
+            if (!e.TryGetProperty("SkillID", out var k) || k.ValueKind != JsonValueKind.Number
+                || !mortarRows.TryGetValue(k.GetInt32(), out int projectile) || projectile < 0 || projectile >= rows.Count) continue;
+            var p = rows[projectile];
+            if (p.Id.Length == 0 || p.Speed <= 0) continue;
+            result[row] = new(p.Id, p.Speed, Lobbed: true, Math.Max(1, p.Radius));
+        }
+        return result;
+    });
+
     // The highest level at or below `level` among rows with this key, else the lowest; -1 when none.
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<List<(int Key, int Level)>, Dictionary<int, int[]>> RowsByKey = new();
 

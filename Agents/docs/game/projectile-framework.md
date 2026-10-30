@@ -92,8 +92,15 @@ Native description templates choose the wording and visibility.
 
 `ProjectilePresentation` supplies flight mesh/clip, second-form clip and event effects. Non-gem sources may
 supply presentation directly through `ProjectileOffense`. The common host owns object lifecycle, terrain
-height, arcs, redirects and effect cleanup. Core actor/team contracts are source-neutral; the current Gateway
-damage adapter targets monsters. Live hostile projectile adapters remain unimplemented.
+height, arcs, redirects and effect cleanup. Core actor/team contracts are source-neutral. The Gateway has two
+damage adapters: the player's shots hit monsters, and a monster's shot (`HostileProjectileOffense`, team 2:
+`Program.ProjectileHostile.cs`) hits the player through the monster's own contact pipeline, as a mortar landing on
+the aimed cell with a splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells) or a straight shot's first contact.
+Monster projectiles are known for mortar skills (`SkillCatalog.MonsterProjectile`); weapon-projectile skills still
+hit instantly at half the attack time. Objects are created at the release point and their first move runs from
+there; the visual trails the simulation by the output delay and catches up at the stop. A flight that has already
+ended when its creation snapshot runs is still created when its stop keeps the object (impact clip, stuck arrow), so
+a short shot on a busy connection appears at its impact instead of not at all; other ended flights are skipped.
 Area event effects use the actual event radius and the selected art's exported radius to set uniform native scale.
 Both callback and payload effects use this conversion; art without a known radius keeps its native scale.
 Endpoint logs include the stop reason, position and projectile-grid state; area logs include art, radius and scale.

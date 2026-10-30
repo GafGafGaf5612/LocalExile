@@ -12,6 +12,14 @@ partial class Program
         ImpactLifetime = ProjectileRuntime.Time(OrdinaryRangedAttack.WandImpactSeconds),
     };
 
+    // DefaultArrow's rig has no impact clip (Projectiles.dat gives it stuck and bounce art the client plays only for its own
+    // arrows): the stopped arrow object stays in its target or wall for a second, then goes.
+    internal static readonly ProjectilePresentation OrdinaryArrowPresentation = new()
+    {
+        StayOnImpact = true,
+        ImpactLifetime = ProjectileRuntime.Time(OrdinaryRangedAttack.ArrowStuckSeconds),
+    };
+
     // An ordinary bow or wand shot on the shared runtime. The release waits for the weapon's contact (attack1_bow, or
     // the ACT-selected wand clip for this input's sequence), then freezes damage, chance and multiplier; conditional
     // critical rules read the live owner at impact, and target evasion and impales resolve at contact.
@@ -45,7 +53,9 @@ partial class Program
                     AccuracyMoreUnique = conn.Pools.AccuracyMoreVsUniquePct, AccuracyMoreClose = conn.Pools.AccuracyMoreInCloseRangePct,
                     AlwaysHits = Get("global_always_hit") != 0, FarShot = Get("player_far_shot") != 0,
                     ReturnMultiplier = ProjectileReturn.DamageMore(Get),
-                    Presentation = wand ? OrdinaryWandPresentation : null };
+                    Presentation = wand ? OrdinaryWandPresentation : OrdinaryArrowPresentation,
+                    // The target's blood and particles on contact, matched to this shot's action (0x1af, kind 3).
+                    HitPacket = true, ActionSequence = sequence };
                 var ranged = SkillsFor(conn).Projectile(projectileId);
                 double speed = ProjectileSpeed.CellsPerSecond(ranged?.Speed ?? 3260, Get, _ => 0,
                     Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));

@@ -638,6 +638,17 @@ and can require explicit recipes.
   contact (`attack1_bow`, or the wand clip the native ACT selects for the input's sequence) and the action echo follows
   it; a cancelled action, death, freeze or hit recovery releases nothing. The wand bolt plays its rig's impact clip where
   it stops and is removed after that clip on the same game clock, so pause holds it and a transfer drops the removal.
+  The arrow stays a second where it hit (`ArrowStuckSeconds`) before removal. Both send `0x1af` (kind 3, the shot's
+  action sequence, flags 0x4001 plus the critical bit, code by damage type) on contact for the target's blood and
+  particles. Projectile objects are created at their release point and their first move runs from there: the lazy
+  snapshot used to create them where the simulation already had them, one to ten cells past the bow in a live log
+  (2026-10-29). A Frida trace the same day saw the client create no projectile of its own for the default attack
+  (40 arrows) nor for a monster's action, so these server objects are the only visible shots.
+  Monster projectiles: a mortar skill's shot (Sand Spitter, `monster_mortar_attack` via GrantedEffects SkillID →
+  MonsterMortar → Projectiles) is a server object on the same runtime, lobbed at the player's cell at the attack's
+  halfway point, team 2, and its landing splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells) runs the monster
+  contact pipeline (`HostileProjectileOffense`, `Program.ProjectileHostile.cs`). Weapon-projectile monsters
+  (`monster_projectile_weapon`, SkillID 0) still hit instantly with no shot; see the roadmap.
   Wand main-hand variation follows each class ACT pool and the native input-seeded selector; sixteen actual ground
   inputs covered all four Witch clips with matching selection and an object input also matched (historical LocalExile
   evidence on the earlier flight loop; the runtime path still needs a native recheck). Complete off-hand timing/damage
@@ -722,7 +733,8 @@ and can require explicit recipes.
   Incoming ordinary monster basic-contact ailments now have runtime and Gateway coverage:
   critical fire ignite, cold chill/freeze and critical lightning shock, with avoidance, expiry, immunity, lethal ignite/ES and freeze action cancellation.
   Native checks verify real monster ignite/avoidance, lethal death-panel/checkpoint behavior and nonlethal RF.
-  Alternative ailments and hostile spell/projectile adapters remain unimplemented.
+  Alternative ailments and hostile spell adapters remain unimplemented; monster mortar shots land through the same
+  contact pipeline ("Monster projectiles" below).
   See [Gambler](../docs/game/gambler.md) for the exact bounded scope.
   Unconditional penetration works on the player's outgoing hits (general per-element and elemental stats, the
   attack-only variants, the cannot-penetrate flag; DoT and physical take none).
