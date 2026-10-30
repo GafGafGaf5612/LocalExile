@@ -111,26 +111,18 @@ static class CurrencyEffects
 
     public const string FracturingOrb = "Metadata/Items/Currency/CurrencyFractureRare";
 
-    /// <summary>Fracturing Orb (as the official one): a rare item with at least four explicit mods, not corrupted and not
-    /// fractured yet, has one random explicit mod fractured: it moves to the front of the explicits and from then on no
-    /// currency removes or changes it (Scouring, Chaos, Annulment, Divine, Vaal …).</summary>
-    public static Item? Fracture(Item item, Random random)
-    {
-        var explicits = item.Mods.Select((m, i) => (m, i)).Where(p => p.m.Section == ModSection.Explicit).ToList();
-        if (item.Rarity != ItemRarity.Rare || item.Corrupted || item.FracturedCount > 0 || explicits.Count < 4) return null;
-        var (mod, index) = explicits[random.Next(explicits.Count)];
-        var mods = item.Mods.Where((_, i) => i != index).ToList();
-        mods.Insert(explicits[0].i, mod);
-        return item with { Mods = mods, FracturedCount = 1 };
-    }
+    /// <summary>Fracturing Orb (as the official one): a rare item with at least four explicit mods, not corrupted,
+    /// mirrored or fractured yet, on a base and class the game allows to fracture, has one random explicit mod
+    /// fractured: it moves to the front of the explicits and from then on no currency removes or changes it (Scouring,
+    /// Chaos, Annulment, Divine, Vaal …).</summary>
+    public static Item? Fracture(Item item, ItemRolls rolls, Random random) => rolls.Fracture(item, random);
 
     public const string MirrorOfKalandra = "Metadata/Items/Currency/CurrencyDuplicate";
 
-    /// <summary>Mirror of Kalandra (as the official one): a mirrored copy of an item that is neither corrupted nor
-    /// mirrored, with every property kept (mods and their values, fractured mods, quality, sockets, links, socketed gems,
-    /// name). The original stays as it was. Null when the item cannot be mirrored.</summary>
-    public static Item? Mirror(Item item) =>
-        item.Corrupted || item.Mirrored || !item.Components.Contains("Mods") ? null : item with { Mirrored = true };
+    /// <summary>Mirror of Kalandra (as the official one): a mirrored copy of a non-unique equipment item that is neither
+    /// corrupted nor mirrored, with every property kept (mods and their values, fractured mods, quality, sockets, links,
+    /// socketed gems, name). The original stays as it was. Null when the item cannot be mirrored.</summary>
+    public static Item? Mirror(Item item, ItemRolls rolls) => rolls.Mirror(item);
 
     public const string GemcuttersPrism = "Metadata/Items/Currency/CurrencyGemQuality";
 
