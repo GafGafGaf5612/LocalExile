@@ -202,6 +202,8 @@ Interceptor.attach(addresses.loginWriter, {onEnter(args) {
   const data = Memory.allocUtf8String(value.account);
   assignText(args[0].add(0x10), data, unescape(encodeURIComponent(value.account)).length);
   args[0].add(0x34).writeByteArray(value.digest);
+  // AccountLogin +0x95 selects saved-token verification. This request supplied a password digest instead.
+  args[0].add(0x95).writeU8(0);
   value.digest.fill(0); loginSubmitted = true;
 }});
 rpc.exports.command = request => new Promise((resolve, reject) => {

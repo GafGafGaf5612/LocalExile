@@ -16,6 +16,11 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Dev account service: register, log in, create characters (JSON-lines over TCP).
   Code: `GameServer.Host`, `GameServer.DevClient`.
   Docs: [dev-server.md](../docs/dev-server.md).
+- Client control distinguishes explicit password login from a remembered native form submission.
+  Password replacement clears the outgoing saved-credential flag and retains the Remember Password preference.
+  A remembered-form regression reaches character selection through normal Auth; saved-login preservation is mocked.
+  Code: `scripts/dev/client-control.js`, `scripts/dev/test-client-login-writer.cjs`.
+  Docs: [client control](../docs/dev/client-control.md).
 
 ## Partly working
 
