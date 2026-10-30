@@ -264,6 +264,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Live 2026-10-25: gains when hit, on non-critical hit and on kill, refresh, expiry, death, area change, minimum
   charges, 3 Power Charges taking attack crit 8.3% → 20.75%, a Frenzy Charge shortening the attack, 3 Endurance
   Charges taking 12% off physical and fire hits; towns draw no charge icons.
+  Replica Fragility, Replica Pacifism and Replica Powerlessness ("Lose ... Charge each second", the stat stored as
+  `-1`) take one charge each second down to the minimum: the negative count used to be skipped, so nothing happened.
   The maximum rows (with the maximum-charge mods) were verified on the native Charges tab at `0 / 3` before this;
   the current counts there and Enduring Cry and the timed gains are not live-checked.
   Code: `Charges.cs`, `ChargeGains.cs`, `ChargeEffects.cs`, `ChargeSession.cs`, `ChargeBuffs.cs`,

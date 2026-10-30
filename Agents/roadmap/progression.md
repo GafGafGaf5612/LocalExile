@@ -12,6 +12,9 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
 - **Known:** gold respec at Bestel (C→S 0x36 / 0x37) and masteries (0x35) work.
 - **Known:** refunds with refund points (0x36 flag 0; 0x33's first u16) work;
   Orbs of Regret (right-click, 0x58) add them.
+- **Known:** the ordinary tree's 21 large jewel sockets accept ordinary, magic and rare jewels (pane placement,
+  save/load, global mods, refund guard); unique jewels use the same path but have no item source yet.
+  See [unique-jewels.md](unique-jewels.md) for the 185-entry catalogue and the phased unique-jewel plan.
 - **Accuracy Mastery:** all five effects currently offered by the target client's Accuracy group are modelled
   for the existing default-attack accuracy roll ([Status](../status/skills-and-combat.md),
   [11](../docs/protocol/11-skills.md) §4–5): Accuracy = Intelligence, +3 per Dexterity instead of +2, +500 / -2 per
