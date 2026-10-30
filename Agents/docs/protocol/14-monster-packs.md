@@ -81,14 +81,47 @@ and the bonfire rooms (`bonfire1`–`6.arm`, scattered by the master's `FillTile
 So:
 
 1. `scripts/re/atlas` with `room-points` writes `data/room-points.json`: per area, the rooms of its RoomSet and
-   FillTiles that have `mapboss`, `mapboss<n>` or `%area%-…` points, with the points and the room's doodads (room
+   FillTiles that have boss points (below) or `%area%-…` points, with the points and the room's doodads (room
    cells). The room sets of the sub-graphs a graph embeds (nodes tagged `graph`, a graph file or a FileGroups group)
    count too: The Upper Prison's graph is only two sub-graphs, "Prison" and "Warden" (Brutus), and The Cavern of
    Anger embeds Merveil's arena (`_cave_river_boss1.dgr`). Before manifest version 5 these areas had no boss rooms.
-   `mapboss` takes any of WorldAreas `Bosses_MonsterVarietiesKeys`, `mapboss<n>` the n-th: The Upper Prison has the
-   Necromancer at `mapboss1` (`special_necroboss1`) and Brutus at `mapboss2` (the `boss_cells_*` rooms before his
-   arena), The Cavern of Anger the sea witch at `mapboss1` and Merveil at `mapboss2` (`river_boss_1a`), The Ledge the
-   totem at `mapboss1` and the goatman at `mapboss2` (`camp`).
+   The boss points the room files write (`AreaPopulation.BossPoint`; version 6 keeps them all): `mapboss<n>` is the
+   n-th of WorldAreas `Bosses_MonsterVarietiesKeys` (The Upper Prison: the Necromancer at `mapboss1`, Brutus at
+   `mapboss2` in the `boss_cells_*` rooms before his arena; The Cavern of Anger: the sea witch and Merveil; The Grain
+   Gate: `mapboss1` … `mapboss7`, the seven Gemling Legionnaires; The Harvest: Malachai `mapboss1`, his second form
+   `mapboss2` in the inner room, Doedre/Maligaro/Shavronne `mapboss3`-`5` at the organs), `mapboss<n>&<m>` two of them
+   (maps), with or without a `WG` suffix (Prisoner's Gate's `bossphase1/2` rooms: `mapboss1WG` Abberath, `mapboss2WG`
+   his second form; The Oasis: `mapboss1WG` Shakari in the Sand Pit, `mapboss2` her second form in the Swallowing
+   Sands). `mapboss`, `force:mapboss` (Kitava's arenas, The Cathedral Rooftop and The Feeding Trough), `mapbosspack`
+   (The Toxic Conduits) and `mapbossWG` take the area's bosses no other point took. Not used: `mapboss-<variety>`
+   (Shaper guardian maps) and the league points `mapbosswarband…`, `mapbossexilepack`. Before version 6 only `mapboss`
+   and `mapboss<n>` were kept, and neither Kitava, Shakari, Abberath nor the Lingering Aberrations had a point.
+   **Which boss stands where** (`AreaPopulation.Plan`): each boss once. First the numbered points take theirs (a boss
+   whose number two placed rooms carry stands at the first). Then the named packs: a pack's own boss
+   (`BossMonster_MonsterVarietiesKeys`, at its `BossMonsterSpawnChance`) comes with it, unique when it is one of the
+   area's bosses (The Mines Level 1's `%area%-minerhammerbosspack`: Pikerivet; The Crystal Veins'
+   `minerlanternbosspack`: The Burning Man); before, named packs never brought their boss. Last, one of the plain points
+   (picked at random when several rooms with one are placed) takes every boss still left, side by side: The Den (Act 7)
+   has The Great White Bones with The Bone Sculptor, The Solaris Temple Level 1 both seals, The Toxic Conduits its five
+   Lingering Aberrations. Before, a plain point took one boss at random (The Ashen Fields: Greust one time in four)
+   and every placed plain room took one more. A boss whose point is off the walk map (Kitava in his pit, Arakaali in
+   her web, Doedre the Vile at her cauldron) stands on the nearest free walkable cell within 60 cells; before, it was
+   silently left out. A boss's **later form** is not placed with the area (`AreaPopulation.LaterForms`, marked
+   `AreaPacks.Absent`): a later Bosses row with an earlier row's name whose Id is that row's Id + "2" (Prisoner's
+   Gate's Abberath2 at `mapboss2WG`, The Oasis's Shakari2 at `mapboss2`, The Harvest's MalachaiBoss2 at `mapboss2`: the
+   official fight brings it when the first form flees or falls; bosses that only share a name, The Mud Flats' Forgotten
+   Warriors or The Grain Gate's Gemling Legionnaires, are separate), and The Rotting Core's Depraved Trinity, which forms in
+   the Black Heart once Doedre, Darksoul, Maligaro, The Broken and Shavronne, Unbound are dead. A quest or the fight
+   creates them; before, they stood from the start beside the first form. The area's `bosspack` stands once: at its own
+   `%area%-bosspack` points when the layout has them, else at the first boss point; before, every boss point added one
+   (The Cavern of Anger, The Dried Lake, The Lunaris Temple Level 2 up to three times).
+   **Not placed** (the check below lists them with the reason): Marceus the Defaced (The Marketplace) is a tile's
+   statue spawner (`Spawner_StoneStatueLargeMaleBoss`) that wakes as the player comes near, and tile spawners are not
+   among the generated quest objects (`AreaObjects.QuestTypes`); The Solaris Temple Level 2's three Banners have their
+   point only in `tencent_lunaris_boss_1.arm`, a room the layouts never place (the area's unique is The Goddess of
+   Purity, a gold statue spawner); Thistlesage's pack `1_3_15-bosspack` is named by no room or tile of The Imperial
+   Gardens' room set. The areas the Gateway does not generate (The Crossroads, The Twilight Strand, The Karui Fortress,
+   The Southern Forest of Act 6) have their boss points only with a recorder capture.
    Rooms with a quest server object (an NPC, a `Metadata/QuestObjects/` object or a quest chest; lore objects under
    `Metadata/NPC/Info/` excepted, `RoomFile.IsQuestObject`) are kept too, without any point (version 4): Fairgraves'
    ship, Piety's room in The Upper Prison, the blocked road at Prisoner's Gate, so quests find their objects
@@ -119,7 +152,8 @@ The Coast seed 1 (live): `scavenger_camp_2a` at (1241, 598) turned [0 −1; 1 0]
 its `cannibalfire` (1173, 679); 8 bonfire rooms (12/12 or 21/21 doodads). The doodad angles agree (room angle + π/2).
 Fire Fury stands at `mapboss`, about 30 cells from the campfire, with `1_1_2-bosspack` around her.
 The Tidal Island seed 1 (live 2026-10-25): `medicine_boat_1` captured at (138, 345), code 3; Hailrake stands at its
-`mapboss` (265, 437) on the shipwreck, with `1_1_2a-bosspack` there and at `%area%-bosspack` (292, 420).
+`mapboss` (265, 437) on the shipwreck, with `1_1_2a-bosspack` at the room's `%area%-bosspack` (292, 420) (until the
+boss pack stood once per area, a second one stood at `mapboss`).
 
 ## 4. Open
 

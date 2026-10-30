@@ -20,18 +20,25 @@ public sealed class BossRoomPointsTests : IDisposable
     static List<AreaPopulation.Spawn> Plan(PackCatalog.AreaPacks area, params AreaPopulation.RoomPoint[] points) =>
         AreaPopulation.Plan(area, 400, 400, (_, _) => true, (0, 0), [], points, 1, _ => true, []);
 
+    // "" = any boss no other point takes; null = not a boss point; else the 1-based places in WorldAreas Bosses.
     [Theory]
-    [InlineData("mapboss", null)]
-    [InlineData("mapboss1", 0)]
-    [InlineData("mapboss2", 1)]
-    [InlineData("mapboss12", 11)]
-    [InlineData("mapbossx", -1)]
-    [InlineData("default", -1)]
-    public void Boss_points_name_their_place_in_the_list(string name, int? index)
-    {
-        int? expected = index switch { null => 0, -1 => null, int i => i + 1 };
-        Assert.Equal(expected, AreaPopulation.BossPoint(name));
-    }
+    [InlineData("mapboss", "")]
+    [InlineData("force:mapboss", "")]
+    [InlineData("mapbosspack", "")]
+    [InlineData("mapbossWG", "")]
+    [InlineData("mapboss1", "1")]
+    [InlineData("mapboss2", "2")]
+    [InlineData("mapboss12", "12")]
+    [InlineData("mapboss1WG", "1")]
+    [InlineData("mapboss3&4", "3,4")]
+    [InlineData("mapbossx", null)]
+    [InlineData("mapboss0", null)]
+    [InlineData("mapbosswarbandfire", null)]
+    [InlineData("mapboss-Metadata/Monsters/Kaom/KaomMapBossShaper", null)]
+    [InlineData("%area%-bosspack", null)]
+    [InlineData("default", null)]
+    public void Boss_points_name_their_place_in_the_list(string name, string? places) =>
+        Assert.Equal(places?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray(), AreaPopulation.BossPoint(name)?.ToArray());
 
     [Fact]
     public void Numbered_boss_points_take_their_own_boss()
@@ -50,6 +57,104 @@ public sealed class BossRoomPointsTests : IDisposable
         var spawns = AreaPopulation.Plan(Area(11), 400, 400, (_, _) => true, (0, 0), [], [new("mapboss2", 10, 10)], 1, _ => true, notes);
         Assert.Empty(spawns);
         Assert.Contains(notes, n => n.Contains("mapboss2"));
+    }
+
+    [Fact]
+    public void A_plain_boss_point_takes_every_boss_left_once()
+    {
+        // The Den (Act 7): Bosses [The Great White Bones, The Bone Sculptor] and one "mapboss": both stand there, where one
+        // of them was picked at random before. The Toxic Conduits' "mapbosspack": its five Lingering Aberrations.
+        var spawns = Plan(Area(11, 22), new AreaPopulation.RoomPoint("mapboss", 100, 100));
+        Assert.Equal([11, 22], spawns.Select(s => s.Variety).Order());
+        Assert.All(spawns, s => Assert.True(Math.Abs(s.X - 100) <= 9 && Math.Abs(s.Y - 100) <= 9));
+        Assert.Equal(5, Plan(Area(7, 7, 7, 7, 7), new AreaPopulation.RoomPoint("mapbosspack", 50, 50)).Count(s => s.Variety == 7));
+        // Two plain points (The Den's treasure room and golden chest room both placed): still one of each boss, together.
+        var two = Plan(Area(11, 22), new("mapboss", 100, 100), new("force:mapboss", 300, 300));
+        Assert.Equal([11, 22], two.Select(s => s.Variety).Order());
+        Assert.Single(two.Select(s => s.X > 200).Distinct());
+    }
+
+    [Fact]
+    public void Numbered_points_go_first_and_a_plain_point_takes_only_the_rest()
+    {
+        // The Dread Thicket: Gruthkul at mapboss1, The Dreadstone at mapboss2 (a "WG" suffix reads the same); a plain
+        // "mapboss" room takes no boss (it took a random one before).
+        var spawns = Plan(Area(11, 22), new("mapboss", 10, 10), new("mapboss1WG", 100, 100), new("mapboss2", 200, 200));
+        Assert.Equal([(11, 100, 100), (22, 200, 200)], spawns.Select(s => (s.Variety, s.X, s.Y)));
+        // A repeated mapboss1 (two balcony rooms placed) does not make a second boss; "mapboss2&3" takes two.
+        var sceptre = Plan(Area(1, 2, 3), new("mapboss1", 10, 10), new("mapboss1", 50, 50), new("mapboss2&3", 100, 100));
+        Assert.Equal([1, 2, 3], sceptre.Select(s => s.Variety));
+        // The rest at the plain point: the Upper Sceptre's balcony boss is numbered, the others are not.
+        var rest = Plan(Area(1, 2, 3), new("mapboss", 300, 300), new("mapboss2", 100, 100));
+        Assert.Equal([(2, true), (1, false), (3, false)], rest.Select(s => (s.Variety, s.X < 200)));
+    }
+
+    [Fact]
+    public void A_named_pack_brings_its_unique_boss_once()
+    {
+        // The Mines Level 1: "%area%-minerhammerbosspack" (Miners, BossMonster Pikerivet at 100 %), and Pikerivet is the
+        // area's boss: he stands in his pack, unique, and a plain point does not add a second one.
+        var pack = new PackCatalog.Pack(0, "9_9_9-minerhammerbosspack", 2, 2, 100, 1, [33], [(44, 100)], new Dictionary<int, int>());
+        var area = new PackCatalog.AreaPacks("9_9_9", 9, [], new Dictionary<string, PackCatalog.Pack> { ["minerhammerbosspack"] = pack }, [33]);
+        var spawns = AreaPopulation.Plan(area, 400, 400, (_, _) => true, (0, 0), [],
+            [new("%area%-minerhammerbosspack", 100, 100), new("mapboss", 300, 300)], 1, _ => true, []);
+        Assert.Equal((33, MonsterRarity.Unique), spawns.Where(s => s.Variety == 33).Select(s => (s.Variety, s.Rarity)).Single());
+        Assert.Equal(2, spawns.Count(s => s.Variety == 44 && s.Rarity == MonsterRarity.Normal));
+    }
+
+    [Fact]
+    public void The_boss_pack_stands_once_per_area()
+    {
+        // The Dried Lake: Voll at mapboss1, Nightwane at mapboss2, and its bosspack: once, at the first boss point (before,
+        // at every boss point).
+        var guards = new PackCatalog.Pack(0, "9_9_9-bosspack", 3, 3, 0, 0, [], [(44, 100)], new Dictionary<int, int>());
+        var area = new PackCatalog.AreaPacks("9_9_9", 9, [], new Dictionary<string, PackCatalog.Pack> { ["bosspack"] = guards }, [11, 22]);
+        var spawns = AreaPopulation.Plan(area, 400, 400, (_, _) => true, (0, 0), [], [new("mapboss1", 100, 100), new("mapboss2", 300, 300)], 1, _ => true, []);
+        Assert.Equal(3, spawns.Count(s => s.Variety == 44));
+        Assert.All(spawns.Where(s => s.Variety == 44), s => Assert.True(s.X < 200));
+        // The Cavern of Anger has "%area%-bosspack" points of its own: the boss points add none.
+        var own = AreaPopulation.Plan(area, 400, 400, (_, _) => true, (0, 0), [],
+            [new("mapboss1", 100, 100), new("mapboss2", 300, 300), new("%area%-bosspack", 200, 50)], 1, _ => true, []);
+        Assert.Equal(3, own.Count(s => s.Variety == 44));
+        Assert.All(own.Where(s => s.Variety == 44), s => Assert.True(Math.Abs(s.X - 200) <= 9 && Math.Abs(s.Y - 50) <= 9));
+    }
+
+    [Fact]
+    public void A_later_form_is_left_to_its_fight()
+    {
+        // Prisoner's Gate: Bosses [Abberath, Abberath2], one name: the second form waits for its fight (it stood beside
+        // the first, ~300 cells apart, before). The Rotting Core: The Depraved Trinity forms after its three souls die.
+        (string, string)? Variety(int v) => v switch
+        {
+            10 => ("Metadata/Monsters/Abberath/Abberath", "Abberath, the Cloven One"),
+            11 => ("Metadata/Monsters/Abberath/Abberath2", "Abberath, the Cloven One"),
+            20 => ("Metadata/Monsters/UnholyTrio/UnholyTrio", "The Depraved Trinity"),
+            21 => ("Metadata/Monsters/Doedre/DoedreSoul", "Doedre, Darksoul"),
+            30 => ("Metadata/Monsters/Zombies/ZombieGiantSummoningPackMember", "Lingering Aberration"),
+            40 => ("Metadata/Monsters/KaomWarrior/KaomArcherMinion1", "Forgotten Warrior"),
+            41 => ("Metadata/Monsters/KaomWarrior/KaomArcherMinion2", "Forgotten Warrior"),
+            42 => ("Metadata/Monsters/GemlingLegionnaire/GemlingLegionnaireFireball", "Gemling Legionnaire"),
+            43 => ("Metadata/Monsters/GemlingLegionnaire/GemlingLegionnaireEarthquake", "Gemling Legionnaire"),
+            _ => null,
+        };
+        Assert.Equal([1], AreaPopulation.LaterForms(Area(10, 11), Variety).Absent);
+        Assert.Equal([0], AreaPopulation.LaterForms(Area(20, 21), Variety).Absent);
+        // The same variety five times (The Toxic Conduits) is five bosses, not forms.
+        Assert.Empty(AreaPopulation.LaterForms(Area(30, 30, 30, 30, 30), Variety).Absent);
+        // Bosses that only share a name are separate bosses (The Mud Flats' Forgotten Warriors, The Grain Gate's Legion).
+        Assert.Empty(AreaPopulation.LaterForms(Area(40, 41, 42, 43), Variety).Absent);
+        var spawns = Plan(AreaPopulation.LaterForms(Area(10, 11), Variety), new("mapboss1WG", 100, 100), new("mapboss2WG", 300, 300));
+        Assert.Equal([(10, 100, 100)], spawns.Select(s => (s.Variety, s.X, s.Y)));
+    }
+
+    [Fact]
+    public void A_boss_whose_point_is_off_the_walk_map_stands_on_the_nearest_walkable_cell()
+    {
+        // Kitava's "force:mapboss" is in his pit, Arakaali's "mapboss" in her web: the nearest walkable cell (here x >= 120).
+        var notes = new List<string>();
+        var spawns = AreaPopulation.Plan(Area(5), 400, 400, (x, _) => x >= 120, (0, 0), [], [new("force:mapboss", 100, 200)], 1, _ => true, notes);
+        Assert.Equal((5, 120, 200), spawns.Select(s => (s.Variety, s.X, s.Y)).Single());
+        Assert.Contains(notes, n => n.Contains("not walkable"));
     }
 
     [Fact]

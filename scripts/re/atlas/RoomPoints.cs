@@ -11,10 +11,12 @@ namespace Atlas;
 /// </summary>
 static class RoomPoints
 {
-    // "mapboss" takes one of the area's unique bosses; "mapboss1", "mapboss2" … the boss of that place in WorldAreas
-    // Bosses_MonsterVarietiesKeys (The Upper Prison's Brutus, The Cavern of Anger's sea witch).
+    // "mapboss" takes the area's unique bosses no other point takes; "mapboss1", "mapboss2" … the boss of that place in
+    // WorldAreas Bosses_MonsterVarietiesKeys (The Upper Prison's Brutus, The Cavern of Anger's sea witch), "mapboss1&2" two
+    // of them; a "WG" suffix (Prisoner's Gate's Abberath, The Oasis's Shakari), "force:mapboss" (Kitava's arenas) and
+    // "mapbosspack" (The Toxic Conduits' Lingering Aberrations) are boss points too (Gateway AreaPopulation.BossPoint).
     public static bool IsMonsterPoint(string name) =>
-        System.Text.RegularExpressions.Regex.IsMatch(name, "^mapboss[0-9]*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        System.Text.RegularExpressions.Regex.IsMatch(name, "^(?:force:)?mapboss(?:[1-9][0-9]*(?:&[1-9][0-9]*)*|pack)?(?:WG)?$")
         || name.StartsWith("%area%-", StringComparison.OrdinalIgnoreCase);
 
     // "default": where a player starts in the area (The Twilight Strand's washed-up beach, 12-quests.md).
@@ -75,7 +77,7 @@ static class RoomPoints
         }
         File.WriteAllText(output, JsonSerializer.Serialize(new
         {
-            note = "Rooms with monster points (mapboss, %area%-<pack>), default start or tutorial chest spawn points, or quest server objects (NPCs, quest objects and chests): points and doodads in room cells. scripts/re/atlas room-points.",
+            note = "Rooms with monster points (mapboss, mapboss<n>[&<m>][WG], force:mapboss, mapbosspack, %area%-<pack>), default start or tutorial chest spawn points, or quest server objects (NPCs, quest objects and chests): points and doodads in room cells. scripts/re/atlas room-points.",
             areas = areaRooms,
             rooms,
         }, new JsonSerializerOptions { WriteIndented = false }));
