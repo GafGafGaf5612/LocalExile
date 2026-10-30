@@ -589,13 +589,28 @@ partial class Program
 
     // A gem's attribute requirements at its level: each SkillGems percentage through SkillCatalog.GemAttributeRequirement.
     static (int Str, int Dex, int Int) GemAttributeRequirements(ClientState conn, Item gem, ItemCatalog.GemType type, int effect)
+        => GemAttributeRequirements(conn, gem, type, effect, AttributeRequirementsPct(conn));
+
+    static (int Str, int Dex, int Int) GemAttributeRequirements(ClientState conn, Item gem, ItemCatalog.GemType type, int effect, int pct)
     {
         int level = Math.Clamp(ItemsFor(conn).GemLevel(gem), 1, Math.Max(1, type.MaxLevel));
         int needs = SkillsFor(conn).PlayerLevelReq(effect, level);
-        int pct = AttributeRequirementsPct(conn);
         return (ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.StrengthPercent, needs, type.IsSupport), pct),
             ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.DexterityPercent, needs, type.IsSupport), pct),
             ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.IntelligencePercent, needs, type.IsSupport), pct));
+    }
+
+    // The requirements a gem socketed in a worn item adds to that item (the client shows the item red when they are not
+    // met): the level its skill needs at the gem's level, and its attribute requirements. Pure catalog data, so the
+    // equipment resolver can read it before the pools exist.
+    static (int Level, int Str, int Dex, int Int) SocketedGemRequirements(ClientState conn, Item gem, int attributePct)
+    {
+        if (ItemsFor(conn).ByHash(gem.TypeHash) is not { } baseType || ItemsFor(conn).Gem(baseType) is not { } type) return default;
+        int effect = type.Variant(gem.GemVariant).Effect;
+        if (effect < 0) return default;
+        int level = SkillsFor(conn).PlayerLevelReq(effect, ItemsFor(conn).GemLevel(gem));
+        var (str, dex, intel) = GemAttributeRequirements(conn, gem, type, effect, attributePct);
+        return (level, str, dex, intel);
     }
 
     // The value the client's requirement checks compare (virtual_*_for_requirements, 13-items.md §2d): what /set_stat set,
@@ -672,7 +687,7 @@ partial class Program
     // GainGemExperience) and quality. A transfigured or Trarthan gem grants its variant's skill, a Vaal gem its Vaal skill and
     // its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed (GemSkillIds): the client
     // binds skill bar keys by skill id. A gem whose requirements the character does not meet makes its item inactive
-    // (CharacterStatSources), so it grants nothing here; a use that still arrives is refused (GemDisabled).
+    // (EquipmentStatSources), so it grants nothing here; a use that still arrives is refused (GemDisabled).
     static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffects(ClientState conn)
     {
         string name = CharacterName(conn);

@@ -467,12 +467,17 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     }
 
     // Granted effects whose Projectiles.dat row is not named after them, by effect Id. Kinetic Blast's effect is
-    // ClusterBurst (the skill data names no row); it uses the wand attack's projectile at the same 3260 speed.
+    // ClusterBurst (the skill data names no row); it uses the wand attack's projectile at the same 3260 speed. Tornado
+    // Shot's arrow is TornadoShotArrow (2173); without it every use was refused while the client had stopped to shoot,
+    // and the server walked on (live 2026-10-29).
     static readonly Dictionary<string, string> ProjectileFallbacks = new()
     {
         ["KineticBlast"] = "Metadata/Projectiles/WandProjectile",
         ["KineticBlastAltX"] = "Metadata/Projectiles/WandProjectile",
         ["KineticBlastAltY"] = "Metadata/Projectiles/WandProjectile",
+        ["TornadoShot"] = "Metadata/Projectiles/TornadoShotArrow",
+        ["TornadoShotAltX"] = "Metadata/Projectiles/TornadoShotArrow",
+        ["TornadoShotAltY"] = "Metadata/Projectiles/TornadoShotArrow",
     };
 
     /// <summary>A Projectiles.dat row by its Id (<c>Metadata/Projectiles/DefaultArrow</c> for a bow's ordinary attack).</summary>
