@@ -103,7 +103,7 @@ sealed class ModCatalog(string folder = "data", bool ruthless = false, ModRangeP
         return ById(query) ?? _mods.Value.Rows.FirstOrDefault(m => m.Id.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>"SpellDamageOnWeaponImplicitWand1 implicit: spell_damage_+% 10" for logs and /mods.</summary>
+    /// <summary>"SpellDamageOnWeaponImplicitWand1 implicit: spell_damage_+% 10" for logs and /item_mods.</summary>
     public string Describe(ItemMod m) => ByHash(m.Hash) is { } mod
         ? $"{mod.Id} {m.Section.ToString().ToLowerInvariant()}: " + string.Join(", ", mod.Stats.Select((s, i) => $"{s.Id} {(i < m.Values.Count ? m.Values[i] : 0)}"))
         : $"0x{m.Hash:x4} {m.Section.ToString().ToLowerInvariant()}: {string.Join(", ", m.Values)}";

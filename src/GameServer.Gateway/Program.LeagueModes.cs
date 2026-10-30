@@ -12,7 +12,7 @@ partial class Program
     static readonly Lazy<UniqueCatalog> RuthlessUniques = new(() => new(RuthlessItems.Value));
     static readonly Lazy<EssenceCrafting> RuthlessEssences = new(() => new(RuthlessItems.Value, RuthlessRolls.Value));
     static readonly Lazy<HarvestCrafting> RuthlessHarvest = new(() => new(RuthlessItems.Value, RuthlessRolls.Value));
-    static readonly Lazy<ItemDrops> RuthlessDrops = new(() => new(RuthlessItems.Value, RuthlessRolls.Value, ruthless: true));
+    static readonly Lazy<ItemDrops> RuthlessDrops = new(() => new(RuthlessItems.Value, RuthlessRolls.Value, ruthless: true, uniques: RuthlessUniques.Value));
 
     internal static ItemCatalog ItemsFor(ClientState conn) => conn.Ruthless ? RuthlessItems.Value : Items;
     internal static SkillCatalog SkillsFor(ClientState conn) => conn.Ruthless ? RuthlessSkills.Value : Skills;

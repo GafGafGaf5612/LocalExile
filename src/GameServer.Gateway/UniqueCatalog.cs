@@ -70,6 +70,39 @@ sealed class UniqueCatalog(ItemCatalog items, string folder = "data")
         return item with { Mods = mods };
     }
 
+    /// <summary>Ancient Orb ("Reforges a unique equipment as another of the same item class"): another unique of the class,
+    /// by <paramref name="weight"/> (ItemDrops.UniqueWeight: a Mageblood stays rare), keeping the item's level, quality,
+    /// sockets, links and identified state. Corrupted and mirrored items are refused, and corrupted and Replica uniques are
+    /// not results. Our own limit: only uniques of the same inventory size, which can hold its sockets, so the item fits
+    /// where it lies and no socketed gem is lost.</summary>
+    public Item? Reforge(Item item, Func<string, double> weight, Random random)
+    {
+        if (item.Rarity != ItemRarity.Unique || item.Corrupted || item.Mirrored || items.ByHash(item.TypeHash) is not { } current
+            || !ItemDrops.EquipmentClasses.Contains(current.Class)) return null;
+        var candidates = new List<(Definition Definition, double Weight)>();
+        foreach (var definition in All)
+        {
+            if (definition.Corrupted || definition.Name.StartsWith("Replica ", StringComparison.Ordinal)
+                || weight(definition.Name) is not (> 0 and var chance) || items.Find(definition.BaseTypeId) is not { Supported: true } type
+                || type.Class != current.Class || type.Width != current.Width || type.Height != current.Height
+                || !_names.Value.TryGetValue(definition.Name, out var name) || item.NameWords.Contains(name.Word)
+                || item.Sockets.Count > CurrencyEffects.SocketCapacity(item, type)) continue;
+            candidates.Add((definition, chance));
+        }
+        if (candidates.Count == 0) return null;
+        double pick = random.NextDouble() * candidates.Sum(c => c.Weight);
+        var chosen = candidates[^1].Definition;
+        foreach (var (definition, chance) in candidates)
+        {
+            if (pick < chance) { chosen = definition; break; }
+            pick -= chance;
+        }
+        return Create(chosen.Name, random) is { } created ? created with
+        {
+            ItemLevel = item.ItemLevel, Quality = item.Quality, Sockets = item.Sockets, Links = item.Links, Identified = item.Identified,
+        } : null;
+    }
+
     sealed record UniqueName(uint Word, ushort VisualIdentity);
 
     static Dictionary<string, UniqueName> LoadNames(string folder)
@@ -94,6 +127,8 @@ sealed class UniqueCatalog(ItemCatalog items, string folder = "data")
             int wordsKey = r.GetProperty("WordsKey").GetInt32(), visualKey = r.GetProperty("ItemVisualIdentityKey").GetInt32();
             if (!byWord.TryGetValue(wordsKey, out string? name) || visualKey < 0
                 || visualKey >= visuals.RootElement.GetArrayLength()) continue;
+            // A unique can have a second row with its alternate art (Headhunter2.dds); the ordinary art is the item's.
+            if (r.TryGetProperty("IsAlternateArt", out var alternate) && alternate.GetBoolean() && result.ContainsKey(name)) continue;
             result[name] = new(words.RootElement[wordsKey].GetProperty("HASH32").GetUInt32(),
                 (ushort)visuals.RootElement[visualKey].GetProperty("HASH16").GetInt32());
         }

@@ -429,7 +429,7 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data", SystemSettin
     /// <summary>A rare name for this item's base; empty when the base is unknown.</summary>
     public IReadOnlyList<uint> RareName(Item item, Random rng) => catalog.ByHash(item.TypeHash) is { } t ? RareName(t, rng) : [];
 
-    /// <summary>"Dire Bane" from the keys (for logs and /mods).</summary>
+    /// <summary>"Dire Bane" from the keys (for logs and /item_mods).</summary>
     public string NameOf(IReadOnlyList<uint> keys) => string.Concat(keys.Select(k => _words.Value.FirstOrDefault(w => w.Key == k)?.Text ?? $"[{k:x8}]"));
 
     static T Pick<T>(IReadOnlyList<(T Item, int Weight)> choices, Random rng)

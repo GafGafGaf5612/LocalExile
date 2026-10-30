@@ -95,6 +95,8 @@ var listener = new TcpListener(bind, port);
 // sending "leave" for them (their instances would never expire).
 var started = await InstanceControl.CallAsync(new ControlRequest { Op = "gateway_started" });
 if (!started.Ok) Console.WriteLine($"[gateway] Auth did not take gateway_started: {started.Error}");
+// The mods (Mods/Binaries/<id>, Program.Mods.cs), before the first player can use one.
+StartMods();
 listener.Start();
 Console.WriteLine($"[gateway] listening on {bind}:{port}");
 
@@ -244,7 +246,7 @@ sealed partial class Program
     internal static readonly EssenceCrafting Essences = new(Items, Rolls);
     internal static readonly BenchCrafting Bench = new(Items, Rolls);
     internal static readonly HarvestCrafting Harvest = new(Items, Rolls);
-    internal static readonly ItemDrops Drops = new(Items, Rolls, maps: MapDevices.Value.Atlas);
+    internal static readonly ItemDrops Drops = new(Items, Rolls, maps: MapDevices.Value.Atlas, uniques: Uniques);
     // Each live area instance's ground items, across connections (InstanceStore.cs). The lifetime is Auth's
     // InstanceRegistry.Lifetime: the Gateway wipes an instance when Auth would.
     internal static readonly InstanceStore Instances = new(TimeProvider.System, new GameServer.Core.World.InstanceRegistry().Lifetime);

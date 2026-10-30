@@ -132,6 +132,14 @@ if (-not $NoBuild) {
         dotnet build (Join-Path $repo "src\GameServer.$s") -v q -nologo | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "build failed: GameServer.$s (run: dotnet build src\GameServer.$s)" }
     }
+    # The first-party mods (Mods\Source\) into Mods\Binaries\, which the Gateway loads (Agents/docs/dev/modding.md). One that does
+    # not build is left out; the Gateway runs without it.
+    if ($servers -contains 'Gateway') {
+        foreach ($mod in Get-ChildItem (Join-Path $repo 'Mods\Source') -Filter *.csproj -Recurse -ErrorAction SilentlyContinue) {
+            dotnet build $mod.FullName -v q -nologo | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Warning "mod $($mod.BaseName) did not build (run: dotnet build $($mod.FullName)); the Gateway starts without it" }
+        }
+    }
 }
 
 # Long-running processes start through `cmd /c ... > log` rather than Start-Process -RedirectStandardOutput: the
@@ -165,8 +173,9 @@ try {
         if ($servers -notcontains $s) { continue }
         # `dotnet watch` runs the Gateway with this checkout as its working directory, like the plain start, so data\
         # and logs\ resolve the same. --non-interactive restarts it on an edit hot reload cannot apply instead of asking.
-        $command = if ($Watch -and $s -eq 'Gateway') { @('watch', 'run', '--project', "src\GameServer.$s", '--non-interactive', '--') }
-            else { @("src\GameServer.$s\$bin\GameServer.$s.dll") }
+        # @(...): a single value would come out as a string, and `+` would glue 'serve' onto the dll's name.
+        $command = @(if ($Watch -and $s -eq 'Gateway') { @('watch', 'run', '--project', "src\GameServer.$s", '--non-interactive', '--') }
+            else { "src\GameServer.$s\$bin\GameServer.$s.dll" })
         Start-Detached 'dotnet' ($command + $serverArgs[$s]) `
             (Join-Path $out "live-$($s.ToLower()).log") (Join-Path $out "live-$($s.ToLower()).err")
     }

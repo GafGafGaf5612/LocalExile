@@ -30,6 +30,21 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Partly working
 
+- Mods: the Gateway loads each `Mods/Binaries/<id>/` (a `mod.json` and an assembly, after the mods it depends on) into a
+  collectible load context of its own and reloads it, with its dependents, when its folder changes; `/mod`, `/mod_reload`,
+  `/mod_enable` and `/mod_disable` in chat (the last two last across restarts, in `mod-state.txt`).
+  `Mods/Source/` has six examples; only `example` is on by default.
+  Mods see only `GameServer.Modding`: chat commands, the player tick, client messages (a mod may take one), area
+  generated, monster killed, and drop, experience and stat modifiers; a mod that throws is logged and skipped.
+  `live.ps1` builds `Mods\Source\` (the example mod: 100x item quantity, `/example`) into `Mods\Binaries\`.
+  Live: the running Gateway loaded the example mod by itself when it was first built.
+  Unit-tested (`ModHostTests`): every hook, two mods' modifiers together, a reload starting the state over, a
+  dependency arriving later and reloading its dependent, a failed load leaving no hook, the watcher, and the unloaded
+  context being freed.
+  Missing: catalog overrides, and the hooks not yet tried with the client (drops, experience, stats, packets).
+  Code: `src/GameServer.Modding/`, `ModHost.cs`, `ModLoadContext.cs`, `Program.Mods.cs`, `Mods/Source/`.
+  Docs: [modding](../docs/dev/modding.md).
+
 - Read-only passive graph tooling exports pinned 3.29.3b topology and a merged PSG as `data/` analysis artifacts.
   Parsing and merging have automated round-trip, malformed-input and ordinary-tree preservation coverage.
   The exporter refuses modified source graphs and never installs its output into the client archive.

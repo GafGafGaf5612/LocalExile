@@ -165,7 +165,7 @@ empty one; no Mods.dat row has a gap), so the count must match. An unknown hash 
 recognise". After reading, `0x1421ff3c0` adds the "magic" / "rare" tag and gives each list to `0x1421ff8f0` with its
 kind (implicit 1, explicit 2, enchant 3, scourge and hidden without one).
 
-What the tooltip shows (live, 2026-10-20, an Iron Ring with `/mod <list> IncreasedLife1`): implicit under the
+What the tooltip shows (live, 2026-10-20, an Iron Ring with `/item_mod <list> IncreasedLife1`): implicit under the
 properties, enchant above the implicits, explicit below a separator, scourge as orange lines among the explicits
 (Hellscape), hidden not at all. Magic items get their name from the affixes (Healthy Iron Ring); a rare item shows its
 two Words.dat words above the base name (Corruption Gyre / Iron Ring; verified 2026-10-20 that the key is HASH32), or the
@@ -173,9 +173,9 @@ base name without them. Unidentified items show "Unidentified" and their implici
 
 New items roll their BaseItemTypes `Implicit_ModsKeys` (Driftwood Wand: `SpellDamageOnWeaponImplicitWand1`, 8-12%).
 Saves keep rarity, identified and each mod by Mods.dat Id, list and values; an item saved before mods gets its type's
-implicits again. Dev commands on the held item: `/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part>
-[values…]` (missing values rolled, the list defaults from GenerationType), `/mod set [list] <mod> [values…]` (replaces
-an existing mod's roll and keeps the item's other mods), `/mod clear [list]`, `/mods`,
+implicits again. Dev commands on the held item: `/item_mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part>
+[values…]` (missing values rolled, the list defaults from GenerationType), `/item_mod set [list] <mod> [values…]` (replaces
+an existing mod's roll and keeps the item's other mods), `/item_mod clear [list]`, `/item_mods`,
 `/rarity <normal|magic|rare|unique> [unid]`.
 
 ## 2b. Rolling magic and rare items
@@ -364,13 +364,15 @@ The client data has a unique's name (`Words` wordlist 6) and its artwork (`ItemV
 GenerationType 3 and an empty Name. The server therefore curates each unique's mod list (`UniqueCatalog`): base type,
 the mod rows and their value ranges, from the game's data (poedb for 3.29). `/item <unique name>` creates it with the
 name words and artwork, unique rarity and the fixed explicit mods; the base type's implicits are rolled as usual (for
-Mageblood the Heavy Belt's +25-35 Strength). Checked live 2026-10-26: the client shows the Mageblood name, unique art
-and full tooltip. Only Mageblood is defined so far; unique drops, chancing and the other uniques remain open (#60).
+Mageblood the Heavy Belt's +25-35 Strength). A unique's alternate-art row in `UniqueStashLayout` is not its art. Checked live 2026-10-26: the client shows the Mageblood name, unique art
+and full tooltip. Chancing and most uniques' own mechanics remain open (#60).
 
 **Mageblood's mechanic** (`Program.Mageblood`): while the belt is worn (and its requirements met), the leftmost N (2-4,
 from `num_magic_utility_flasks_always_apply`) magic utility flasks in the flask bar constantly apply their effects. The
 stats are added where a running utility flask's stats are added (pools, the client's stats, phasing), scaled like a use
-(the flask's own mods and the character's flask effect/duration), with no charges, timer or buff packets. Magic utility
+(the flask's own mods and the character's flask effect/duration), with no charges or timer. Each such flask keeps its
+buff on the client with no duration (0x1c1 with the flask-bar cell and without bit 1), put on and taken off by a ticker
+(`RunUniqueBeltEffects`, about 4 a second) when the belt or the bar changes, on entering an area and on death. Magic utility
 flasks cannot be used while it is worn: the client enforces the item mod and the server refuses the use as a backstop.
 The character's stats are re-sent when the flask bar changes while it is worn (`PlaceItem`, `HeldOntoItem`, `PickUpItem`)
 and on equipment changes. Live 2026-10-26: placed flasks applied at once, and a flask key did nothing.
@@ -378,8 +380,19 @@ The running effects and the permanent ones are combined before the strongest-per
 already used when the belt went on counts once, not twice, while different effects still stack; the running effects keep
 their own duration and stay after the belt is removed.
 
-Not modelled yet: the flask buff icons/permanent durations, the "Magic Utility Flask Effects cannot be removed" backstop
-(the client enforces it), the Foulborn rightmost variant, and Enkindling/instilling.
+Not modelled yet: the "Magic Utility Flask Effects cannot be removed" backstop (nothing in the server removes a flask's
+effect), the Foulborn rightmost variant, and Enkindling/instilling. How the client draws a flask buff without a duration
+has not been seen live.
+
+**Headhunter's mechanic** (`StolenMods`, `Program.UniqueBelts`): killing a rare monster with
+`gain_rare_monster_mods_on_kill_ms` on the character adds the stats of the rare's rolled affixes (not its rarity's
+`MonsterRare` mods) to the character's stat sources, so pools, speed, damage and the panel read them as they read gear.
+By the project's rule, not the mod's 20 s: each different modifier is one stack lasting 60 s, and getting it again resets its
+time without counting twice. One `stolen_mods_buff` (BuffDefinitions 269) shows them, with the stack count and the longest
+time left, replaced at each change by the same ticker. Death and an area change end them. A stat with no consumer on the
+character does nothing. `damage_+%_vs_rare_monsters` scales the rolled hit of melee, area and projectile contacts
+(`WithDamageVsRarity`): (100 + global increased + the belt's roll) / (100 + global increased), so the hit's other increases are not in
+the sum (slightly above the game's). The loss on an area change is a limit: the game keeps them. Replica Headhunter is not modelled.
 
 ## 3. Inventories with items (S→C 0xc0) and changes (S→C 0xbf)
 

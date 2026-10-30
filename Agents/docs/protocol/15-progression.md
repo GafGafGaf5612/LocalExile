@@ -211,11 +211,15 @@ Regret's way but gives two refund points (ClientStrings `ItemFunction2RespecPoin
 
 ## 3. Loot
 
-`ItemDrops.Roll` (our own table): normal monsters drop 1 item at 35%, magic 1–2, rare 2–4, unique 4–6. Each item is
-currency (45%: Scroll of Wisdom and Portal Scroll most, then the basic orbs, Chaos rarest), a gem (4%: an obtainable gem
-whose DropLevel is at most the monster's level, from `GemSources`, at gem level 1 like a vendor's), a life or mana flask (10%)
-or equipment (41%: any weapon, armour or jewellery base with DropLevel ≤ the monster's level, minus event and league
-bases), item level = the monster's level (gems keep 1), normal, with the type's default sockets. `DropLoot` puts each as a WorldItem
+`ItemDrops.Roll` (our own table): normal monsters drop 1 item at 35%, magic 1–2, rare 2–4, unique 4–6, times the item
+quantity. Each item is currency (35%: Scroll of Wisdom most, down to the Mirror), a gem (4%: an obtainable gem
+whose DropLevel is at most the monster's level, from `GemSources`, at gem level 1 like a vendor's), a life or mana flask (8%)
+or equipment (53%: a weighted slot, then any of its bases with DropLevel ≤ the monster's level, minus unique-only, event
+and league bases), item level = the monster's level, +1 magic, +2 rare, +3 unique (gems keep 1), with the type's default sockets. Equipment then rolls
+unique, rare or magic, raised by item rarity. A unique is chosen among its base's by the inverse of its
+`VillageUniqueDisenchantValues` value (the client's measure of a unique's rarity; `RuthlessValue` in Ruthless); where a
+base's weights add up to less than 1 the rest gives a rare, and a unique outside that table does not drop.
+`DropLoot` puts each as a WorldItem
 ([13](13-items.md) §5) 3–6 cells around the corpse, on a walkable cell when the walk map is known. `Game_DROPS=0` turns
 it off.
 

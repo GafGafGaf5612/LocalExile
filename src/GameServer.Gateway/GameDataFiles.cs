@@ -21,6 +21,7 @@ static class GameDataFiles
         ("data/tables/CraftingItemClassCategories.json", "crafting bench item compatibility"),
         ("data/tables/UniqueMaps.json", "unique map shop identities"),
         ("data/tables/Words.json", "item names"),
+        ("data/tables/VillageUniqueDisenchantValues.json", "unique drop weights"),
         ("data/tables/ItemVisualIdentity.json", "unique map artwork"),
         // object-types manifest v4 combines inherited Life flags with Positioned/Animated collision metadata.
         ("data/object-types.json", "monsters (emergence and inherited Life corpse flags), NPCs, area transitions, stationary collision footprints"),
