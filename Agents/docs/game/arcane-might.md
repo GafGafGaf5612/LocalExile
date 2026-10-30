@@ -149,9 +149,12 @@ The stat layer still supplies resolved spell increased/reduced; no modifier-sour
 | Charged Dash of the Arcane | Key 1655 consumer and mercenary execution excluded; no player-item retirement claim. |
 
 Production-path checks compare independent expected results with damage packets, panels and real target Life loss.
-For KB level 1 (40% effectiveness), fixed 100 chaos with 100% spell increase and 150% Arcane Might yields
-100 chaos plus the wand's scaled physical damage; both direct-only and area-only runtime routes verify Life loss.
+For KB level 1 (140% effectiveness), fixed 100 chaos with 100% spell increase and 150% Arcane Might yields
+350 chaos plus the wand's scaled physical damage; both direct-only and area-only runtime routes verify Life loss, with the explosion alone taking 40% less damage.
 Changing spell increase after capture changes subsequent panels/hits but leaves that released packet unchanged.
+Client acceptance exposed an existing effectiveness decoding error: raw 4000 is +40% above 100%, not 40%.
+The reader now normalizes the offset, matching pinned PoB Export/Scripts/skills.lua lines 311–321.
+Earlier tests and examples that assumed 40% were wrong and have been corrected.
 Local fire is included before effectiveness and support restrictions; Brutality clears both actual and displayed fire.
 No extracted tables, client resources or unrelated integration work are part of this change.
 

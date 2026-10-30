@@ -349,7 +349,9 @@ and can require explicit recipes.
   All 24 inventoried numeric skill constants and three quality records have calculation/data checks.
   Those checks do not enable unsupported skills, variants, mercenaries or Phrecia allocation.
   Iron Will/Strength provenance, missing upstream spell inputs and unrelated leech remain outside this consumer.
-  The new Crown/mastery composition has not been checked in the native client.
+  Native user checks confirm ordinary Crown ratios, KB non-stacking and Fireball isolation in the damage panels.
+  KB's absolute damage exposed an effectiveness-offset decoding error; raw 4000 now resolves to 140%, not 40%.
+  Corrected absolute damage and mastery lifecycle still need native verification.
   See [scope and coverage](../docs/game/arcane-might.md) and [20](../docs/protocol/20-damage.md) §2c.
 - Ruthless resolves native skill/gem, passive and mod alternatives per connection, including zero-valued overrides.
   Ordinary characters in the same Gateway keep ordinary catalogs.

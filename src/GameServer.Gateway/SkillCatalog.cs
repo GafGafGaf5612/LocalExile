@@ -221,10 +221,9 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     }
 
     /// <summary>
-    /// A skill's damage effectiveness at a level (GrantedEffectStatSetsPerLevel DamageEffectiveness, permyriad: Flicker
-    /// Strike 7730 at level 1, 30890 at 20, 69600 at 40): an attack's share of the weapon's damage, the gem's "Deals
-    /// 77.3% of base Attack Damage" line. 0 when its row has none (the default attack) or carries a negative one, which a
-    /// few skills do; callers scale nothing then. A spell's own base damage is already final (see SpellDamage).
+    /// A skill's resolved damage effectiveness in permyriad. The exported value is an offset from 100%:
+    /// Kinetic Blast's 4000 means 14000 (140%), and Cyclone's -1840 means 8160 (81.6%). Missing data returns 0
+    /// for the callers' identity fallback. A spell's own base damage is already final (see SpellDamage).
     /// </summary>
     public int DamageEffectiveness(int effectRow, int level)
     {
@@ -758,7 +757,7 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     // StatSets: each GrantedEffects row's StatSet1 (-1 when none). Effects: per GrantedEffects row its StatSet1 and CastTime.
     // StatSetBase: per GrantedEffectStatSets row its ImplicitStats and (ConstantStats, ConstantStatsValues).
     // StatSetLevelStats: per GESSPL row its (FloatStats, BaseResolvedValues) and (AdditionalStats, AdditionalStatsValues).
-    // Effectiveness: per GESSPL row its DamageEffectiveness (permyriad, the attack's share of the weapon's damage).
+    // Effectiveness: resolved permyriad, 10000 + the GESSPL DamageEffectiveness offset; 0 for missing data.
     // ManaCost: per GEPL row the CostAmounts entry of CostTypes 0 (mana), else 0.
     // Reservations: per GEPL row the ManaReservationFlat and ManaReservationPercent (permyriad), parallel to PerLevel.
     // Cooldowns: per GEPL row its Cooldown (ms) and StoredUses, parallel to PerLevel. VaalSouls: per GEPL row its VaalSouls.
@@ -858,7 +857,10 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
             foreach (var r in s.RootElement.EnumerateArray())
             {
                 setLevels.Add((Int(r, "StatSet"), Int(r, "GemLevel")));
-                effectiveness.Add(Int(r, "DamageEffectiveness"));
+                // PoB Export/Scripts/skills.lua: raw / 10000 + 1. Zero is 100%, negatives are real reductions.
+                effectiveness.Add(r.TryGetProperty("DamageEffectiveness", out var effectivenessValue)
+                    && effectivenessValue.TryGetInt32(out int offset)
+                        ? (int)Math.Clamp(10_000L + offset, 0, int.MaxValue) : 0);
                 int crit = Int(r, "SpellCritChance");
                 spellCritChances.Add(crit >= 0 ? crit : null);
                 levelStats.Add([.. Pairs(Ints(r, "FloatStats"), Ints(r, "BaseResolvedValues")),

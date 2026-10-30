@@ -7,6 +7,28 @@ namespace GameServer.Gateway.Tests;
 public partial class SpellNoDamageTests
 {
     [Theory]
+    [InlineData("KineticBlast", 16, 173, 593)]
+    [InlineData("KineticBlastAltX", 16, 124, 424)]
+    public void Arcane_might_native_fixed_fire_report_uses_full_damage_effectiveness(string effect, int spellIncrease,
+        int withoutWand, int withWand)
+    {
+        using var f = new Fixture(effect, "Driftwood Wand");
+        f.Set("attack_minimum_added_fire_damage", 100);
+        f.Set("attack_maximum_added_fire_damage", 100);
+        f.Set("spell_damage_+%", spellIncrease);
+        Assert.Equal(withoutWand, Value(f.Panel(), "main_hand_minimum_fire_damage"));
+        Assert.Equal(withoutWand, (int)Math.Floor(f.Hit()[DamageType.Fire].Min));
+        var worn = f.Items.Add(PlayerInventories.Helmet, 0, 0,
+            new UniqueCatalog(Program.Items).Create("Crown of Eyes", new Random(3))!);
+        Assert.Equal(withoutWand, Value(f.Panel(), "main_hand_minimum_fire_damage"));
+        f.Set("spell_damage_+%", spellIncrease + 200);
+        Assert.Equal(withWand, Value(f.Panel(), "main_hand_minimum_fire_damage"));
+        Assert.Equal(withWand, (int)Math.Floor(f.Hit()[DamageType.Fire].Min));
+        f.Items.Remove(PlayerInventories.Helmet, worn.Id);
+        Assert.Equal(withWand, Value(f.Panel(), "main_hand_minimum_fire_damage"));
+    }
+
+    [Theory]
     [InlineData("Driftwood Wand", 2)]
     [InlineData("Driftwood Club", 1)]
     public void Arcane_might_wand_mastery_uses_the_active_weapon_and_matches_default_attack_panel(string weapon, double factor)
@@ -121,16 +143,16 @@ public partial class SpellNoDamageTests
         Assert.Equal(130, Program.AttackHit(weapon, Program.CharacterPlayerStats(f.Conn), false)[DamageType.Chaos].Min);
         f.Conn.Passives.Remove(50932);
         f.Set(ArcaneMight.Ratio, 200);
-        Assert.Equal(4000, Program.Skills.DamageEffectiveness(f.Effect, 1));
-        Assert.Equal(56, f.Hit()[DamageType.Chaos].Min); // 100 * 1.4 * 40% effectiveness.
+        Assert.Equal(14000, Program.Skills.DamageEffectiveness(f.Effect, 1));
+        Assert.Equal(196, f.Hit()[DamageType.Chaos].Min); // 100 * 1.4 * 140% effectiveness.
         f.Conn.PlayerStats.Remove(Program.Stats.Key(ArcaneMight.Ratio)!.Value);
-        Assert.Equal(52, f.Hit()[DamageType.Chaos].Min);
-        for (int i = 0; i < 3; i++) Assert.Equal(52, Value(f.Panel(), "main_hand_minimum_chaos_damage"));
+        Assert.Equal(182, f.Hit()[DamageType.Chaos].Min);
+        for (int i = 0; i < 3; i++) Assert.Equal(182, Value(f.Panel(), "main_hand_minimum_chaos_damage"));
         // The character/default attack has no KB-local grant; Crown removal must clear it.
         f.Items.Remove(PlayerInventories.Helmet, restored.Id);
         var actor = Program.CharacterPlayerStats(f.Conn);
         Assert.Equal(100, Program.AttackHit(weapon, actor, false)[DamageType.Chaos].Min);
-        Assert.Equal(52, f.Hit()[DamageType.Chaos].Min);
+        Assert.Equal(182, f.Hit()[DamageType.Chaos].Min);
         Assert.Equal(20, f.Conn.PlayerStats[StatKeys.SpellDamagePct]);
     }
 
@@ -150,25 +172,26 @@ public partial class SpellNoDamageTests
         var use = (ProjectileUse)Method("CaptureGemProjectile").Invoke(null,
             [f.Conn, runtime.Session, f.Skill, gems.Single(g => g.Id == f.Skill), (100, 32)])!;
         var offense = Assert.IsType<ProjectileOffense>(use.Payload);
-        Assert.Equal(4000, Program.Skills.DamageEffectiveness(f.Effect, 1));
-        Assert.Equal(100, offense.Hit[DamageType.Chaos].Min); // 100 * 2.5 * 40% effectiveness.
-        Assert.Equal(100, offense.AreaHit![DamageType.Chaos].Min);
+        Assert.Equal(14000, Program.Skills.DamageEffectiveness(f.Effect, 1));
+        Assert.Equal(350, offense.Hit[DamageType.Chaos].Min); // 100 * 2.5 * 140% effectiveness.
+        Assert.Equal(350, offense.AreaHit![DamageType.Chaos].Min);
+        Assert.Equal(.6, use.Profile.ContactArea!.Multiplier); // Only the secondary explosion takes 40% less.
         // Keep only one existing damage route to make the target's life-loss assertion unambiguous.
         use = use with { Profile = use.Profile with
         {
             Count = 1, Speed = 100, Range = 28, Radius = .1, Pierce = 0,
             DirectDamage = !area, ContactArea = null, Pulse = null, EndEmission = null,
-            EndArea = area ? new("arcane-snapshot-area", 5) : null,
+            EndArea = area ? new("arcane-snapshot-area", 5, Multiplier: .6) : null,
         } };
         f.Set("spell_damage_+%", 0);
-        Assert.Equal(40, f.Hit()[DamageType.Chaos].Min);
-        Assert.Equal(40, Value(f.Panel(), "main_hand_minimum_chaos_damage"));
+        Assert.Equal(140, f.Hit()[DamageType.Chaos].Min);
+        Assert.Equal(140, Value(f.Panel(), "main_hand_minimum_chaos_damage"));
         uint before = f.Target.Life;
         runtime.Release(use);
         runtime.Advance(1);
-        // Driftwood Wand 5-9 physical + 100 chaos, times 2.5 transfer and 40% effectiveness.
-        Assert.InRange(before - f.Target.Life, 105u, 109u);
-        Assert.Equal(100, offense.Hit[DamageType.Chaos].Min);
+        // (5-9 physical + 100 chaos) * 2.5 * 1.4, with 0.6 only on the explosion route.
+        Assert.InRange(before - f.Target.Life, area ? 220u : 367u, area ? 228u : 381u);
+        Assert.Equal(350, offense.Hit[DamageType.Chaos].Min);
     }
 
     [Theory]
@@ -189,8 +212,8 @@ public partial class SpellNoDamageTests
         var resolved = Method("SupportedSkill").Invoke(null, [f.Conn, f.Skill])!;
         var own = (Dictionary<uint, int>)resolved.GetType().GetProperty("Stats")!.GetValue(resolved)!;
         Assert.Equal(150, own.GetValueOrDefault(StatKeys.SkillSpellDamageIncreasesApplyToAttacks));
-        Assert.Equal(support is null ? 52 : 0, f.Hit()[DamageType.Fire].Min);
-        Assert.Equal(support is null ? 52 : 0, Value(f.Panel(), "main_hand_minimum_fire_damage"));
+        Assert.Equal(support is null ? 182 : 0, f.Hit()[DamageType.Fire].Min);
+        Assert.Equal(support is null ? 182 : 0, Value(f.Panel(), "main_hand_minimum_fire_damage"));
     }
 
     [Fact]

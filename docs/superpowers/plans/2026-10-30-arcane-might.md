@@ -67,3 +67,15 @@ Matched two-test comparisons on unchanged main and this branch both passed; the 
 No unrelated timing code was changed. Native acceptance of Crown/mastery/current composition remains pending.
 Full logs and red/green evidence: `logs/arcane-might/` (local, ignored).
 No remote publication, CI integration, deployment or client operation is included in this delivery.
+
+## Native acceptance follow-up: effectiveness decoding
+
+The user's KB49/169 report exposed a baseline reader error, also present in earlier test expectations.
+GESSPL DamageEffectiveness is an offset: normalize to10000+raw permyriad, as pinned PoB's export does.
+KB level1 now uses140%; zero-offset Clustering remains100%; negative offsets remain real reductions.
+Spell base damage stays unchanged; flat added spell damage uses the corrected coefficient.
+The existing shared packet scalar still does not separate weapon BaseMultiplier from added-damage coefficients.
+Regression red8/10 ->green10/10, including realKB/Clustering panels and independently fixed173/593 endpoints.
+The corrected direct/area target-Life regression applies the0.6factor only on secondary explosions.
+Full Release build0warnings/errors; Core353/Data34/Gateway1322 passed. Read-only follow-up review found no findings.
+Native corrected absolute-damage acceptance remains pending. Logs: logs/arcane-might/effectiveness-*.
