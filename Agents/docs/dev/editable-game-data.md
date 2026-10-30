@@ -65,6 +65,40 @@ tables. The server can only create items the client can resolve by an existing h
 | New stat keys or changed stat semantics | **No** | The client and the server's consumers both key behaviour by `Stats.dat` Id/row. This is code, not a data edit. |
 | Stack size, max stack, inventory shape, item class | **No / restricted** | The client's inventory UI and item component reader use their own values. Only change these if the client table is changed too. |
 
+### Candidate lists currently in code
+
+The first slice covers mod ranges and limits. The next candidates, in order of value and safety:
+
+| Candidate | Where | Can move? | Why / what it unlocks |
+|---|---|---|---|
+| Unique item definitions | `UniqueCatalog.Definitions` | **Yes** | Base, mod ids and values for Mageblood, Crown of Eyes and the rest. Uses existing client hashes; makes new uniques editable without a build. |
+| Radius jewel definitions and variants | `RadiusJewelCatalogue.All`, `RingVariants`, `NodeVariants` | **Yes** | 76 jewels, their base/mod/variant/value/limit rows. The limit is already overridable; the definitions are still code. |
+| Non-radius unique jewels | `UniqueJewelCatalogue.Global`, `Special` | **Yes** | 42 global/special jewel definitions generated from PoB; same shape as the radius catalogue. |
+| Threshold jewel definitions | `ThresholdJewelCatalogue.All` | **Yes** | 33 threshold jewels with base, limit and client mods. |
+| Timeless jewel variants | `TimelessJewelCatalog.All` | **Yes** | Six timeless jewels with seed ranges and conqueror versions; the one-jewel limit is already overridable. |
+| Unique jewel art map | `UniqueJewelVisuals.ByName` | **Read-only reference** | Maps an existing unique name to an existing `ItemVisualIdentity` HASH16. Keep it a reference/seed table; a new art hash is client-owned. |
+| Tattoo stat effects | `TattooStats.Entries` | **Yes** | 100 name -> stat/id/value rows. The apply/target/limit mechanics stay code; the effect table is data. |
+| Cluster jewel themes and layouts | `ClusterJewelStats.ThemeStats`, `ClusterJewelLayout.Templates` | **Partly** | Theme stat mappings and layout counts can be data; the allocatable node algorithm stays code. Verify against the client tables first. |
+| NPC shop stock | `NpcShops.Stock`, `GemTabs`, `SellsMaps` | **Yes** | The client names shops but not their stock; this is server content. Also `GemVendorStock.CurrencyIds` and `Vendors`. |
+| NPC/town/stash/hideout placement | `NpcCatalog.Towns`, `Hideout`; `TownNpcs.All`; `StashCatalog.Towns`; `HideoutCatalog.Moved`; `AreaLayouts.OneWayArrivals`, `TownFallback`, `Ids` | **Yes, captured data** | Positions and captured objects; keep the captured seed as the reference and allow DB overrides. Do not change client-owned models/art. |
+| Drop tables and rates | `ItemDrops.Currency`, `EquipmentClasses`, `NotDropped`, `EquipmentRarity` | **Yes** | Server-only loot policy; high value for balance. The drop table can be typed rows with weights, level caps and enabled flags. |
+| Quest flags and World panel pins | `Quests.WorldPanelPins`, `EveryCharacter`, `Quests.All` scripts | **Yes, with care** | Flags and pins are data, but a wrong flag can reveal locked content. Keep the known-good list as the seed. |
+| Vendor recipe edge cases | `VendorRecipes` oil/rune upgrade arrays, `VendorEquipmentRecipes` | **Some** | The main recipe/pricing tables already come from JSON. The small hardcoded oil/rune chains can move; the recipe algorithm stays code. |
+| Gem/utility/monster mapping lists | `GemSources.DropOnlySupports`, `GemSupportDamage.Unconditional`, `UtilityFlasks.Modelled`/`PanelOnly`/`DuringEffect`, `MonsterMods.Modelled`/`Vacuous`/`SelfAuraMods`, `HarvestCrafting.Metamods`, `EssenceCrafting.Columns`, `SkillCatalog.ProjectileFallbacks` | **Yes, later** | These are server mapping tables. Move one typed family at a time with tests; the consumers are code. |
+| Ruthless/league policy lists | `RuthlessGemRules.UnavailableBases`, `UnavailableEffects`; `SingleUseCooldown.Unsupported`; `GemVendorStock` | **Yes, later** | Policy/config, not client data. |
+| Charge/damage/panel rule lists | `ChargeEffects`, `ChargeGains`, `DamageImmunities`, `PanelStats.Sums`, `StatKeys` | **No as raw tables, low priority** | They encode calculation order and stat semantics. A data-driven rule engine would be a separate, tested project. |
+| Protocol and component lists | message ids, `InstanceItems.ComponentOrder`, `BaseComponents`, `PlayerDefaults`, packet layouts | **No** | The client and the server must agree exactly; these are code/protocol, not user settings. |
+| Terrain/RNG tables | `EdgeShaping`, `TileKey`, pathfinder tables, level-generator constants | **No** | Reverse-engineered algorithms; changing them needs a generator gate and baseline, not a settings table. |
+| Client-owned hashes, names, geometry, art, stat keys | `BaseItemTypes`, `Mods`, `Stats`, `Words`, `ItemVisualIdentity`, item components | **No** | A server-only edit desynchronises the client. Keep the extracted JSON as the reference. |
+
+The practical split is:
+
+- **Content catalogues** (uniques, jewels, tattoo effects, shops, drops): move to typed tables, seeded from the current
+  code/JSON, loaded into immutable snapshots.
+- **Server policy** (rates, limits, counts, costs): typed settings with defaults in code and database overrides.
+- **Client protocol** (hash ids, component order, stat keys, packet layouts): never in the settings database.
+- **Algorithms** (damage, charges, level generation): only through a tested data-driven rewrite, not as a list edit.
+
 ### What "custom item" can mean
 
 A custom item can be:
@@ -220,6 +254,9 @@ server process edits the same file later, add a `revision` check or a file-watch
    revision display. Decide the transport before building it; do not make the server parse form data in the hot path.
 6. **Broader settings.** Drop chances, vendor prices, crafting costs and other server-only knobs, one typed provider at
    a time.
+7. **Content catalogues.** Move the code lists above into typed tables in this order: uniques and jewels, tattoo effects,
+   NPC shops and placements, drop tables, then the gem/utility/monster mapping lists. Each move keeps the current
+   numbers as the seed and adds a live comparison test against the old code path.
 
 ## Acceptance checks
 

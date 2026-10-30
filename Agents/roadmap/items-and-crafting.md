@@ -73,6 +73,8 @@ features.
   The client-compatibility boundary, schema and cache plan are in
   [dev/editable-game-data.md](../docs/dev/editable-game-data.md).
   The extracted JSON stays the reference; the database only overrides it.
+  After the templates/admin panel, move the hardcoded content catalogues (uniques, radius/threshold/timeless jewels,
+  tattoo effects, NPC shops, drops) into typed tables, one family per change with a seed from the current code.
 
 ## 5. Project
 
