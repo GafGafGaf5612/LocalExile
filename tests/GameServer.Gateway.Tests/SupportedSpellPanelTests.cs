@@ -6,6 +6,103 @@ namespace GameServer.Gateway.Tests;
 
 public sealed class SupportedSpellPanelTests
 {
+    static readonly SkillCatalog Skills = new();
+    [Fact]
+    public void Item_supports_publish_native_records_and_change_the_same_hit_used_by_the_panel()
+    {
+        using var game = new SpellCharacter();
+        var baseline = game.Read();
+        game.HostMods(("HungryLoopSupportedByIncreasedCriticalStrikes", [-1, 1, 20]));
+        var supported = game.Read();
+        var expected = Skills.FindByRow(0, Program.Supports.Effects.Single(e => e.Id == "SupportIncreasedCriticalStrikes").Row, 20)!;
+        var support = Assert.Single(supported.Skill.Supports);
+        Assert.Equal(expected.EffectsPerLevelRow, support.EffectsPerLevelRow);
+        Assert.Equal(expected.StatSetsPerLevelRow, support.StatSetsPerLevelRow);
+        Assert.True(supported.Get("spell_critical_strike_chance") > baseline.Get("spell_critical_strike_chance"));
+        AssertSpellRows(supported);
+        game.HostMods();
+        var removed = game.Read();
+        Assert.Empty(removed.Skill.Supports);
+        Assert.Equal(baseline.Get("spell_critical_strike_chance"), removed.Get("spell_critical_strike_chance"));
+    }
+
+    [Fact]
+    public void Item_supports_ignore_links_but_duplicate_physical_and_item_supports_do_not_stack()
+    {
+        using var game = new SpellCharacter();
+        game.Socket(("SupportGemAddedColdDamage", 20));
+        var physical = game.Read();
+        game.HostMods(("HungryLoopSupportedByAddedColdDamage", [-1, 1, 20]));
+        var both = game.Read();
+        Assert.Single(both.Skill.Supports);
+        Assert.Equal(physical.Hit.MinTotal, both.Hit.MinTotal, 8);
+        Assert.Equal(physical.Hit.MaxTotal, both.Hit.MaxTotal, 8);
+        game.Unlink();
+        var unlinked = game.Read();
+        Assert.Single(unlinked.Skill.Supports);
+        Assert.Equal(both.Hit.MinTotal, unlinked.Hit.MinTotal, 8);
+        Assert.Equal(both.Hit.MaxTotal, unlinked.Hit.MaxTotal, 8);
+        game.HostMods();
+        Assert.Empty(game.Read().Skill.Supports);
+        Assert.Equal(0, game.Read().Hit[DamageType.Cold].Max);
+    }
+
+    [Fact]
+    public void Screenshot_support_mods_are_filtered_by_skill_compatibility_and_use_the_rolled_level()
+    {
+        using var game = new SpellCharacter("SkillGemHeavyStrike", weaponHost: true);
+        game.HostMods(
+            ("HungryLoopSupportedByIncreasedCriticalStrikes", [-1, 1, 20]),
+            ("HungryLoopSupportedByRuthless_", [-1, 1, 20]),
+            ("HungryLoopSupportedByMultistrike", [-1, 1, 20]),
+            ("HungryLoopSupportedByIncreasedCriticalDamage", [-1, 1, 20]),
+            ("HungryLoopSupportedByWeaponElementalDamage", [-1, 1, 40]));
+        var attack = game.Read();
+        Assert.Equal(5, attack.Skill.Supports.Count);
+        var skills = Skills;
+        int elemental = Program.Supports.Effects.Single(e => e.Id == "SupportElementalDamageWithAttacks").Row;
+        Assert.Contains(attack.Skill.Supports, s => s.EffectsPerLevelRow == skills.FindByRow(0, elemental, 40)!.EffectsPerLevelRow);
+
+        using var spell = new SpellCharacter();
+        spell.HostMods(("HungryLoopSupportedByMultistrike", [-1, 1, 20]),
+            ("HungryLoopSupportedByRuthless_", [-1, 1, 20]));
+        Assert.Empty(spell.Read().Skill.Supports);
+    }
+
+    [Fact]
+    public void Socketed_attack_more_damage_mod_has_a_native_support_record_and_applies_once_to_combat()
+    {
+        using var game = new SpellCharacter("SkillGemCleave", weaponHost: true);
+        var baseline = game.Read();
+        game.HostMods(("WeaponSocketedAttacksDamageFinalUber1_", [40]));
+        var supported = game.Read();
+        Assert.Single(supported.Skill.Supports);
+        Assert.Equal(baseline.Hit.MinTotal * 1.4, supported.Hit.MinTotal, 8);
+        Assert.Equal(baseline.Hit.MaxTotal * 1.4, supported.Hit.MaxTotal, 8);
+    }
+
+    [Fact]
+    public void Local_level_and_quality_apply_to_actual_gems_and_not_virtual_item_supports()
+    {
+        using var game = new SpellCharacter();
+        game.Socket(("SupportGemAdditionalLevel", 3));
+        int baseline = game.Read().EffectiveLevel;
+        game.HostMods(("LocalIncreaseSocketedGemLevel1", [1]),
+            ("LocalIncreaseSocketedSupportGemLevelUniqueTwoHandAxe7", [2]),
+            ("SocketedGemQualityUnique__1", [50]));
+        Assert.True(game.Read().EffectiveLevel > baseline + 1); // Empower itself also gains levels.
+        Assert.Equal(50, game.EffectiveQuality());
+        game.Socket();
+        game.HostMods(("LocalIncreaseSocketedSupportGemLevelUniqueTwoHandAxe7", [2]),
+            ("IncreaseSocketedSupportGemQualityUnique__2", [30]),
+            ("HungryLoopSupportedByIncreasedCriticalStrikes", [-1, 1, 20]));
+        Assert.Equal(1, game.Read().EffectiveLevel);
+        Assert.Equal(0, game.EffectiveQuality());
+        int effect = Program.Supports.Effects.Single(e => e.Id == "SupportIncreasedCriticalStrikes").Row;
+        Assert.Equal(Skills.FindByRow(0, effect, 20)!.EffectsPerLevelRow,
+            Assert.Single(game.Read().Skill.Supports).EffectsPerLevelRow);
+    }
+
     [Theory]
     [InlineData(false, 1599, 2131, 12, 19, 0, 0)]
     [InlineData(true, 75979, 101305, 11, 18, 595, 893)] // added cold at Fireball's 300% effectiveness (11-skills.md)
@@ -179,9 +276,10 @@ public sealed class SupportedSpellPanelTests
         readonly string _active;
         readonly PlayerInventories _items;
         readonly uint _host;
+        readonly byte _hostRow;
         public ClientState State { get; }
 
-        public SpellCharacter(string active = "SkillGemFireball")
+        public SpellCharacter(string active = "SkillGemFireball", bool weaponHost = false)
         {
             TestSaves.Ensure();
             _active = active;
@@ -192,9 +290,11 @@ public sealed class SupportedSpellPanelTests
             var attributes = Program.Items.Mods.All.First(m => m.Stats.Count == 1 && m.Stats[0].Id == "additional_all_attributes");
             _items.Add(6, 0, 0, ItemCatalog.Create(Program.Items.Find("Iron Ring")!) with
                 { Mods = [new(ModSection.Explicit, attributes.Hash, [1000])] });
-            _items.Add(PlayerInventories.Weapon1, 0, 0, ItemCatalog.Create(Program.Items.Find("Rusted Sword")!));
-            _host = _items.Add(PlayerInventories.BodyArmour, 0, 0,
-                ItemCatalog.Create(Program.Items.Find("Plate Vest")!, defenceBaseRoll: 0)).Id;
+            if (!weaponHost)
+                _items.Add(PlayerInventories.Weapon1, 0, 0, ItemCatalog.Create(Program.Items.Find("Rusted Sword")!));
+            _hostRow = weaponHost ? PlayerInventories.Weapon1 : PlayerInventories.BodyArmour;
+            _host = _items.Add(_hostRow, 0, 0,
+                ItemCatalog.Create(Program.Items.Find(weaponHost ? "Rusted Sword" : "Plate Vest")!, defenceBaseRoll: 0)).Id;
             Socket();
         }
 
@@ -210,7 +310,7 @@ public sealed class SupportedSpellPanelTests
         public void Socket(params (string Id, int Level)[] supports)
         {
             var gems = new[] { Gem(_active) }.Concat(supports.Select(s => Gem(s.Id, s.Level))).ToArray();
-            Assert.NotNull(_items.Change(PlayerInventories.BodyArmour, _host, host => host with
+            Assert.NotNull(_items.Change(_hostRow, _host, host => host with
                 { Sockets = [.. gems.Select(g => new ItemSocket(SocketColour.White, g))], Links = [(byte)gems.Length] }));
             Refresh();
             foreach (var gem in gems)
@@ -219,11 +319,28 @@ public sealed class SupportedSpellPanelTests
 
         public void Unlink()
         {
-            Assert.NotNull(_items.Change(PlayerInventories.BodyArmour, _host, host => host with { Links = null }));
+            Assert.NotNull(_items.Change(_hostRow, _host, host => host with { Links = null }));
             Refresh();
         }
 
-        public void RemoveActiveGem() => Assert.NotNull(_items.Change(PlayerInventories.BodyArmour, _host,
+        public void HostMods(params (string Id, int[] Values)[] mods)
+        {
+            Assert.NotNull(_items.Change(_hostRow, _host, host => host with
+            {
+                Mods = [.. mods.Select(m => new ItemMod(ModSection.Explicit,
+                    (Program.Items.Mods.ById(m.Id) ?? throw new InvalidOperationException(m.Id)).Hash, m.Values))]
+            }));
+            Refresh();
+        }
+
+        public int EffectiveQuality()
+        {
+            var gem = Assert.Single(Gems());
+            var supported = typeof(Program).GetMethod("SupportedSkill", Flags)!.Invoke(null, [State, gem.Id])!;
+            return (int)supported.GetType().GetProperty("Quality")!.GetValue(supported)!;
+        }
+
+        public void RemoveActiveGem() => Assert.NotNull(_items.Change(_hostRow, _host,
             host => host with { Sockets = [], Links = [] }));
 
         void Refresh()
