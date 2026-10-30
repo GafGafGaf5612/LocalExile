@@ -10,7 +10,7 @@ static class PlayerHitDamage
     public static DamagePacket Resolve(DamagePacket raw, Func<string, int> get, DamageConversion conversion,
         bool spell, bool melee = false, bool area = false, bool projectile = false,
         IEnumerable<(string Name, int Value)>? supportModifiers = null, IReadOnlySet<int>? skillTypes = null,
-        bool secondary = false)
+        bool secondary = false, bool wieldingWand = false, bool retaliation = false)
     {
         // Secondary damage (Bear Trap, Herald of Ice's shatter) is neither an attack nor a spell: only the generic,
         // area and projectile buckets apply, and no attack/spell support classification.
@@ -27,7 +27,8 @@ static class PlayerHitDamage
         if (melee) supportTypes.Add(19);
         double common = (double)get("damage_+%") + (secondary ? 0 : get(spell ? "spell_damage_+%" : "attack_damage_+%"))
             + (melee ? get("melee_damage_+%") : 0) + (area ? get("area_damage_+%") : 0)
-            + (projectile ? get("projectile_damage_+%") : 0) + (spell || secondary ? 0 : DamageStats.SpellAttackIncrease(get));
+            + (projectile ? get("projectile_damage_+%") : 0)
+            + (spell || secondary ? 0 : DamageStats.SpellAttackIncrease(get, wieldingWand, retaliation));
         bool lifeLeech = get("is_life_leeching") != 0, manaLeech = get("is_mana_leeching") != 0,
             shieldLeech = get("is_es_leeching") != 0, fullShield = get("on_full_energy_shield") != 0;
         bool anyLeech = lifeLeech || manaLeech || shieldLeech;

@@ -880,6 +880,13 @@ partial class Program
             bool secondSet = PlayerInventories.For(string.IsNullOrEmpty(name) ? "Exile" : name, ItemsFor(conn)).WeaponSet == 1;
             messages.Add(($"0x0021 enter area, {tabs.Count} stash tab(s), last {PersonalStashOf(conn).LastTab}, weapon set {(secondSet ? 2 : 1)}",
                 InstanceProtocol.EnterArea(tabs, secondSet)));
+            // The Delve data (0x228) in the Azurite Mine Encampment and the mine: the gauge and the Subterranean Chart
+            // read the character's sulphite from it.
+            if (layout.Id.StartsWith("Delve", StringComparison.Ordinal))
+            {
+                ushort sulphite = CharacterSaves.Load(CharacterName(conn))?.Sulphite ?? 0;
+                messages.Add(($"0x0228 Delve data: {sulphite} sulphite", InstanceDelve.DelveData(sulphite)));
+            }
             // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:
             // the panel is not open). The client checks a shop price against the currency it knows of, the inventory's and
             // the loaded stash tabs' (3.29 vendors take it from the stash): without this a price was red, and no 0x88 came,

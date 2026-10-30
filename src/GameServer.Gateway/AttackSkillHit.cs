@@ -16,6 +16,6 @@ static class AttackSkillHit
         foreach (var (key, value) in levelConversionInputs) conversionInputs.TryAdd(key, value);
         return RageStats.ApplyAttack(PlayerHitDamage.Resolve(raw, Get,
             DamageStats.Conversion(conversionInputs, catalog, attack: true), spell: false,
-            melee: melee, projectile: projectile), Get);
+            melee: melee, projectile: projectile, wieldingWand: weapon.WieldingWand), Get);
     }
 }

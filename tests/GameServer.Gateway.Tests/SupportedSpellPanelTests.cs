@@ -8,7 +8,7 @@ public sealed class SupportedSpellPanelTests
 {
     [Theory]
     [InlineData(false, 1599, 2131, 12, 19, 0, 0)]
-    [InlineData(true, 51153, 68205, 11, 18, 397, 595)]
+    [InlineData(true, 75979, 101305, 11, 18, 595, 893)] // added cold at Fireball's 300% effectiveness (11-skills.md)
     public void Historical_support_range_and_average_controls_remain_exact_when_critical_strikes_are_disabled(bool combined,
         int perUse, int dps, int fireMin, int fireMax, int coldMin, int coldMax)
     {

@@ -310,9 +310,9 @@ public sealed class DamageConversionHistoryTests
 public sealed partial class AscendancyGatewayIntegrationTests
 {
     [Theory]
-    [InlineData(false, 0, 18d, 46.8d)]
-    [InlineData(false, 1, 18.72d, 48.672d)]
-    [InlineData(false, 3, 20.16d, 52.416d)]
+    [InlineData(false, 0, 28d, 72.8d)]
+    [InlineData(false, 1, 29.12d, 75.712d)]
+    [InlineData(false, 3, 31.36d, 81.536d)]
     [InlineData(true, 0, 28.8d, 44.8d)]
     [InlineData(true, 1, 29.952d, 46.592d)]
     [InlineData(true, 3, 32.256d, 50.176d)]
@@ -350,7 +350,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         {
             var basis = skills.WeaponBase(weaponType.Row)!.Value;
             Assert.Equal((5, 13), (basis.Min, basis.Max));
-            Assert.Equal(18000, skills.DamageEffectiveness(selected.Effect, 1));
+            Assert.Equal(28000, skills.DamageEffectiveness(selected.Effect, 1)); // raw 18000: 280% of base
         }
         var hit = ProgramValue<DamagePacket>("SupportedHit", game.State, selected.Id);
         var type = spell ? DamageType.Chaos : DamageType.Fire;

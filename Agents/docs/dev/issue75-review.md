@@ -994,6 +994,31 @@ projectiles get no server object (the client draws its own; the volley test expe
 `CaptureGemProjectile` test passes the branch's per-use critical roll. On the merged tree: build clean; Core 389,
 Data 34, Gateway 2561 pass.
 
+Third merge (2026-10-30): `main` `c1b112e4` (PR #369 block: Arcane Might unified across attacks and the damage panels,
+passive tree jewels, skill damage effectiveness decoded as an offset from base, the Eldritch Ichors and Embers, the
+per-currency Craft of Exile validations, the Delve Crawler, debugging aids) into `cb8ff7ee`. Conflicts: the attack-hit
+pipeline (`DamageStats.cs`, `PlayerHitDamage.cs`, `SupportedAttackDamage.cs`, `AttackSkillHit.cs`, `SkillCatalog.cs`,
+`Program.Skills.cs`, `Program.GemSupports.cs`, `Program.Equipment.cs`): the branch keeps one increase bucket
+(`PlayerHitDamage.Resolve` over `RawAdded`, with the area/projectile/melee context the panel rows need) and
+`DamageStats.SpellAttackIncrease` now delegates to main's `ArcaneMight.Increase`, with the weapon's `WieldingWand` and
+the retaliation skill type (120) threaded through `AttackIncrease`, `Resolve`, `SupportedHitInputs`,
+`SupportedAttackDamage.Hit`, `AttackHitConverted` and `Unarmed.HitDamage`; main's `DamageStats.Added` (the same added
+ranges with the increases applied per component) is not duplicated. `WeaponIn` keeps the branch's `ItemWeaponStats`
+construction (variable defence bases, local sources) and sets main's `WieldingWand`/`Melee` from the weapon class.
+`CharacterStats.cs` keeps both additions (`ResolveAttributes`, `Percent`); `CharacterSaves.cs` passes the saved
+`DefenceBaseRoll` into main's migrated item; `Program.Items.cs`, the items status and roadmap take the union of the
+Sacred Orb and Eldritch entries; `11-skills.md` keeps the selected-spell paragraph and main's effectiveness bullet (the
+branch's absolute-value one is superseded); `ChargeSessionTests.cs` keeps the converted-charge test beside main's
+restored tests; the chill test keeps the branch's stopped clock. `SupportedAttackDamage.Raw` adds a weapon's separate
+`LocalAdded` components (main's `ItemWeapons` and its tests construct them apart from `LocalDamage`), so main's Arcane
+Might unit tests pass through the branch's pipeline; main's two Arcane Might projectile tests pass the branch's per-use
+critical roll. Main's effectiveness decode moves two of the branch's controls: Burning Arrow level 1 is 280% of base
+(raw 18000; `DamageConversionHistoryTests` expects 28/72.8 before Frenzy scaling) and Fireball's added damage takes 300%
+(the combined-support control of `SupportedSpellPanelTests` is 75979/101305 per use/second with 595–893 cold, from
+51153/68205 and 397–595). Main's passive tree jewel tests need the `passive-graphs` v5 extract
+(`scripts/dev/extract-data.ps1 -Only passive-graphs`); they fail on a checkout whose `data/passive-skill-graphs.json`
+predates the geometry. On the merged tree: build clean; Core 394, Data 34, Gateway 3172 pass.
+
 Deferred and open at the close of the PR (each with its home): Spirit and Siphoning Charges (unique definitions #60,
 abyss-jewel socketing and Shaper/Elder influence: the combat roadmap); Blitz and Challenger Charges (no 3.29 player
 source); the Affliction non-damaging ailment effect and the Absorption recoup (no server consumer); executing the

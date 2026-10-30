@@ -169,6 +169,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     public readonly ConnectionPerformance Performance = new();
+    // The connection's last messages, both directions (PacketHistory), and why the server closed it (the DISCONNECT line).
+    public readonly PacketHistory Packets = new();
+    public volatile string? CloseReason;
     // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
     public bool Paused => !Clock.IsRunning;
     // A transfer invalidates flights even during the gap after PendingTransfer is consumed by Transfer.
@@ -405,6 +408,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
     public List<ushort> Passives = [];
+    /// <summary>The cluster jewel nodes allocated in the tree's expansion cells: the client's own small ids, sent with
+    /// the expansion flag (C->S 0x34/0x36) and carried in 0x33's second list. Empty until a cluster jewel is socketed.
+    /// </summary>
+    public HashSet<ushort> ClusterPassives = [];
     public AscendancyProgress MainAscendancy = new();
     public CharacterSaves.PassiveProgressSnapshot? SavedPassiveProgress;
     // Selected mastery effects: mastery node (PassiveSkillGraphId) -> effect HASH16. Saved with the character.
@@ -466,6 +473,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public OpenShop? Shop;
     // The town's Stash object (0 = none here), and the stash tabs whose inventory this connection has sent (0xc0 + 0xc8).
     public uint StashObject;
+    /// <summary>The Delve Crawler in the Azurite Mine Encampment (Program.Delve), and its cell.</summary>
+    public uint DelveCrawlerObject;
+    public (int X, int Y) DelveCrawlerAt;
     public readonly HashSet<int> StashTabsSent = [];
     /// <summary>The guild stash: its object in the hideout, its tabs this connection has the contents of, and whether its
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>

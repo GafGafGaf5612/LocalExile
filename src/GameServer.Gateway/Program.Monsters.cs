@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
+using GameServer.Core.Diagnostics;
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
 using DamagePacket = GameServer.Core.World.DamagePacket;
@@ -234,9 +235,10 @@ partial class Program
                         orders.Add((asker.Id, m.Walk.Order(to.X, to.Y, now), to, $"chases (distance {d:F0})"));
                     }
                 }
+                // A chase is re-ordered every few ticks: its lines only with Game_TRACE=ai (the packet history keeps them).
                 foreach (var (id, from, to, why) in orders)
                     await Send(remote, stream, ciphers, InstanceProtocol.ActionStarted(id, from.X, from.Y, to.X, to.Y, Move, 0xffff, 0x0408),
-                        $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}");
+                        ServerTrace.Ai || why == "gives up" ? $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}" : null);
                 foreach (var (id, m) in bossBars)
                     await ShowBossLifeBar(remote, stream, ciphers, id, m, conn);
                 foreach (var (id, m, from, epoch) in swings)

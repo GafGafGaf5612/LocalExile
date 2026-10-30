@@ -87,8 +87,12 @@ partial class Program
         if (hand is not var (item, type) || type is null || SkillsFor(conn).WeaponBase(type.Row) is not var (ms, min, max, range)) return null;
         var local = ItemWeaponStats.Calculate(item, (ms, min, max, range), ItemsFor(conn).Mods);
         var physical = local.Damage[GameServer.Core.World.DamageType.Physical];
+        // The weapon's class decides Arcane Might's wand-only grant and the melee context of its own components.
         return new SkillCatalog.Unarmed(local.AttackMs, (int)physical.Min, (int)physical.Max, Math.Max(range, unarmed.Range))
-            { LocalDamage = local.Damage, LocalSources = ItemModStats.Local(item, ItemsFor(conn).Mods).ToFrozenDictionary() };
+        {
+            LocalDamage = local.Damage, LocalSources = ItemModStats.Local(item, ItemsFor(conn).Mods).ToFrozenDictionary(),
+            WieldingWand = type.Class == "Wand", Melee = type.Class is not ("Wand" or "Bow"),
+        };
     }
 
     // The off-hand weapon of a dual-wielded attack (the active set's Offhand1), with the same values WeaponIn gives the main

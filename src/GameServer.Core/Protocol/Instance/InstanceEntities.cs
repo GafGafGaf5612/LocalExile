@@ -145,12 +145,18 @@ public static class InstanceEntities
     /// → 0x1409de680 with 0; traced live 2026-10-19 after Apply refunds).
     /// </summary>
     public static byte[] CharacterPassives(byte level, byte classByte, IReadOnlyList<ushort>? nodes = null, ushort questPoints = 0,
-        ushort refundPoints = 0, ushort ascendancyPoints = 0, IReadOnlyDictionary<ushort, ushort>? masteryEffects = null)
+        ushort refundPoints = 0, ushort ascendancyPoints = 0, IReadOnlyDictionary<ushort, ushort>? masteryEffects = null,
+        IReadOnlyList<ushort>? clusterNodes = null)
     {
         var w = new LoginWriter().U16(CharacterPassivesId).U16(refundPoints).U16(questPoints).U16(ascendancyPoints)
             .U8(level).U8(classByte).U8(0).U8(0).U16(checked((ushort)(nodes?.Count ?? 0)));
         foreach (ushort n in (nodes ?? []).Order()) w.U8((byte)n).U8((byte)(n >> 8));
-        w.U16(0).U16(0);
+        // The second list stays empty: the cluster jewel nodes of the expansion cells (the client's own small ids, not
+        // PassiveSkillGraphIds) go in the third, which is where the client looks for them.
+        w.U16(0);
+        var cluster = (clusterNodes ?? []).Order().ToList();
+        w.U16(checked((ushort)cluster.Count));
+        foreach (ushort n in cluster) w.U8((byte)n).U8((byte)(n >> 8));
         var effects = masteryEffects is null ? [] : masteryEffects
             .Where(kv => nodes?.Contains(kv.Key) == true).OrderBy(kv => kv.Key).ToList();
         w.U16(checked((ushort)effects.Count));
