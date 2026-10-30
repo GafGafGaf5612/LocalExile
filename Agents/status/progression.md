@@ -225,9 +225,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Tattoos: the 100-item 3.29.3b catalogue, protocol and implementation groups are documented in
   [tattoos](../docs/game/tattoos.md). The client flow is implemented: C->S `0x77` names the inventory, item and
   passive; `0x33`'s fifth list carries `node | PassiveSkillOverrides.HASH16 << 16`; the item is consumed and the
-  map is saved independently of allocation. All **10 plain-stat pilot tattoos** are client-verified: the four
-  resistances (fire 258->264, cold 211->217, lightning 211->217, chaos 0->3), movement speed, armour 319%->325%,
-  uncapped block 168%->169%, suppression (capped at 100%), maximum ES and maximum life. Firewalker also survived
-  relog and was removed with an Orb of Scouring (264% -> 258%, orb 20 -> 19). The demo tree was restored to 523
-  passives and no tattoos. 90 rows remain not implemented; the seven Forbidden ascendancy tattoos use a separate
+  map is saved independently of allocation. **20 plain-stat tattoos** are client-verified: the ten pilot plus
+  the next ten (chaos/fire/cold/lightning res, all max res, all attributes, evasion, accuracy, mana/life regen,
+  stun threshold/duration). Firewalker also survived relog and was removed with an Orb of Scouring. The tree
+  currently carries the ten new tattoos plus the earlier Ramako Shaman (11 applied). 13 plain stats are
+  server-mapped partials; 67 rows remain not implemented. The seven Forbidden ascendancy tattoos use a separate
   event-only flow.
