@@ -313,6 +313,18 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void A_speaking_boss_writes_its_npc_component_without_dialogue()
+    {
+        // Captain Fairgraves (SkeletonBossEmerge) and Merveil, the Siren read ... StateMachine, Transitionable, NPC: they were
+        // unsupported, so neither could be created.
+        string[] list = [.. MonsterObject.BaseComponents, "StateMachine", "Transitionable", "NPC"];
+        Assert.True(MonsterObject.CanSerialize(list, haveStateMachine: true));
+        byte[] b = new MonsterObject(1, 2, 100, list, StateMachine: new([0, 0, 0], 0), TransitionState: 4).Blob();
+        // ... Transitionable 4, NPC 00 ff, tasks 00.
+        Assert.Equal("04" + "00FF" + "00", Convert.ToHexString(b.AsSpan(b.Length - 4)));
+    }
+
+    [Fact]
     public void Monster_blob_refuses_components_it_cannot_write()
     {
         Assert.False(MonsterObject.CanSerialize([.. MonsterObject.BaseComponents, "StateMachine"]));
