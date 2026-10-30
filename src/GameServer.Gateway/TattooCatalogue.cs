@@ -9,7 +9,7 @@ using GameServer.Core.Protocol.Instance;
 static class TattooCatalogue
 {
     public sealed record Entry(int Row, string Id, string Name, int Set, string Target, int Tribe, int Override,
-        int OverrideHash, bool Forbidden)
+        int OverrideHash, int RequiresAdjacent, int MaxAdjacent, bool Forbidden)
     {
         public bool DropDisabled => Name.StartsWith("Honoured ", StringComparison.Ordinal)
             || Name.StartsWith("Loyalty ", StringComparison.Ordinal)
@@ -18,6 +18,10 @@ static class TattooCatalogue
             || Name == "Journey Tattoo of Makanui";
 
         public bool EventOnly => Forbidden;
+
+        /// <summary>The Makanga and Honoured Makanga adjacency gate: at least <see cref="RequiresAdjacent"/>
+        /// allocated neighbours, or at most <see cref="MaxAdjacent"/> when that is non-zero.</summary>
+        public bool HasAdjacency => RequiresAdjacent > 0 || MaxAdjacent > 0;
     }
 
     static readonly Lazy<List<Entry>> Entries = new(Load);
@@ -51,10 +55,16 @@ static class TattooCatalogue
         if (!File.Exists(basePath) || !File.Exists(tattooPath) || !File.Exists(setPath)) return result;
 
         var overrideHashes = new List<int>();
+        var overrideRequires = new List<int>();
+        var overrideMax = new List<int>();
         if (File.Exists(overridePath))
             using (var document = JsonDocument.Parse(File.ReadAllBytes(overridePath)))
                 foreach (var row in document.RootElement.EnumerateArray())
+                {
                     overrideHashes.Add(row.GetProperty("HASH16").GetInt32());
+                    overrideRequires.Add(row.GetProperty("RequiresAdjacent").GetInt32());
+                    overrideMax.Add(row.GetProperty("MaxAdjacent").GetInt32());
+                }
 
         var sets = new List<string>();
         using (var document = JsonDocument.Parse(File.ReadAllBytes(setPath)))
@@ -87,8 +97,12 @@ static class TattooCatalogue
                 bool forbidden = name.StartsWith("Forbidden Tattoo", StringComparison.Ordinal);
                 int overrideHash = target.Override >= 0 && target.Override < overrideHashes.Count
                     ? overrideHashes[target.Override] : 0;
+                int requiresAdjacent = target.Override >= 0 && target.Override < overrideRequires.Count
+                    ? overrideRequires[target.Override] : 0;
+                int maxAdjacent = target.Override >= 0 && target.Override < overrideMax.Count
+                    ? overrideMax[target.Override] : 0;
                 result.Add(new Entry(index, id, name, target.Set, targetName, target.Tribe, target.Override,
-                    overrideHash, forbidden));
+                    overrideHash, requiresAdjacent, maxAdjacent, forbidden));
             }
             index++;
         }

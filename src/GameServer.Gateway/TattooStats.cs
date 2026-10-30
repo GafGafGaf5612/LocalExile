@@ -41,6 +41,11 @@ static class TattooStats
         ["Honoured Tattoo of the Sky"] = [("base_resist_all_elements_%", 3)],
         ["Honoured Tattoo of the Tuatara"] = [("additional_all_attributes", 4)],
         ["Honoured Tattoo of the Turtle"] = [("global_defences_+%", 3)],
+        // The four plain Makanga: their effect is gated by RequiresAdjacent/MaxAdjacent.
+        ["Tattoo of the Arohongui Makanga"] = [("base_maximum_cold_damage_resistance_%", 1)],
+        ["Tattoo of the Ngamahu Makanga"] = [("base_maximum_fire_damage_resistance_%", 1)],
+        ["Tattoo of the Tukohama Makanga"] = [("life_regeneration_rate_+%", 16)],
+        ["Tattoo of the Valako Makanga"] = [("base_maximum_lightning_damage_resistance_%", 1)],
     };
 
     public static IReadOnlyCollection<string> Names => Entries.Keys;

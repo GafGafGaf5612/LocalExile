@@ -26,8 +26,6 @@ partial class Program
         if (entry.Name == "Journey Tattoo of Makanui") return "Journey Makanui is not supported yet";
         if (entry.Name == "Journey Tattoo of the Body" || entry.Name == "Journey Tattoo of the Mind"
             || entry.Name == "Journey Tattoo of the Soul") return "Journey tattoos are not supported yet";
-        if (entry.Name.StartsWith("Tattoo of the ", StringComparison.Ordinal)
-            && entry.Name.EndsWith(" Makanga", StringComparison.Ordinal)) return "Makanga adjacency is not checked yet";
         if (entry.Name.StartsWith("Honoured Tattoo of the ", StringComparison.Ordinal)
             && entry.Target.StartsWith("Notable", StringComparison.Ordinal)) return "Honoured attribute notables are not supported yet";
 

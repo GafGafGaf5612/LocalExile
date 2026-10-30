@@ -109,11 +109,13 @@ partial class Program
         // Mastery dictionaries are replaced as a whole, so retaining their current reference is safe.
         IReadOnlyDictionary<ushort, ushort> masteries;
         Dictionary<ushort, string> tattoos;
+        AscendancyFamily family;
         lock (conn.Monsters)
         {
             nodes = (nodes ?? conn.Passives).Concat(conn.MainAscendancy.Allocated).ToArray();
             masteries = conn.MasteryEffects;
             tattoos = new(conn.Tattoos);
+            family = conn.MainAscendancy.Selection?.Family ?? AscendancyFamily.Normal;
         }
         var c = SkillsFor(conn).ClassFor(conn.ClassRow);
         Dictionary<uint, int> dev;
@@ -154,12 +156,21 @@ partial class Program
             if (tree.Find(node) is { } passive) nodeStats[node] = passive.Stats;
         // An applied tattoo replaces the allocated passive's stats. A timeless jewel that replaces the node still
         // wins (the tattoo is disabled); an augmenting timeless jewel adds its stats to the tattoo stats.
+        // Makanga/Honoured Makanga tattoos are conditional on the number of allocated direct neighbours: when the
+        // condition is not met the replacement grants nothing, but the tattoo stays applied and can activate later.
         if (tattoos.Count > 0)
             foreach (var (node, name) in tattoos)
                 if (allocated.Contains(node) && nodeStats.ContainsKey(node)
                     && tree.Find(node) is { IsAscendancy: false }
+                    && TattooCatalogue.Find(name) is { } entry
                     && TattooStats.For(name) is { } tattooStats)
-                    nodeStats[node] = tattooStats;
+                {
+                    int adjacent = OrdinaryPassives.Adjacent(node, family).Count(allocated.Contains);
+                    bool tattooActive = entry.RequiresAdjacent > 0
+                        ? adjacent >= entry.RequiresAdjacent
+                        : entry.MaxAdjacent <= 0 || adjacent <= entry.MaxAdjacent;
+                    nodeStats[node] = tattooActive ? tattooStats : [];
+                }
         var conquered = new HashSet<ushort>();
         if (timeless.Spec is { } timelessSpec)
         {

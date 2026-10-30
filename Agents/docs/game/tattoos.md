@@ -1,10 +1,10 @@
 # Tattoos
 
-**Status: in progress (documentation complete, catalogue 100/100; 20 plain-stat tattoos client-verified).** The
+**Status: in progress (documentation complete, catalogue 100/100; 19 plain-stat tattoos client-verified).** The
 client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries the inventory
 id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends the tattoo in
-`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Twenty rows are `works` (the ten pilot plus the
-next ten plain stats), 13 are `partial` (server-mapped plain stats awaiting a client check) and 67 are
+`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Nineteen rows are `works` (the ten pilot plus
+nine plain stats), 18 are `partial` (server-mapped or adjacency-gated tattoos awaiting a client check) and 63 are
 `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the target/limit
 rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
 
@@ -20,9 +20,9 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
 | Current (drop-enabled) | 53 | 15 | 11 | 0 | 27 |
-| Drop-disabled | 40 | 5 | 2 | 0 | 33 |
+| Drop-disabled | 40 | 4 | 7 | 0 | 29 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **20** | **13** | **0** | **67** |
+| **Total** | **100** | **19** | **18** | **0** | **63** |
 
 | Status | Meaning |
 |---|---|
@@ -38,9 +38,9 @@ stat already has a gameplay consumer. The first implementation pass must audit e
 
 | Group | Contents | State |
 |---|---|---|
-| 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 20/33 plain stats client-verified; 13 server-mapped, awaiting client checks. |
+| 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 19/33 plain stats client-verified; 13 server-mapped, awaiting client checks. |
 | 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
-| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Not implemented. |
+| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Four plain Makanga are mapped with the dynamic adjacency gate (partial); the six conditional Makanga, counting and limits are still not implemented. |
 | 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
 | 5. Loyalty summons | The ten Summon Spirit triggers, each limited to 1 Loyalty Tattoo. | Not implemented. |
 
@@ -96,8 +96,10 @@ Special limits and conditions:
 
 - **Makanga**: four tattoos require **at most 1 adjacent allocated passive** (Arohongui, Ngamahu, Rongokurai,
   Valako); six require **at least 7 adjacent allocated passives** (Hinekora, Kitava, Ramako, Tasalio, Tawhoa,
-  Tukohama). The item text says "adjacent"; the wiki mechanics summary describes the same family as 7+ or 8+
-  connected, so verify the exact client check when implementing.
+  Tukohama); **Honoured Tattoo of the Makanga requires at least 8**. The condition is dynamic: the passive is
+  replaced and the tattoo stays applied, but the replacement grants nothing while the allocated direct-neighbour
+  count is outside `RequiresAdjacent`/`MaxAdjacent`. The client accepts the application even when the requirement is
+  unmet; the server gates the stats.
 - **Loyalty**: limited to 1 Loyalty Tattoo per character.
 - **Honoured attribute notables**: the nine Honoured tattoos that replace a +30 attribute notable share a limit of
   1 Attribute Notable Tattoo. The small-attribute Honoured tattoos are not covered by that limit.
@@ -216,8 +218,9 @@ icon and tooltip. The other lists are unchanged: second empty, third cluster jew
    refunding and reallocating the passive preserves the tattoo. Old saves without the field load as empty.
 4. **Apply/remove (done for the pilot).** `0x77` validates the target set, the 50-tattoo cap and the special limits,
    consumes the item, installs the replacement stats and saves. The same packet with an Orb of Scouring removes the
-   tattoo and restores the passive without refunding the point. Makanga adjacency and the special limits are still
-   refused, not implemented.
+   tattoo and restores the passive without refunding the point. Makanga adjacency is a dynamic stat gate: the
+   tattoo can be applied, but its stats are inactive while `RequiresAdjacent`/`MaxAdjacent` is not met. The special
+   limits are still refused, not implemented.
 5. **Stat replacement (done for the 10 pilot stats).** The replacement stats are applied in the same pass that builds
    allocated passive stats; the node's allocation, connections and point cost stay unchanged. The client displays the
    replacement from the `0x33` fifth list; the panel stats come from the server.
@@ -231,8 +234,8 @@ icon and tooltip. The other lists are unchanged: second empty, third cluster jew
    vendor recipe path. Event-only and drop-disabled items need an explicit availability rule.
 9. **Tests (pilot coverage).** Unit tests cover the 100-item catalogue, the target map, the pilot stat mapping, the
    Firewalker pool change and the `0x33` fifth-list layout. Live client checks cover apply, display, relog and Orb of
-   Scouring removal for the Firewalker. Still needed: replace, unallocate/reallocate, the 50 cap, Makanga adjacency,
-   Journey Makanui and one Forbidden tattoo.
+   Scouring removal for the Firewalker. Still needed: replace, unallocate/reallocate, the 50 cap, live Makanga
+   activation/deactivation, Journey Makanui and one Forbidden tattoo.
 
 ## Full catalogue
 
@@ -373,7 +376,7 @@ tattoos do not. All are drop-disabled in 3.29.
 | **Honoured Tattoo of the Flood** | Gain Arcane Surge on Hit with Spells | Notable (+30 Int) | drop-disabled | not implemented | needs Arcane Surge on spell hit |
 | **Honoured Tattoo of the Hatungo** | 1% increased Reservation Efficiency of Skills | Small Attribute | drop-disabled | not implemented | needs reservation efficiency |
 | **Honoured Tattoo of the Hunter** | +1 to Level of all Dexterity Skill Gems | Notable (+30 Dex) | drop-disabled | not implemented | needs Dexterity gem levels |
-| **Honoured Tattoo of the Makanga** | +2% to all maximum Resistances | Small Attribute | drop-disabled | works | client apply; all max res +2% |
+| **Honoured Tattoo of the Makanga** | +2% to all maximum Resistances | Small Attribute | drop-disabled | partial | client apply; RequiresAdjacent 8; stats inactive below 8 allocated neighbours |
 | **Honoured Tattoo of the Mountain** | +1% to maximum Fire Resistance<br>+1 to Maximum Endurance Charges | Notable (+30 Str) | drop-disabled | not implemented | needs max fire res + endurance charge cap |
 | **Honoured Tattoo of the Oak** | 2% increased maximum Life | Small Attribute | drop-disabled | works | client apply; max life +2% |
 | **Honoured Tattoo of the Pa** | Melee Hits Fortify | Notable (+30 Str) | drop-disabled | not implemented | needs melee-hit fortify |
@@ -418,16 +421,16 @@ Four require at most 1 adjacent allocated passive (Arohongui, Ngamahu, Rongokura
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Tattoo of the Arohongui Makanga** | +1% to maximum Cold Resistance | Small Dexterity | drop-disabled | not implemented | adjacency max 1; stat-only |
+| **Tattoo of the Arohongui Makanga** | +1% to maximum Cold Resistance | Small Dexterity | drop-disabled | partial | server stat; MaxAdjacent 1 dynamic gate; live check pending |
 | **Tattoo of the Hinekora Makanga** | 8% increased Effect of your Curses | Small Intelligence | drop-disabled | not implemented | adjacency min 7; needs curse effect |
 | **Tattoo of the Kitava Makanga** | 80% increased Maximum total Life Recovery per second from Leech | Small Strength | drop-disabled | not implemented | adjacency min 7; needs leech recovery cap |
-| **Tattoo of the Ngamahu Makanga** | +1% to maximum Fire Resistance | Small Strength | drop-disabled | not implemented | adjacency max 1; stat-only |
+| **Tattoo of the Ngamahu Makanga** | +1% to maximum Fire Resistance | Small Strength | drop-disabled | partial | server stat; MaxAdjacent 1 dynamic gate; live check pending |
 | **Tattoo of the Ramako Makanga** | Skills fire an additional Projectile | Small Dexterity | drop-disabled | not implemented | adjacency min 7; needs additional projectile |
 | **Tattoo of the Rongokurai Makanga** | 8% chance to Defend with 200% of Armour | Small Strength | drop-disabled | not implemented | adjacency max 1; needs armour-defend roll |
 | **Tattoo of the Tasalio Makanga** | 8% increased Cooldown Recovery Rate | Small Intelligence | drop-disabled | not implemented | adjacency min 7; needs cooldown recovery |
 | **Tattoo of the Tawhoa Makanga** | Flasks applied to you have 8% increased Effect | Small Dexterity | drop-disabled | not implemented | adjacency min 7; needs flask effect |
-| **Tattoo of the Tukohama Makanga** | 16% increased Life Regeneration rate | Small Strength | drop-disabled | not implemented | adjacency min 7; stat-only |
-| **Tattoo of the Valako Makanga** | +1% to maximum Lightning Resistance | Small Intelligence | drop-disabled | not implemented | adjacency max 1; stat-only |
+| **Tattoo of the Tukohama Makanga** | 16% increased Life Regeneration rate | Small Strength | drop-disabled | partial | server stat; RequiresAdjacent 7 dynamic gate; live check pending |
+| **Tattoo of the Valako Makanga** | +1% to maximum Lightning Resistance | Small Intelligence | drop-disabled | partial | server stat; MaxAdjacent 1 dynamic gate; live check pending |
 
 ### Forbidden (7)
 
@@ -493,10 +496,22 @@ Next plain-stat batch 2026-10-30 (client `0x77`, real client):
 - **Tukohama Shaman** on 46910: 0.3%/s life regeneration (server stat).
 - **Rongokurai Brute** on 16775: +10% stun threshold (server stat).
 - **Rongokurai Goliath** on 28330: +10% stun duration (server stat).
-- The tree currently carries these ten plus the earlier Ramako Shaman (11 tattoos).
+- The tree currently carries these ten plus the earlier Ramako Shaman (11 tattoos at that point).
 
-Not yet verified through the client: replace, unallocate/reallocate, the 50 cap, Makanga adjacency, Journey Makanui,
-the seven Forbidden tattoos, and the remaining 80 rows.
+Adjacency bug/fix 2026-10-30:
+
+- **Honoured Tattoo of the Makanga** was applied to node 10829 without checking its `RequiresAdjacent = 8` gate.
+  The node has only six neighbours and two were allocated at the time, so it can never meet the requirement; before
+  the fix it incorrectly granted +2% to all maximum resistances.
+- The stat pass now counts **allocated direct neighbours** from the character's graph and applies the replacement
+  stats only while `RequiresAdjacent`/`MaxAdjacent` is met. The tattoo stays applied when inactive, but the
+  replaced passive grants nothing until the condition is met.
+- Unit tests use node 3644 (eight neighbours): seven allocated neighbours leave the tattoo inactive, eight add the
+  +2% maximum resistances; Ngamahu Makanga is active with one allocated neighbour and inactive with two.
+- The invalid Honoured Makanga on 10829 was removed; maximum resistances returned to 84/84/83/75.
+
+Not yet verified through the client: replace, unallocate/reallocate, the 50 cap, live Makanga activation/
+deactivation, Journey Makanui, the seven Forbidden tattoos, and the remaining rows.
 
 ## See also
 

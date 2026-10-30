@@ -225,9 +225,10 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Tattoos: the 100-item 3.29.3b catalogue, protocol and implementation groups are documented in
   [tattoos](../docs/game/tattoos.md). The client flow is implemented: C->S `0x77` names the inventory, item and
   passive; `0x33`'s fifth list carries `node | PassiveSkillOverrides.HASH16 << 16`; the item is consumed and the
-  map is saved independently of allocation. **20 plain-stat tattoos** are client-verified: the ten pilot plus
-  the next ten (chaos/fire/cold/lightning res, all max res, all attributes, evasion, accuracy, mana/life regen,
-  stun threshold/duration). Firewalker also survived relog and was removed with an Orb of Scouring. The tree
-  currently carries the ten new tattoos plus the earlier Ramako Shaman (11 applied). 13 plain stats are
-  server-mapped partials; 67 rows remain not implemented. The seven Forbidden ascendancy tattoos use a separate
-  event-only flow.
+  map is saved independently of allocation. **19 plain-stat tattoos** are client-verified: the ten pilot plus nine
+  of the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). Firewalker also
+  survived relog and was removed with an Orb of Scouring. The Makanga adjacency gate is now dynamic
+  (`RequiresAdjacent`/`MaxAdjacent`): an inactive tattoo grants nothing until enough direct neighbours are
+  allocated; the invalid Honoured Makanga was removed. The tree currently carries nine of the new tattoos plus
+  the earlier Ramako Shaman (10 applied). 18 rows are partial; 63 rows remain not implemented. The seven
+  Forbidden ascendancy tattoos use a separate event-only flow.

@@ -69,4 +69,75 @@ public class TattooTests
         Assert.False(Program.TargetMatches(strength, "Small Dexterity"));
         Assert.False(Program.TargetMatches(strength, "Small Intelligence"));
     }
+
+    [Fact]
+    public void Makanga_adjacency_fields_are_loaded_from_the_override()
+    {
+        var honoured = TattooCatalogue.Find("Honoured Tattoo of the Makanga");
+        Assert.NotNull(honoured);
+        Assert.Equal(8, honoured.RequiresAdjacent);
+        Assert.Equal(0, honoured.MaxAdjacent);
+
+        var ngamahu = TattooCatalogue.Find("Tattoo of the Ngamahu Makanga");
+        Assert.NotNull(ngamahu);
+        Assert.Equal(0, ngamahu.RequiresAdjacent);
+        Assert.Equal(1, ngamahu.MaxAdjacent);
+
+        var hinekora = TattooCatalogue.Find("Tattoo of the Hinekora Makanga");
+        Assert.NotNull(hinekora);
+        Assert.Equal(7, hinekora.RequiresAdjacent);
+        Assert.Equal(0, hinekora.MaxAdjacent);
+    }
+
+    [Fact]
+    public void Honoured_Makanga_is_inactive_below_eight_allocated_neighbours()
+    {
+        TestSaves.Ensure();
+        string character = "TattooMakanga" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var conn = new ClientState(new(ushort.MaxValue, "Tattoo", 128, 128, 32, 32, null, []), 0, 1)
+                { Character = character, ClassRow = 1, PlayerLife = 100 };
+            // 3644 is a small Strength with eight neighbours.
+            var neighbours = Program.OrdinaryPassives.Adjacent(3644, AscendancyFamily.Normal).Take(8).ToArray();
+            Assert.Equal(8, neighbours.Length);
+            conn.Tattoos[3644] = "Honoured Tattoo of the Makanga";
+            conn.TattooRevision++;
+
+            conn.Passives = [3644, .. neighbours.Take(7)];
+            var inactive = Program.PoolsFor(conn, 20);
+            conn.Passives = [3644, .. neighbours];
+            conn.TattooRevision++;
+            var active = Program.PoolsFor(conn, 20);
+
+            Assert.Equal(inactive.FireMaxResistance, active.FireMaxResistance - 2);
+            Assert.Equal(inactive.ColdMaxResistance, active.ColdMaxResistance - 2);
+            Assert.Equal(inactive.LightningMaxResistance, active.LightningMaxResistance - 2);
+            Assert.Equal(inactive.ChaosMaxResistance, active.ChaosMaxResistance - 2);
+        }
+        finally { PlayerInventories.Forget(character); }
+    }
+
+    [Fact]
+    public void Ngamahu_Makanga_is_inactive_above_one_allocated_neighbour()
+    {
+        TestSaves.Ensure();
+        string character = "TattooMakangaMax" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var conn = new ClientState(new(ushort.MaxValue, "Tattoo", 128, 128, 32, 32, null, []), 0, 1)
+                { Character = character, ClassRow = 1, PlayerLife = 100 };
+            conn.Tattoos[10829] = "Tattoo of the Ngamahu Makanga";
+            conn.TattooRevision++;
+
+            conn.Passives = [10829, 16167];
+            var active = Program.PoolsFor(conn, 20);
+            conn.Passives = [10829, 16167, 32091];
+            conn.TattooRevision++;
+            var inactive = Program.PoolsFor(conn, 20);
+
+            Assert.Equal(inactive.FireMaxResistance + 1, active.FireMaxResistance);
+        }
+        finally { PlayerInventories.Forget(character); }
+    }
 }
