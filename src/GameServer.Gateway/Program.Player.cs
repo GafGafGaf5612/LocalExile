@@ -819,7 +819,9 @@ partial class Program
             messages.Add(($"0x00c0 inventory {PlayerInventories.InventoryId(slot.Row)} row {slot.Row}" + (inside.Count > 0 ? $" items {inside.Count}" : ""),
                 InstanceInventories.AddInventory(PlayerInventories.InventoryId(slot.Row), slot, items: inside)));
         }
-        messages.Add(("0x003d atlas passive tree presets 0-2", InstanceEntities.PassiveSlots()));
+        for (int preset = 0; preset < conn.AtlasPassives.Length; preset++)
+            messages.Add(($"0x003d atlas passive preset {preset} ({conn.AtlasPassives[preset].Count}/{conn.AtlasPassivePoints} points)",
+                AtlasSlots(conn, preset)));
         var (passives, passivesLabel) = PassivesMessage(conn);
         messages.Add((passivesLabel, passives));
         // Area transitions. Like the player they are queued by the world and created when 0x21 activates it.

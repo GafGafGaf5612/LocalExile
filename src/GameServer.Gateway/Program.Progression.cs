@@ -52,6 +52,10 @@ partial class Program
         {
             conn.MainAscendancy = ascendancy;
             conn.Passives = [.. ordinary];
+            var atlasPresets = save?.AtlasPassivePresets ?? [];
+            for (int i = 0; i < conn.AtlasPassives.Length; i++)
+                conn.AtlasPassives[i] = i < atlasPresets.Count ? [.. atlasPresets[i].Where(n => AtlasPassiveNodes.Find(n) is not null).Distinct()] : [];
+            conn.AtlasPassivePoints = save?.AtlasPassivePoints ?? 0;
 
             conn.Waypoints.UnionWith(save?.Waypoints ?? []);
             conn.Visited.UnionWith(save?.Visited ?? []);
