@@ -65,7 +65,22 @@ public static class Progression
         return (uint)Math.Min(cap, (ulong)experience + gain);
     }
 
-    /// <summary>Passive skill points from the character's level: one per level after the first (quests are not
-    /// implemented, so they give none).</summary>
-    public static int PassivePoints(int level) => Math.Clamp(level, 1, MaxLevel) - 1;
+    static int _passivePointsPerLevel = 1;
+
+    /// <summary>Passive skill points granted per level after the first. The Gateway sets it from the system settings;
+    /// the default is 1, the live game's value.</summary>
+    public static int PassivePointsPerLevel
+    {
+        get => Volatile.Read(ref _passivePointsPerLevel);
+        set => Volatile.Write(ref _passivePointsPerLevel, Math.Clamp(value, 1, 100));
+    }
+
+    /// <summary>Passive skill points from the character's level: <see cref="PassivePointsPerLevel"/> per level after the
+    /// first (quests are not implemented, so they give none).</summary>
+    public static int PassivePoints(int level) => PassivePoints(level, PassivePointsPerLevel);
+
+    /// <summary>The same calculation with an explicit per-level value, for tests and for callers that already resolved
+    /// the setting.</summary>
+    public static int PassivePoints(int level, int pointsPerLevel) =>
+        Math.Max(0, Math.Clamp(level, 1, MaxLevel) - 1) * Math.Max(0, pointsPerLevel);
 }

@@ -95,7 +95,7 @@ sealed class ItemDrops(ItemCatalog catalog, ItemRolls? rolls = null, string fold
 
     /// <summary>A pile of gold for a dying monster (<see cref="GoldAmount"/>), or null for none.</summary>
     public Drop? Gold(int monsterLevel, MonsterRarity rarity, Random rng, double multiplier = 1) =>
-        (int)Math.Floor(GoldAmount(monsterLevel, rarity, rng) * Math.Clamp(multiplier, 0, 1)) is int amount and > 0 && catalog.Find(GoldId) is { Supported: true } type
+        (int)Math.Floor(GoldAmount(monsterLevel, rarity, rng) * Math.Max(0, multiplier)) is int amount and > 0 && catalog.Find(GoldId) is { Supported: true } type
             ? new Drop(ItemCatalog.Create(type) with { StackSize = (ushort)Math.Min(amount, ushort.MaxValue) }, type) : null;
 
     /// <summary>An approximate generic-map drop: a map of the current map tier (or tier 1 in the campaign). Our own

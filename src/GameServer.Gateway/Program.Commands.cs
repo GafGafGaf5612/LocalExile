@@ -1361,11 +1361,12 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
-        .Add("game_data", "/game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | list (dev: SQLite game-data overrides; no restart)", async args =>
+        .Add("game_data", "/game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | setting <key> <value> | clear_setting <key> | settings | list (dev: SQLite game-data overrides; no restart)", async args =>
         {
             if (args.Length == 0)
             {
-                await conn.Commands!.Reply("Usage: /game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | list");
+                await conn.Commands!.Reply("Usage: /game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | " +
+                    "limit <key> <value> | clear_limit <key> | setting <key> <value> | clear_setting <key> | settings | list");
                 return;
             }
             if (GameData.Store is not { } store)
@@ -1448,17 +1449,59 @@ partial class Program
                         GameData.Reload("clear limit");
                         await conn.Commands!.Reply($"Cleared the limit override for {args[1]}");
                         return;
+                    case "setting":
+                        {
+                            if (args.Length == 2)
+                            {
+                                if (!SystemSettings.Seeds.ContainsKey(args[1]))
+                                {
+                                    await conn.Commands!.Reply($"unknown setting \"{args[1]}\"");
+                                    return;
+                                }
+                                await conn.Commands!.Reply($"{args[1]} = {SystemSettings.Default.Get(args[1])}");
+                                return;
+                            }
+                            if (args.Length != 3 || !double.TryParse(args[2], System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out double setting))
+                            {
+                                await conn.Commands!.Reply("Usage: /game_data setting <key> [value]");
+                                return;
+                            }
+                            if (!SystemSettings.Validate(args[1], setting, out string? settingError))
+                            {
+                                await conn.Commands!.Reply(settingError!);
+                                return;
+                            }
+                            store.SetSetting(args[1], setting);
+                            GameData.Reload("setting");
+                            await conn.Commands!.Reply($"{args[1]} = {SystemSettings.Default.Get(args[1])}");
+                            return;
+                        }
+                    case "clear_setting":
+                        if (args.Length != 2)
+                        {
+                            await conn.Commands!.Reply("Usage: /game_data clear_setting <key>");
+                            return;
+                        }
+                        store.DeleteSetting(args[1]);
+                        GameData.Reload("clear setting");
+                        await conn.Commands!.Reply($"Cleared {args[1]}; it falls back to {SystemSettings.Seeds.GetValueOrDefault(args[1])}");
+                        return;
+                    case "settings":
+                        foreach (var (key, value) in SystemSettings.Default.Values.OrderBy(kv => kv.Key))
+                            await conn.Commands!.Reply($"  {key} = {value}");
+                        return;
                     case "list":
                         await conn.Commands!.Reply($"Game data revision {GameData.Current.Revision}: " +
-                            $"{GameData.Current.ModRanges.Count} mod range override(s), {GameData.Current.Limits.Count} limit override(s); " +
-                            GameDataCatalog.Summary);
+                            $"{GameData.Current.ModRanges.Count} mod range override(s), {GameData.Current.Limits.Count} limit override(s), " +
+                            $"{SystemSettings.Default.Values.Count} system setting(s); " + GameDataCatalog.Summary);
                         foreach (var (key, range) in GameData.Current.ModRanges.OrderBy(kv => kv.Key.ModId).ThenBy(kv => kv.Key.Index))
                             await conn.Commands!.Reply($"  mod {key.ModId}[{key.Index}] = {range.Min}..{range.Max}");
                         foreach (var (key, value) in GameData.Current.Limits.OrderBy(kv => kv.Key))
                             await conn.Commands!.Reply($"  limit {key} = {value}" + (value == 0 ? " (unlimited)" : ""));
                         return;
                     default:
-                        await conn.Commands!.Reply("Unknown /game_data action; use reload, mod, clear_mod, limit, clear_limit or list");
+                        await conn.Commands!.Reply("Unknown /game_data action; use reload, mod, clear_mod, limit, clear_limit, setting, clear_setting, settings or list");
                         return;
                 }
             }

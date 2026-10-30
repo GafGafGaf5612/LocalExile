@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Core.World;
 using GameServer.Storage;
 
 namespace GameServer.Gateway.Tests;
@@ -148,6 +149,102 @@ public class GameDataTests
         Assert.Equal(unique.BaseTypeId, uniqueBack.BaseTypeId);
         Assert.Equal(unique.ItemLevel, uniqueBack.ItemLevel);
         Assert.Equal(unique.Mods, uniqueBack.Mods);
+    }
+
+    [Fact]
+    public void System_settings_seed_the_requested_defaults()
+    {
+        Assert.Equal(3, SystemSettings.Seeds["socket_max_wand"]);
+        Assert.Equal(6, SystemSettings.Seeds["socket_max_body_armour"]);
+        Assert.Equal(4, SystemSettings.Seeds["socket_max_helmet"]);
+        Assert.Equal(1, SystemSettings.Seeds["passive_points_per_level"]);
+        Assert.Equal(1, SystemSettings.Seeds["gold_drop_multiplier"]);
+    }
+
+    [Fact]
+    public void System_settings_map_item_classes_to_their_socket_caps()
+    {
+        var settings = new SystemSettings();
+        settings.Replace(new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["socket_max_wand"] = 6,
+            ["socket_max_body_armour"] = 6,
+            ["socket_max_belt"] = 10,
+            ["gold_drop_multiplier"] = 2.5,
+        });
+
+        Assert.Equal(6, settings.SocketMax("Wand"));
+        Assert.Equal(6, settings.SocketMax("Body Armour"));
+        Assert.Equal(6, settings.SocketMax("Belt")); // clamped to the client's maximum
+        Assert.Equal(0, settings.SocketMax("Unknown"));
+        Assert.Equal(2.5, settings.GoldDropMultiplier);
+    }
+
+    [Fact]
+    public void System_setting_validation_rejects_bad_socket_and_point_values()
+    {
+        Assert.False(SystemSettings.Validate("socket_max_wand", 7, out _));
+        Assert.False(SystemSettings.Validate("socket_max_wand", 2.5, out _));
+        Assert.True(SystemSettings.Validate("socket_max_wand", 6, out _));
+        Assert.False(SystemSettings.Validate("passive_points_per_level", 101, out _));
+        Assert.False(SystemSettings.Validate("gold_drop_multiplier", -1, out _));
+        Assert.False(SystemSettings.Validate("unknown", 1, out _));
+    }
+
+    [Fact]
+    public void Passive_points_per_level_is_a_multiplier_after_level_one()
+    {
+        Assert.Equal(0, GameServer.Core.World.Progression.PassivePoints(1, 2));
+        Assert.Equal(198, GameServer.Core.World.Progression.PassivePoints(100, 2));
+        Assert.Equal(99, GameServer.Core.World.Progression.PassivePoints(100, 1));
+    }
+
+    [Fact]
+    public void The_game_data_store_round_trips_system_settings()
+    {
+        string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"localexile-settings-{Guid.NewGuid():N}.db");
+        try
+        {
+            using (var store = new GameDataStore(path))
+            {
+                Assert.False(store.SettingsSeeded());
+                store.SetSetting("gold_drop_multiplier", 2.5);
+                store.SetSetting("socket_max_wand", 6);
+                store.MarkSettingsSeeded();
+                Assert.True(store.SettingsSeeded());
+                var rows = store.LoadSettings();
+                Assert.Equal(2, rows.Count);
+                Assert.Equal(2.5, rows.Single(row => row.Key == "gold_drop_multiplier").Value);
+                store.DeleteSetting("socket_max_wand");
+                Assert.Single(store.LoadSettings());
+            }
+        }
+        finally
+        {
+            foreach (string file in new[] { path, path + "-wal", path + "-shm" })
+                try { File.Delete(file); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void The_default_socket_capacity_still_matches_the_game()
+    {
+        var type = Program.Items.Find("Driftwood Wand")!;
+        var item = ItemCatalog.Create(type);
+        Assert.Equal(3, CurrencyEffects.SocketCapacity(item, type));
+        var body = Program.Items.Find("Plate Vest")!;
+        Assert.Equal(6, CurrencyEffects.SocketCapacity(ItemCatalog.Create(body), body));
+    }
+
+    [Fact]
+    public void A_gold_multiplier_above_one_increases_the_pile()
+    {
+        var drops = new ItemDrops(Program.Items);
+        var normal = drops.Gold(10, MonsterRarity.Unique, new Random(7), 1);
+        var doubled = drops.Gold(10, MonsterRarity.Unique, new Random(7), 2);
+        Assert.NotNull(normal);
+        Assert.NotNull(doubled);
+        Assert.True(doubled.Item.StackSize > normal.Item.StackSize);
     }
 
     [Fact]

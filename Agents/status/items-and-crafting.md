@@ -90,8 +90,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   Limits currently cover the Historic timeless jewel, Impossible Escape, radius unique jewels and the tattoo total/group
   caps. `catalog_entries` now seeds and reloads the unique-item, radius/threshold/unique/timeless jewel, tattoo-effect
   and jewel-art catalogues (2 / 76 / 43 / 6 / 48 / 190 rows on the live database); the code arrays are the fresh-database
-  seed. The item-template schema exists, but custom item templates, custom names and the admin panel are not implemented
-  yet.
+  seed. `system_settings` seeds 21 socket caps by item class (wand 3, body 6, helmet/gloves/boots 4, shield 3, belt 0,
+  two-handed 6), `passive_points_per_level` 1 and `gold_drop_multiplier` 1; `/game_data setting` changes a number and
+  reloads it. Live: a wand set to six sockets accepted `RRGBBB` and was reduced back to three. The item-template schema
+  exists, but custom item templates, custom names and the admin panel are not implemented yet.
   Code: `GameData.cs`, `GameDataCatalog.cs`, `GameDataStore.cs`, `ModRangeProvider.cs`, `LimitSettings.cs`, Gateway
   (`Program.Commands.cs`).
   Docs: [editable game data](../docs/dev/editable-game-data.md), [saves](../docs/saves.md).

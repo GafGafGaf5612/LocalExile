@@ -54,6 +54,7 @@ static class GameData
         ModRangeProvider.Default.Replace(Empty.ModRanges);
         LimitSettings.Default.Replace(Empty.Limits);
         GameDataCatalog.ResetToSeeds();
+        SystemSettings.ResetToSeeds();
         old?.Dispose();
     }
 
@@ -67,13 +68,15 @@ static class GameData
             .ToDictionary(row => row.Key, row => row.Value, StringComparer.OrdinalIgnoreCase);
         var snapshot = new Snapshot(Interlocked.Increment(ref _revision), ranges, limits);
 
-        // Build the catalogues first: a bad payload leaves the previous ranges/limits and catalogues untouched.
+        // Build the catalogues and settings first: a bad payload leaves the previous ranges/limits and catalogues intact.
         GameDataCatalog.Reload(store);
+        SystemSettings.Reload(store);
         ModRangeProvider.Default.Replace(ranges);
         LimitSettings.Default.Replace(limits);
         Volatile.Write(ref _snapshot, snapshot);
         Console.WriteLine($"[gateway] game data: revision {snapshot.Revision}, {ranges.Count} mod range override(s), " +
-            $"{limits.Count} limit override(s) ({reason}); {GameDataCatalog.Summary}");
+            $"{limits.Count} limit override(s), {SystemSettings.Default.Values.Count} system setting(s) ({reason}); " +
+            $"{GameDataCatalog.Summary}");
     }
 
     public static int Limit(string key, int baseValue) =>

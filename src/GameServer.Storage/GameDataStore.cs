@@ -13,6 +13,7 @@ public sealed class GameDataStore : IDisposable
     public sealed record ModStatOverride(string ModId, int StatIndex, int Minimum, int Maximum);
     public sealed record LimitOverride(string Key, int Value);
     public sealed record CatalogRow(string Kind, string Key, string Payload, bool Enabled);
+    public sealed record SettingRow(string Key, double Value);
 
     private readonly SqliteConnection _db;
     private readonly object _gate = new();
@@ -49,6 +50,11 @@ public sealed class GameDataStore : IDisposable
                     value INTEGER NOT NULL,
                     updated_utc TEXT NOT NULL,
                     CHECK (value >= 0)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value REAL NOT NULL,
+                    updated_utc TEXT NOT NULL
                 ) STRICT;
                 CREATE TABLE IF NOT EXISTS catalog_entries (
                     kind TEXT NOT NULL,
@@ -162,6 +168,46 @@ public sealed class GameDataStore : IDisposable
             command.ExecuteNonQuery();
         });
     }
+
+    public IReadOnlyList<SettingRow> LoadSettings()
+    {
+        lock (_gate)
+        {
+            using var command = Command("SELECT key, value FROM system_settings ORDER BY key");
+            using var reader = command.ExecuteReader();
+            var result = new List<SettingRow>();
+            while (reader.Read()) result.Add(new(reader.GetString(0), reader.GetDouble(1)));
+            return result;
+        }
+    }
+
+    public void SetSetting(string key, double value)
+    {
+        if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("setting key is empty", nameof(key));
+        if (!double.IsFinite(value)) throw new ArgumentException("setting value is not finite", nameof(value));
+        Atomically(() =>
+        {
+            using var command = Command("""
+                INSERT INTO system_settings (key, value, updated_utc)
+                VALUES ($key, $value, $utc)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_utc = excluded.updated_utc
+                """, ("$key", key), ("$value", value), ("$utc", DateTime.UtcNow.ToString("O")));
+            command.ExecuteNonQuery();
+        });
+    }
+
+    public void DeleteSetting(string key)
+    {
+        Atomically(() =>
+        {
+            using var command = Command("DELETE FROM system_settings WHERE key = $key", ("$key", key));
+            command.ExecuteNonQuery();
+        });
+    }
+
+    public bool SettingsSeeded() => Meta("settings_seeded") is not null;
+
+    public void MarkSettingsSeeded() => SetMeta("settings_seeded", DateTime.UtcNow.ToString("O"));
 
     public IReadOnlyList<CatalogRow> LoadCatalog(string kind)
     {
