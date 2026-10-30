@@ -14,6 +14,7 @@ using SaveFiles = GameServer.Core.Saves.SaveFiles;
 using DamagePacket = GameServer.Core.World.DamagePacket;
 using DamageRange = GameServer.Core.World.DamageRange;
 using DamageOverTime = GameServer.Core.World.DamageOverTime;
+using GameServer.Core.Diagnostics;
 
 // GameServer.Gateway — the instance (game) server the client connects to after login 0x14, or after 0x27 on an area
 // change (Agents/docs/protocol/02, 09).
@@ -24,6 +25,7 @@ using DamageOverTime = GameServer.Core.World.DamageOverTime;
 // Port: Game_GATEWAY_PORT (default 6112). Instance keys: data/instance-secret.bin (Game_INSTANCE_SECRET), shared with
 // GameServer.Auth. Auth control: 127.0.0.1:Game_AUTH_CONTROL_PORT (20495); without it every ticket gets Lioneye's Watch.
 
+ServerLog.Install("gateway");
 int port = int.TryParse(Environment.GetEnvironmentVariable("Game_GATEWAY_PORT"), out var p) ? p : 6112;
 var keyring = InstanceKeyring.LoadOrCreate(Environment.GetEnvironmentVariable("Game_INSTANCE_SECRET") ?? Path.Combine("data", "instance-secret.bin"));
 
@@ -277,9 +279,10 @@ sealed partial class Program
     internal static readonly double WalkSpeed =
         double.TryParse(Environment.GetEnvironmentVariable("Game_WALK_SPEED"), System.Globalization.CultureInfo.InvariantCulture, out var s) ? s : 37;
 
-    // Game_MOVE_TRACE=1 logs "[move-trace] qpc=…" for the client's 0x24/0x25/0x191 as read and the server's
-    // 0x1ab/0x1b7/0x1ba as written, on the machine's QPC clock (scripts/re/frida/trace-movement.js uses the same clock).
-    internal static readonly bool MoveTrace = Environment.GetEnvironmentVariable("Game_MOVE_TRACE") == "1";
+    // Game_TRACE=move (or the older Game_MOVE_TRACE=1) logs "[move-trace] qpc=…" for the client's 0x24/0x25/0x191 as read
+    // and the server's 0x1ab/0x1b7/0x1ba as written, on the machine's QPC clock (scripts/re/frida/trace-movement.js uses
+    // the same clock).
+    internal static readonly bool MoveTrace = ServerTrace.Move;
 
     // The server frame length (ms, S→C 0x2b6): a lockstep client's world advances by these frames. Game_FRAME_MS overrides.
     internal static readonly byte FrameMs =

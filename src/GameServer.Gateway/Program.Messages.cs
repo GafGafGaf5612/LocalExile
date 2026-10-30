@@ -336,6 +336,7 @@ partial class Program
                 // Esc → "Exit to Character Selection" or the hardcore death screen's Exit. Closing the instance connection
                 // is the answer: the client keeps its login connection and goes back to the character list (09 §6).
                 Console.WriteLine($"[gateway] {remote} <= 0x0153 exit to character selection: closing the instance connection");
+                conn.CloseReason = "exit to character selection (0x0153)";
                 lock (conn.Monsters)
                 {
                     conn.Closed = true;

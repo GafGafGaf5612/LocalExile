@@ -1282,6 +1282,12 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
+        .Add("lastpackets", "/lastpackets [n] (dev: the connection's last n messages, both directions, to the Gateway log; default 64)", async args =>
+        {
+            int n = args.Length > 0 ? Math.Clamp(int.Parse(args[0]), 1, PacketHistory.Capacity) : 64;
+            conn.Packets.Print(remote, "/lastpackets", n);
+            await conn.Commands!.Reply($"The last {Math.Min(n, conn.Packets.Count)} of {conn.Packets.Count} packet(s) are in logs\\live-gateway.log.");
+        })
         .Add("tp", "/tp <x> <y> | <+dx> <+dy> | <id> | <name> [n] | list [filter] (dev: teleport to a cell, a monster, NPC, transition, waypoint or captured object, e.g. /tp RhoaChest 2)",
             args => DevTeleport(remote, stream, ciphers, conn, args))
         .Add("mobs", "/mobs (list spawned monsters)", async _ =>
