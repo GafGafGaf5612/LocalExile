@@ -267,7 +267,11 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   DiesAfterTime, StateMachine or Transitionable. The blob also writes MinimapIcon (u8), DiesAfterTime (no data: its
   live vtable is the factory's `0x14359f478`, slot 17 `ret`), Preload, Functions, PlayerClass (no data), Transitionable
   and StateMachine (below): **10 345 varieties** are supported; the other 346 have NPC, ControlZone, BlightTower,
-  Mercenary, LimitedLifespan … components and are refused with a message box. The Gateway knows each type's list and
+  Mercenary, LimitedLifespan … components and are refused with a message box. The type is the variety's own Id when an
+  `.ot` exists under it, else its `BaseMonsterTypeIndex`: `KitavaBoss/KitavaFinal`'s base column names `Kitava1`, but
+  the client builds it from `kitavafinal.ot`, which has no Transitionable; sent with Kitava1's list, the extra byte was
+  read as the task count and the client stopped on "Buffer Underflow" (live 2026-10-30). 17 varieties have an own type
+  that serialises differently (Kitava2/3/Final, BlackDeathMaligaro, Atziri2 …). The Gateway knows each type's list and
   data from `data/object-types.json` (`python -I scripts/re/ot_components.py --all --json data/object-types.json`,
   about 2 minutes); without it, it assumes the base list and refuses StateMachine types.
 - **Transitionable** (`ClientInternalTransitionable` `0x1435dd290`, slot 17 `0x1421c24b0`): u8 = state (low 7 bits,
