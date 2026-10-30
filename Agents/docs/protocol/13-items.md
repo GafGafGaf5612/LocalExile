@@ -336,9 +336,10 @@ remains available, while production uses a pure whole-active-set callback. The e
 one-at-a-time deactivation phases are retained. Signed circular dependencies can oscillate between evaluations;
 their official policy remains unverified, and no fixed-point or stabilization rule is invented here.
 
-A socketed gem's own unmet requirement disables that gem through `GemRequirementsUnmet`/`GemDisabled`; it does not
-deactivate a qualified host or unrelated socketed gems. Gem admission reads the completed pool attributes and explicit
-`virtual_*_for_requirements` overrides. A host failing its own requirements contributes no mods or usable gem skills.
+A socketed gem's unmet requirement raises its item's requirements (`EquipmentStatSources`, `SocketedGemRequirements`,
+[19](19-gems.md)): the item goes inactive with every gem in it, as a worn item the character is too low for does, and
+a use that still arrives is refused (`GemRequirementsUnmet`/`GemDisabled`). Gem admission reads the completed pool
+attributes and explicit `virtual_*_for_requirements` overrides. An inactive host contributes no mods or usable gem skills.
 An inactive main-hand weapon is absent for attacks and weapon-shape conditions: the default attack uses the class's
 unarmed hit (`WeaponFor`) and the shape passives read as unarmed (`WeaponProfileFor`).
 

@@ -980,6 +980,20 @@ and stops the clock (as a pause does) for its reads.
 Native validation on this base: the owner's live run of 2026-10-29 over the row batch, the converted charges and the
 Blood Charges (each section above); the stack ran from this checkout on alternative ports beside another checkout's.
 
+Second merge (2026-10-29): `main` `5d5b5150` (PR #361: socketed gem requirements disable their item again, client-predicted
+projectiles, Tornado Shot's arrow) into `ff61e937`. Conflicts: `Program.Progression.cs` (main's `WithGems` requirement
+raise and `virtual_*_for_requirements` comparison, with the branch's mod catalog passed to `ResolveEquipment` for the
+requirement-waiving hidden modifier), `Program.Skills.cs` and `19-gems.md` (comments and text). Two rules changed
+underneath the branch and the branch follows main on both: a socketed gem's unmet requirement makes its host
+inactive again (the port had kept the host active; `PercentageAttributeGatewayTests` now expects the Plate Vest to go
+inactive with its Fireball, the four selected-row support-qualification tests expect the host and both its gems to
+leave when the support is disqualified (`SelectedMiscCharacter.AssertHostInactive`), the contact fixture sets
+`virtual_*_for_requirements` so its supports qualify, and the 19-gems/13-items/status/roadmap/port-record text no
+longer claims the port's rule), and a gem use's primary
+projectiles get no server object (the client draws its own; the volley test expects no new object ids). Main's new
+`CaptureGemProjectile` test passes the branch's per-use critical roll. On the merged tree: build clean; Core 389,
+Data 34, Gateway 2561 pass.
+
 Deferred and open at the close of the PR (each with its home): Spirit and Siphoning Charges (unique definitions #60,
 abyss-jewel socketing and Shaper/Elder influence: the combat roadmap); Blitz and Challenger Charges (no 3.29 player
 source); the Affliction non-damaging ailment effect and the Absorption recoup (no server consumer); executing the

@@ -150,7 +150,9 @@ public partial class ConditionalCriticalGatewayTests
         var packet = f.Hit;
         uint firstObject = f.Conn.NextObjectId;
         await f.Launch();
-        Assert.Equal(firstObject + 3, f.Conn.NextObjectId);
+        // The client spawns a gem use's primary projectiles itself (ClientPredicted): the server simulates all three but
+        // creates no object for them, so the one direct hit per target is the only trace of the volley.
+        Assert.Equal(firstObject, f.Conn.NextObjectId);
         Assert.Equal((uint)Math.Round(packet.MinTotal * f.Multiplier / 100.0), f.Target.MaxLife - f.Target.Life);
         Assert.Equal(1, critical.Calls);
         Assert.Equal(0, accuracy.Calls);

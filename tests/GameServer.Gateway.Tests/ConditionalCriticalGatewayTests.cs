@@ -55,6 +55,10 @@ public partial class ConditionalCriticalGatewayTests
                 inventory.Add(PlayerInventories.BodyArmour, 0, 0, host);
                 Skill = Program.GemSkillIdPool.Value[0];
             }
+            // Item activation reads the requirement attributes, not the pools Refresh sets (socketed gems count, 19-gems.md):
+            // the level 1 character meets its supports' requirements through these.
+            foreach (string attribute in new[] { "strength", "dexterity", "intelligence" })
+                Set($"virtual_{attribute}_for_requirements", 1000);
             Set(AttackBaseCriticalStrike.UnarmedBaseStat, 1000);
             Set(AttackBaseCriticalStrike.WeaponOverrideStat, 1000);
             Set("extra_critical_rolls_while_on_low_life", 1);

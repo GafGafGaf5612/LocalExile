@@ -95,6 +95,7 @@ G = global / static data.
 | `0x1435dd8f8` (write `0x141fe04d0`, read `0x141fe0520`) | Cls | 0x2b9 create object |
 | `0x141f91f60` / `0x141f92000` | Fn | entity header write / read |
 | `0x141ebe190` | Fn | create object from blob |
+| `0x141ebdf30` | Fn | create a client-side object (id from the world): the client's own predicted projectiles ([11](11-skills.md#10-projectiles-experimental)) |
 | `0x141dea920` / `0x141ee00f0` | Fn | blob base data / tasks |
 | `0x142427510` | Fn | build components from the type |
 | `0x142475bd0`, `0x142476300`, `0x142476580` | Fn | `.ot` parser, extends, sections |
@@ -491,6 +492,7 @@ that does not exist with hash: ", "Area reported by instance does not exist", "U
 | `0x14319d870` | VT | skill bar UI (13 slots; `0x140ae04b0` subscribes it to instance +0xaf78 and +0xad78) |
 | `0x140ae0fb0` | Fn | skill bar vtable +0x390: rebuild from 13 skill ids (lookup in ActiveSkillManager +0x158, slot set +0x398, clear +0x3a0) |
 | `0x1435a0d10` | VT | Projectile component (0x20 bytes; slot 17 reads nothing, almost every slot a `ret`) |
+| `0x141e37850` | Fn | Projectile component constructor (writes `0x1435a0d10`) |
 | `0x141e30c90` | Fn | Positioned message handler: 0x1b7 teleport, 0x1b8, 0x1b9, 0x1ba move (height u32 +0x28, speed f32 +0x2c), 0x1bc |
 | `0x1419e7660` / `0x1419eef50` | Fn | Spell duration: virtual base milliseconds / 1000 / (1 + cast speed / 100) |
 | `0x1419e7500` / `0x1419e763c` | Fn / Code | Ordinary spell speed getter / read cast_speed_+% (296) |

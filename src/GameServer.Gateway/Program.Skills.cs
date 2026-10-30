@@ -9,9 +9,10 @@ using DamagePacket = GameServer.Core.World.DamagePacket;
 partial class Program
 {
     // The player's granted skills: the default attack with the unarmed weapon's stats and every stat the server set on the
-    // player since (a skill's stats include the character's; the client reads the skill's). Qualified equipment supplies
-    // its stats before individual gem validation. A gem's own unmet requirement does not disable its host; GemDisabled
-    // refuses that gem's use even when its skill ID remains in the Actor list or the client sends stale input.
+    // player since (a skill's stats include the character's; the client reads the skill's). A gem whose requirements the
+    // character does not meet makes its item inactive (EquipmentStatSources) like a worn item the character is too low for,
+    // so GemSkillEffects leaves its skill out: the client has nothing to cast. A use that arrives anyway (a stale client) is
+    // refused (GemDisabled).
     static IReadOnlyList<GrantedSkill> PlayerSkills(ClientState conn)
     {
         // One build reads one snapshot of the character's stats, final stats and supported gems: every gem's cast time,
@@ -771,13 +772,28 @@ partial class Program
 
     // A gem's attribute requirements at its level: each SkillGems percentage through SkillCatalog.GemAttributeRequirement.
     static (int Str, int Dex, int Int) GemAttributeRequirements(ClientState conn, Item gem, ItemCatalog.GemType type, int effect)
+        => GemAttributeRequirements(conn, gem, type, effect, AttributeRequirementsPct(conn));
+
+    static (int Str, int Dex, int Int) GemAttributeRequirements(ClientState conn, Item gem, ItemCatalog.GemType type, int effect, int pct)
     {
         int level = Math.Clamp(ItemsFor(conn).GemLevel(gem), 1, Math.Max(1, type.MaxLevel));
         int needs = SkillsFor(conn).PlayerLevelReq(effect, level);
-        int pct = AttributeRequirementsPct(conn);
         return (ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.StrengthPercent, needs, type.IsSupport), pct),
             ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.DexterityPercent, needs, type.IsSupport), pct),
             ScaledRequirement(SkillCatalog.GemAttributeRequirement(type.IntelligencePercent, needs, type.IsSupport), pct));
+    }
+
+    // The requirements a gem socketed in a worn item adds to that item (the client shows the item red when they are not
+    // met): the level its skill needs at the gem's level, and its attribute requirements. Pure catalog data, so the
+    // equipment resolver can read it before the pools exist.
+    static (int Level, int Str, int Dex, int Int) SocketedGemRequirements(ClientState conn, Item gem, int attributePct)
+    {
+        if (ItemsFor(conn).ByHash(gem.TypeHash) is not { } baseType || ItemsFor(conn).Gem(baseType) is not { } type) return default;
+        int effect = type.Variant(gem.GemVariant).Effect;
+        if (effect < 0) return default;
+        int level = SkillsFor(conn).PlayerLevelReq(effect, ItemsFor(conn).GemLevel(gem));
+        var (str, dex, intel) = GemAttributeRequirements(conn, gem, type, effect, attributePct);
+        return (level, str, dex, intel);
     }
 
     // The value the client's requirement checks compare (virtual_*_for_requirements, 13-items.md §2d): what /set_stat set,
@@ -819,7 +835,7 @@ partial class Program
 
     // Why a gem skill may not be used: an actor restriction, unmet gem requirements or provider equipment restrictions.
     // The client reds the gem but still sends the use, so this is the backstop for a client whose item is not inactive yet.
-    // Null when the actor restriction and requirements allow the effect; a qualified host remains active.
+    // Null when the actor restriction and requirements allow the effect.
     static string? GemDisabled(ClientState conn, int effect)
     {
         if (ActorSkillDisabled(conn, effect) is { } restriction) return restriction;
@@ -853,8 +869,8 @@ partial class Program
     // name, the gem's own level (from its experience; the experience stalls at the character's level requirement instead,
     // GainGemExperience) and quality. A transfigured or Trarthan gem grants its variant's skill, a Vaal gem its Vaal skill and
     // its base skill (ItemCatalog.GemEffects). Each skill keeps its id while its gem stays socketed (GemSkillIds): the client
-    // binds skill bar keys by skill id. An item failing its own requirements grants nothing here. A gem
-    // failing its own requirement leaves its qualified host active and is enforced at use by GemDisabled.
+    // binds skill bar keys by skill id. A gem whose requirements the character does not meet makes its item inactive
+    // (EquipmentStatSources), so it grants nothing here; a use that still arrives is refused (GemDisabled).
     static IEnumerable<(ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)> GemSkillEffects(ClientState conn)
     {
         string name = CharacterName(conn);

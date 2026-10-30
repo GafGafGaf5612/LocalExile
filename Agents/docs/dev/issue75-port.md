@@ -37,8 +37,9 @@ attribute-derived defence scaling, the corrected Intelligence ES bonus and inher
 Shared code was resolved against both implementations:
 
 - Preserve upstream's wide `AttributeModifiers` collector and override/removal behavior. New percentage and
-  derived-pool inputs use that calculation rather than a competing attribute engine. A gem failing its own
-  requirements disables that gem while a qualified host retains its stats.
+  derived-pool inputs use that calculation rather than a competing attribute engine. (The port let a gem failing its
+  own requirements disable only that gem while its host kept its stats; main restored host deactivation on
+  2026-10-29 and the branch follows it, [19](../protocol/19-gems.md).)
 - Preserve Chaos Inoculation's final one-Life rule, chaos-hit armour, own-aura restriction, actor-scale projection,
   spell damage restrictions, projectile return/spread and current bow impact handling.
 - Apply both `local_elemental_damage_+%` and `local_attacks_with_this_weapon_elemental_damage_+%` in the shared

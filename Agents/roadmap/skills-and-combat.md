@@ -166,7 +166,8 @@ remaining native checks are recorded in [the port record](../docs/dev/issue75-po
   Ordinary typed/all-attribute increases now share one whole-source calculation for pools, equipment and gems.
   Automated real-source/removal, zero, derived-pool and active-set checks pass in both modes. Thirty-four native
   controls verify those states, weapon-set persistence after relog and ordinary Fireball requirement refusal/recovery
-  without disabling its qualified host. Supplied-source controls do not certify unique acquisition.
+  (recorded while the port kept a qualified host active; the host now goes inactive with its gem, main's restored
+  rule). Supplied-source controls do not certify unique acquisition.
   Pinned-PoB fractional rounding remains a labelled projection. Signed equipment cycles, attribute conversions,
   conditional/more operators and mercenary gates remain open.
   Six missing ordinary Life/Mana coefficients now join flat pools before increases: signed per-level Life/Mana,

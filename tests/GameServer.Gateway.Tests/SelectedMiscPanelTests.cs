@@ -280,9 +280,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
 
         Check(35, supported: true);
         game.SetQualifier(false);
-        Assert.NotNull(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.SupportGem));
-        Assert.DoesNotContain(game.HostId, Program.InactiveItems[game.Character]);
-        Check(15, supported: false);
+        game.AssertHostInactive();
         game.SetQualifier(true);
         Check(35, supported: true);
         game.Socket(linked: false);
@@ -384,7 +382,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
     }
 
     [Fact]
-    public void Selected_misc_support_requirement_failure_and_recovery_leave_the_qualified_host_and_active_gem_available()
+    public void Selected_misc_support_requirement_failure_takes_the_host_down_and_recovery_restores_the_supported_skill()
     {
         var spec = SelectedMiscSpec("area");
         using var game = new SelectedMiscCharacter(spec);
@@ -393,15 +391,10 @@ public sealed partial class AscendancyGatewayIntegrationTests
         game.AssertSupported(linked);
         Assert.Equal(50, linked.Get(spec.Alias));
         game.SetQualifier(false);
+        // The active gem still qualifies on its own, but the support it shares the item with does not: the item goes
+        // inactive with every gem in it (19-gems.md).
         Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.ActiveGem));
-        Assert.NotNull(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.SupportGem));
-        Assert.DoesNotContain(game.HostId, Program.InactiveItems[game.Character]);
-        var disqualified = game.Read();
-        Assert.Equal(linked.Skill.Id, disqualified.Skill.Id);
-        Assert.Empty(disqualified.Applied);
-        Assert.Empty(disqualified.Skill.Supports);
-        Assert.Equal(20, disqualified.Get(spec.Alias));
-        game.AssertControls(20);
+        game.AssertHostInactive();
 
         game.SetQualifier(true);
         game.AssertQualified();
@@ -518,6 +511,15 @@ public sealed partial class AscendancyGatewayIntegrationTests
             Assert.Null(supportFailure);
             Assert.Null(ProgramValue<string?>("GemRequirementsUnmet", State, _other));
             Assert.DoesNotContain(HostId, Program.InactiveItems[Character]);
+        }
+
+        // A socketed gem the character does not qualify for makes its whole host inactive (19-gems.md): the support's
+        // failure takes the active gem and the other gem in the same item off the skill list with it.
+        public void AssertHostInactive()
+        {
+            Assert.NotNull(ProgramValue<string?>("GemRequirementsUnmet", State, SupportGem));
+            Assert.Contains(HostId, Program.InactiveItems[Character]);
+            Assert.DoesNotContain(Gems(), g => g.Effect == ActiveEffect || g.Effect == _otherEffect);
         }
 
         public (ushort Id, int Effect, string Name, int Level, int Quality, uint Gem)[] Gems() =>

@@ -1344,6 +1344,16 @@ The older native evidence below records packet discoveries and the replaced impl
 send-gate damage commits, return overshoot/debug flags and fixed-gap controls are not current runtime behavior.
 Revalidate native gameplay against the current runtime; packet-layout evidence remains applicable.
 
+**The client predicts its own gem projectiles (Frida 2026-10-29).** One Fireball cast built two Projectile
+components: one from the 0x2b9 handler (`0x142187c8a` → `0x141ebe190`), one from the player's action
+(`0x141e938c0` → `0x1419eec90` → `0x141ebdf30`, a client-side object whose id the world assigns) with the same type,
+`Metadata/Projectiles/StygianFireball`, 160 ms before the server's. With `number_of_additional_projectiles` 2 the
+client built three before the server's three, so it predicts every primary projectile of the volley, from its own
+position. The server therefore sends no object for a gem use's primary projectiles (`ProjectileOffense.ClientPredicted`,
+`ProjectileSession.Publish`) and still simulates them; continuation children and area effects still go out. The
+client made no explosion object of its own. Ordinary bow arrows (`ScheduleOrdinaryBow`) keep their server object:
+whether the client predicts them is not checked. Trace: `scripts/re/frida/trace-projectile-create.js`.
+
 The server creates and moves the projectile. The client's Projectile component (vtable `0x1435a0d10`, 0x20 bytes) does
 nothing by itself: its slot 17 reads nothing and almost every other slot is a bare `ret`.
 
@@ -1353,7 +1363,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   (`ProjectileObject`; the Animated component is index 1), then 0x1a9 (wake zone). The real link between a skill and
   its projectile is unknown; the Gateway matches the Id. Multiple projectiles are one object each, spread around the
   aim (`ProjectileSpread`: `number_of_additional_projectiles`, `projectile_spread_radius` or 10°,
-  `Game_PROJECTILE_SPREAD`): the client fires none of its own. Kinetic Blast's effect is ClusterBurst, which names no
+  `Game_PROJECTILE_SPREAD`); the client also spawns its own copies of a gem use's volley (above), so those objects
+  are no longer sent. Kinetic Blast's effect is ClusterBurst, which names no
   Projectiles row, so it falls back to the wand attack's `Metadata/Projectiles/WandProjectile` (3260) and plays
   `Metadata/Effects/Spells/cluster_burst/big.ao` where it lands; a landing on bare ground runs one area hit of the
   skill's radius (its secondary explosions are not modelled).

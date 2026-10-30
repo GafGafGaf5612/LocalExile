@@ -29,9 +29,7 @@ public sealed partial class AscendancyGatewayIntegrationTests
         game.AssertSupported(game.Read());
         Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
         game.SetQualifier(false);
-        Assert.NotNull(ProgramValue<string?>("GemRequirementsUnmet", game.State, game.SupportGem));
-        Assert.Empty(game.Read().Applied);
-        Assert.Equal(spec.Actor, game.Read().Get(spec.Alias));
+        game.AssertHostInactive();
         game.SetQualifier(true);
         game.AssertSupported(game.Read());
         Assert.Equal(spec.Actor + spec.Own, game.Read().Get(spec.Alias));
