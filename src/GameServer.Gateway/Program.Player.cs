@@ -13,11 +13,23 @@ partial class Program
         tabType is byte type && (type == StashRules.Currency || StashRules.IsGrid(type))
         && inside.Any(i => catalog.ByHash(i.Item.TypeHash)?.Class == "StackableCurrency");
 
+    // The characters in god mode, by name, for the Gateway's lifetime: every area is a new connection, so without this an
+    // area change or a relog silently ended /god.
+    internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> GodCharacters = new(StringComparer.OrdinalIgnoreCase);
+
+    // A new connection of a character in god mode is in it again (LoadProgress, before its pools are worked out). It only
+    // switches on: a caller may have set it already.
+    internal static void RestoreGod(ClientState conn)
+    {
+        if (GodCharacters.ContainsKey(CharacterName(conn))) conn.God = true;
+    }
+
     static async Task SetGod(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, bool on)
     {
         lock (conn.Monsters)
         {
             conn.God = on;
+            if (on) GodCharacters[CharacterName(conn)] = true; else GodCharacters.TryRemove(CharacterName(conn), out _);
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
             conn.PlayerLife = on ? conn.PlayerMaxLife : Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
