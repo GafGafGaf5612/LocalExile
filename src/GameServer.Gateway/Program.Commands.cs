@@ -1361,6 +1361,111 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
+        .Add("game_data", "/game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | list (dev: SQLite game-data overrides; no restart)", async args =>
+        {
+            if (args.Length == 0)
+            {
+                await conn.Commands!.Reply("Usage: /game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | list");
+                return;
+            }
+            if (GameData.Store is not { } store)
+            {
+                await conn.Commands!.Reply("The game-data store is not open");
+                return;
+            }
+            string action = args[0].ToLowerInvariant();
+            try
+            {
+                switch (action)
+                {
+                    case "reload":
+                        GameData.Reload("command");
+                        await conn.Commands!.Reply($"Game data reloaded: revision {GameData.Current.Revision}");
+                        return;
+                    case "mod":
+                        {
+                            if (args.Length != 5 || !int.TryParse(args[2], out int stat) || !int.TryParse(args[3], out int min)
+                                || !int.TryParse(args[4], out int max))
+                            {
+                                await conn.Commands!.Reply("Usage: /game_data mod <mod> <stat> <min> <max>");
+                                return;
+                            }
+                            if (ItemsFor(conn).Mods.Find(args[1]) is not { } mod)
+                            {
+                                await conn.Commands!.Reply($"No mod \"{args[1]}\"");
+                                return;
+                            }
+                            if (stat < 0 || stat >= mod.Stats.Count)
+                            {
+                                await conn.Commands!.Reply($"{mod.Id} has stats 0..{mod.Stats.Count - 1}");
+                                return;
+                            }
+                            if (min > max)
+                            {
+                                await conn.Commands!.Reply("minimum is above maximum");
+                                return;
+                            }
+                            store.SetModRange(mod.Id, stat, min, max);
+                            GameData.Reload("mod range");
+                            var range = mod.RangeAt(stat);
+                            await conn.Commands!.Reply($"{mod.Id} stat {stat} ({mod.Stats[stat].Id}) range {range.Min}..{range.Max}; " +
+                                "new rolls use it, existing items keep their values");
+                            return;
+                        }
+                    case "clear_mod":
+                        {
+                            if (args.Length is < 2 or > 3 || (args.Length == 3 && !int.TryParse(args[2], out _)))
+                            {
+                                await conn.Commands!.Reply("Usage: /game_data clear_mod <mod> [stat]");
+                                return;
+                            }
+                            string modId = ItemsFor(conn).Mods.Find(args[1])?.Id ?? args[1];
+                            store.ClearModRange(modId, args.Length == 3 ? int.Parse(args[2]) : null);
+                            GameData.Reload("clear mod range");
+                            await conn.Commands!.Reply($"Cleared the range override for {modId}" +
+                                (args.Length == 3 ? $" stat {args[2]}" : ""));
+                            return;
+                        }
+                    case "limit":
+                        {
+                            if (args.Length != 3 || !int.TryParse(args[2], out int value) || value < 0)
+                            {
+                                await conn.Commands!.Reply("Usage: /game_data limit <key> <value> (0 = unlimited)");
+                                return;
+                            }
+                            store.SetLimit(args[1], value);
+                            GameData.Reload("limit");
+                            await conn.Commands!.Reply($"Limit {args[1]} = {value}" + (value == 0 ? " (unlimited)" : ""));
+                            return;
+                        }
+                    case "clear_limit":
+                        if (args.Length != 2)
+                        {
+                            await conn.Commands!.Reply("Usage: /game_data clear_limit <key>");
+                            return;
+                        }
+                        store.ClearLimit(args[1]);
+                        GameData.Reload("clear limit");
+                        await conn.Commands!.Reply($"Cleared the limit override for {args[1]}");
+                        return;
+                    case "list":
+                        await conn.Commands!.Reply($"Game data revision {GameData.Current.Revision}: " +
+                            $"{GameData.Current.ModRanges.Count} mod range override(s), {GameData.Current.Limits.Count} limit override(s)");
+                        foreach (var (key, range) in GameData.Current.ModRanges.OrderBy(kv => kv.Key.ModId).ThenBy(kv => kv.Key.Index))
+                            await conn.Commands!.Reply($"  mod {key.ModId}[{key.Index}] = {range.Min}..{range.Max}");
+                        foreach (var (key, value) in GameData.Current.Limits.OrderBy(kv => kv.Key))
+                            await conn.Commands!.Reply($"  limit {key} = {value}" + (value == 0 ? " (unlimited)" : ""));
+                        return;
+                    default:
+                        await conn.Commands!.Reply("Unknown /game_data action; use reload, mod, clear_mod, limit, clear_limit or list");
+                        return;
+                }
+            }
+            catch (Exception e) when (e is IOException or Microsoft.Data.Sqlite.SqliteException or ArgumentException)
+            {
+                await conn.Commands!.Reply($"Game data change failed: {e.Message}");
+            }
+        })
         .Add("lastpackets", "/lastpackets [n] (dev: the connection's last n messages, both directions, to the Gateway log; default 64)", async args =>
         {
             int n = args.Length > 0 ? Math.Clamp(int.Parse(args[0]), 1, PacketHistory.Capacity) : 64;

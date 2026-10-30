@@ -65,6 +65,15 @@ features.
   probabilities from live captures (the current curve is an approximation).
 - **Done when:** items' damage and defences count, and flasks and currency can be used.
 
+## 4. Server design
+
+- **Editable game data and limits:** the SQLite overlay, snapshot/reload foundation, mod roll ranges and item limits are
+  implemented and live-checked; the next step is item templates with custom names, then the admin interface and the
+  broader server-side settings.
+  The client-compatibility boundary, schema and cache plan are in
+  [dev/editable-game-data.md](../docs/dev/editable-game-data.md).
+  The extracted JSON stays the reference; the database only overrides it.
+
 ## 5. Project
 
 - Completed currency metacraft protection for supported explicit-affix currencies;

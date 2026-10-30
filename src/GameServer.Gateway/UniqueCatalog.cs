@@ -48,7 +48,11 @@ sealed class UniqueCatalog(ItemCatalog items, string folder = "data")
         foreach (string id in definition.Mods)
         {
             if (items.Mods.ById(id) is not { } mod) continue;
-            var values = mod.Stats.Select(s => s.Min == s.Max ? s.Min : random.Next(s.Min, s.Max + 1)).ToArray();
+            var values = mod.Stats.Select((_, i) =>
+            {
+                var (min, max) = mod.RangeAt(i);
+                return min == max ? min : random.Next(min, max + 1);
+            }).ToArray();
             mods.Add(new ItemMod(ModSection.Explicit, mod.Hash, values));
         }
         return item with { Mods = mods };

@@ -541,7 +541,7 @@ static class RadiusJewelCatalogue
 
     static ItemMod CreateMod(ModCatalog.Mod row, int? value = null, ModSection section = ModSection.Explicit)
     {
-        var values = row.Stats.Select(stat => stat.Max).ToArray();
+        var values = row.MaxValues().ToArray();
         if (value is int selected)
             for (int i = 0; i < row.Stats.Count; i++)
                 if (row.Stats[i].Id == "local_jewel_variable_ring_radius_value") values[i] = selected;

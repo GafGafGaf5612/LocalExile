@@ -82,6 +82,16 @@ Part of [Status](../Status.md); what to build next in this area is in
   Code: `InstanceItems.cs`, Gateway (`ModCatalog.cs`, `ItemRolls.cs`, `ItemDrops.cs`, `ItemModStats.cs`,
   `ItemCatalog.cs`, `CharacterSaves.cs`).
   Docs: [13](../docs/protocol/13-items.md) §2a-§2c.
+- Game-data overrides (implemented 2026-10-30): the SQLite overlay `mod_stat_overrides` and `limit_overrides` in
+  `data/saves.db` changes mod roll ranges and item limits through `/game_data`; the Gateway loads the rows at startup,
+  keeps the reference mod/base lists in memory, and atomically republishes the effective snapshot after an edit, so no
+  restart is needed. Verified live: setting a range and a timeless-jewel limit, listing the revision, clearing both, and
+  the tables being empty again after the check.
+  Limits currently cover the Historic timeless jewel, Impossible Escape, radius unique jewels and the tattoo total/group
+  caps. The item-template schema exists, but custom item templates, custom names and the admin panel are not implemented
+  yet.
+  Code: `GameData.cs`, `GameDataStore.cs`, `ModRangeProvider.cs`, `LimitSettings.cs`, Gateway (`Program.Commands.cs`).
+  Docs: [editable game data](../docs/dev/editable-game-data.md), [saves](../docs/saves.md).
 - Gold: shared by the account's characters of one league (S→C 0x2a9), saved with that league's stash, sent on area
   entry; every league has its own stash and gold, Standard keeps the account's stash from before (`AccountStash.Key`);
   monsters drop piles of gold (normal 40%, magic 75%, rare and unique always;
