@@ -515,6 +515,8 @@ partial class Program
                 if (conn.LeavingArea)
                 {
                     // A failed transfer can resume this connection. Do not catch up old cached rates through loading.
+                    // These sessions accrue independently of 'last'; settle and discard their loading-time recovery.
+                    DiscardLoadingRecovery(conn, now);
                     last = now;
                     ratesAt = double.NegativeInfinity;
                     continue;
@@ -599,6 +601,15 @@ partial class Program
             if (ended.Count > 0)
                 await EndFlaskEffects(remote, stream, ciphers, conn, ended, $"life {lifeAfter}/{conn.PlayerMaxLife}, mana {manaAfter}/{manaCap}");
         }
+    }
+
+    // Called under the combat lock. Advance deadlines and consume accrued recovery without paying it into pools.
+    internal static void DiscardLoadingRecovery(ClientState conn, double now)
+    {
+        LeechOf(conn).TakeRecovery(now);
+        FortificationOf(conn).TakeRecovery(now);
+        conn.Antiquarian.TakeRecovery(now);
+        conn.EnduringCryRecovery.Take(now);
     }
 
     // The ended flask effects' buffs come off the player (S→C 0x1c2).

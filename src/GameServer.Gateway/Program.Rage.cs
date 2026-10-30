@@ -65,7 +65,7 @@ partial class Program
             var stats = CharacterPlayerStats(conn);
             if (conn.PlayerLife == 0) conn.Rage.Clear();
             var state = conn.Rage.Carry(conn.Clock.Elapsed.TotalSeconds, RageStats.Inputs(name => RageStat(stats, name)));
-            conn.RageRetired = true;
+            conn.Retire();
             foreach (var (old, entry) in CarriedRage)
                 if (DateTime.UtcNow - entry.At > TimeSpan.FromMinutes(5)) CarriedRage.TryRemove(old, out _);
             CarriedRage.TryAdd(ticket, new(CharacterName(conn), DateTime.UtcNow, state));

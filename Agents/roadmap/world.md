@@ -12,9 +12,6 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   native ES regeneration, source removal and transfer/relog controls pass.
   Broader recovery and self RF visual verification remains separate.
   See Status and protocol/20-damage.md.
-- Old-area stat/recovery publication is retired on successful transfer; failed transfers can resume the connection.
-  The generic lifecycle regression and native controls are recorded in
-  [character stat lifecycle](../docs/dev/character-stat-lifecycle.md).
 - **Known:** `Program.TickRate` (30/s) only bounds attack times; hits use timers, the AI a 100 ms loop.
   Queue/lock/send timings and shared per-pass blocker indexes are implemented; there is no unified instance loop yet.
 - **Done when:** one 30 Hz loop per instance drives movement estimates, AI and combat.

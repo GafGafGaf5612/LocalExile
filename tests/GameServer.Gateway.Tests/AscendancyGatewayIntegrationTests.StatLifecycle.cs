@@ -162,6 +162,94 @@ public sealed partial class AscendancyGatewayIntegrationTests
         });
     }
 
+    [Fact]
+    public void Character_loading_discards_accrued_recovery_but_retains_unexpired_sources()
+    {
+        if (!DataAvailable()) return;
+        using var game = new GatewayCharacter(level: 60);
+        var conn = game.State;
+        var leech = Program.LeechOf(conn);
+        double at = Program.ProjectileWorldTime(conn) + 1;
+        foreach (var pool in new[] { leech.Life, leech.Mana, leech.EnergyShield })
+        {
+            pool.Configure(at, new(1, 1000, 1));
+            pool.Grant(at, 100, 1000, 100);
+        }
+        var fort = Program.FortificationOf(conn);
+        fort.State.GrantExplicitStacks(at, 10);
+        fort.Observe(at, name => name == FortificationState.LifeRegenPerStack ? 600 : 0);
+        fort.ConfigureRecovery(at, 1000, false);
+        conn.Antiquarian.Stunned(at, 1000, 8);
+        conn.EnduringCryRecovery.Begin(at, 2, 100);
+        lock (conn.Monsters) Program.DiscardLoadingRecovery(conn, at + .5);
+        Assert.Equal((0d, 0d, 0d), leech.TakeRecovery(at + .5));
+        Assert.Equal(0, fort.TakeRecovery(at + .5));
+        Assert.Equal(0, conn.Antiquarian.TakeRecovery(at + .5));
+        Assert.Equal(0, conn.EnduringCryRecovery.Take(at + .5));
+        // Discarding the loading interval must not delete sources or pay them twice after rollback.
+        Assert.Equal((5d, 5d, 5d), leech.TakeRecovery(at + .75));
+        Assert.Equal(250, fort.TakeRecovery(at + .75));
+        Assert.Equal(20, conn.Antiquarian.TakeRecovery(at + .75));
+        Assert.Equal(25, conn.EnduringCryRecovery.Take(at + .75));
+    }
+
+    [Fact]
+    public async Task Character_active_leech_does_not_pay_loading_time_after_an_actual_refused_transfer()
+    {
+        if (!DataAvailable()) return;
+        using var game = new GatewayCharacter(level: 60);
+        var conn = game.State;
+        conn.PlayerLife = 1;
+        LifecycleSet(conn, "no_life_regeneration", 1);
+        Program.CharacterPlayerStats(conn);
+        double now = Program.ProjectileWorldTime(conn);
+        Program.LeechOf(conn).Life.Grant(now, 100, conn.PlayerMaxLife, 100);
+        var transfer = new PendingTransfer(0, 0, false);
+        Assert.True(conn.TryBeginAreaChange(transfer, out _));
+        await game.StatLifecycleExchange(async (stream, cipher) =>
+        {
+            var recovery = ProgramValue<Task>("RunResourceRecovery", "refused-transfer-leech", stream, cipher, conn);
+            var resumed = new System.Diagnostics.Stopwatch();
+            try
+            {
+                await Program.Transfer("refused-transfer-leech", stream, cipher, conn, transfer, async request =>
+                {
+                    Assert.Equal("transfer", request.Op);
+                    await Task.Delay(350);
+                    Assert.Equal(1u, conn.PlayerLife);
+                    resumed.Start();
+                    return new ControlResponse { Ok = false, Error = "fixture refusal" };
+                });
+                Assert.False(conn.LeavingArea);
+                Assert.False(conn.RageRetired);
+                while (conn.PlayerLife == 1 && resumed.Elapsed.TotalSeconds < 1) await Task.Delay(5);
+                Assert.True(conn.PlayerLife > 1);
+                Assert.InRange(conn.PlayerLife - 1, 1u,
+                    (uint)Math.Ceiling(conn.PlayerMaxLife * .02 * resumed.Elapsed.TotalSeconds) + 2);
+                Assert.True(Program.LeechOf(conn).Life.Active(Program.ProjectileWorldTime(conn)));
+            }
+            finally
+            {
+                conn.Closed = true;
+                await recovery.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+        });
+    }
+
+    [Fact]
+    public void Character_critical_context_during_loading_retains_its_resume_baseline()
+    {
+        if (!DataAvailable()) return;
+        using var game = new GatewayCharacter(level: 60);
+        LifecycleSet(game.State, "has_focus", 1);
+        var before = ProgramValue<(bool, bool, int)>("CriticalContext", game.State);
+        Assert.True(before.Item2);
+        game.State.LeavingArea = true;
+        Assert.Equal(before, ProgramValue<(bool, bool, int)>("CriticalContext", game.State));
+        game.State.ResumeAfterFailedTransfer();
+        Assert.Equal(before, ProgramValue<(bool, bool, int)>("CriticalContext", game.State));
+    }
+
     [Theory]
     [InlineData("RunPlayerTick")]
     [InlineData("RunCharges")]
