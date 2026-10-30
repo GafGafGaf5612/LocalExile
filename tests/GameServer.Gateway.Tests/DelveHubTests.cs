@@ -5,6 +5,44 @@ namespace GameServer.Gateway.Tests;
 // The Azurite Mine Encampment: the Delve data (sulphite) and the Crawler (live 2026-10-29).
 public class DelveHubTests
 {
+    [Theory]
+    [InlineData(EffectObject.TypePath)]
+    [InlineData(DelveCrawlerAttachmentObject.LightType)]
+    public void Wheel_and_light_types_are_present_in_the_exported_component_catalog(string type)
+    {
+        using var catalog = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes("data/object-types.json"));
+        Assert.Contains(catalog.RootElement.GetProperty("types").EnumerateArray(),
+            row => row.GetProperty("type").GetString() == type);
+    }
+
+    [Theory]
+    [InlineData("Delve_Hub", "foothills_DelveEntrance01_area_transition.ao", 64840)]
+    [InlineData("Delve_Main", "delvemine_areatransition_v01_01_area_transition.ao", 35739)]
+    [InlineData("Delve_Main", "foothills_DelveEntrance01_area_transition.ao", 0)]
+    [InlineData("Delve_Hub", "foothills_descent_elevator_v01_01_area_transition.ao", 0)]
+    [InlineData("1_4_1", "foothills_DelveEntrance01_area_transition.ao", 0)]
+    public void The_mine_entrance_leads_between_hub_and_mine_without_pairing_the_unused_elevator(
+        string area, string model, int expected)
+    {
+        Assert.Equal(expected != 0, AreaTransitionCatalog.TryDelveEntrance(area, model, out var destination));
+        Assert.Equal((ushort)expected, destination);
+    }
+
+    [Fact]
+    public async Task Repeated_crawler_spawn_keeps_the_existing_object_and_blockers()
+    {
+        var state = new ClientState(new(StashCatalog.DelveHub, "Delve_Hub", 100, 100, 10, 10, null, []), 0, 1)
+            { DelveCrawlerObject = 123 };
+        state.DelveCrawlerBlockers.Add(456);
+        uint next = state.NextObjectId;
+        var method = typeof(Program).GetMethod("SpawnDelveCrawler",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        await (Task)method.Invoke(null, ["test", null, null, state])!;
+        Assert.Equal(123u, state.DelveCrawlerObject);
+        Assert.Equal(new uint[] { 456 }, state.DelveCrawlerBlockers);
+        Assert.Equal(next, state.NextObjectId);
+    }
+
     [Fact]
     public void Delve_data_puts_the_sulphite_at_bytes_16_to_18_of_the_20_byte_part()
     {

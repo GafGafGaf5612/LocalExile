@@ -341,6 +341,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Server frames ended so far (0x2b5).
     public long ServerFrame;
     public byte[] Carry = [];
+    /// <summary>Reads in a row that framed nothing (ClientInbox.UnframedRun).</summary>
+    public int UnframedRun;
     /// <summary>The portal cosmetic: the MicrotransactionPortalVariations row every portal is listed with (0x008f +0x26),
     /// 0 for the base effect. Applied to portals already standing as well as to new ones.</summary>
     public ushort CosmeticPortalVariation;
@@ -521,6 +523,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The Delve Crawler in the Azurite Mine Encampment (Program.Delve), and its cell.</summary>
     public uint DelveCrawlerObject;
     public (int X, int Y) DelveCrawlerAt;
+    public readonly List<uint> DelveCrawlerBlockers = [];
+    public readonly List<uint> DelveCrawlerAttachments = [];
+    public uint DelveGeneratorObject;
+    public bool DelveGeneratorOpen;
     public readonly HashSet<int> StashTabsSent = [];
     /// <summary>The guild stash: its object in the hideout, its tabs this connection has the contents of, and whether its
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>

@@ -17,6 +17,19 @@ partial class Program
             if (conn.Closed) return;
             // A terminal Hardcore owner may only leave for character selection.
             if (HardcoreProgressBlocked(conn) && id != 0x0153) continue;
+            if (id == InstanceDelve.RouteId)
+            {
+                var route = InstanceDelve.ReadRoute(bytes);
+                Console.WriteLine($"[gateway] {remote} Delve route requested: {string.Join(" -> ", route)}; route execution is not implemented");
+                if (conn.PlayerSent && conn.Layout.Hash is StashCatalog.DelveHub or InstanceDelve.MineArea)
+                    await conn.Commands!.Reply("This mine route is not available yet.");
+                continue;
+            }
+            if (id is InstanceDelve.UpgradesRequestId or InstanceDelve.UpgradeId or InstanceDelve.PurchaseId)
+            {
+                await UseDelveEquipment(remote, stream, ciphers, conn, id, bytes);
+                continue;
+            }
             // Immediate transfer ingress cuts the old epoch off instead of replaying overdue old-world damage.
             // Movement/combat handlers also advance atomically inside their mutation boundaries.
             bool transferIngress = id is InstanceTransfer.ChooseInstanceId or InstanceTransfer.LeaveAreaAckId
@@ -650,6 +663,7 @@ partial class Program
                     await SpawnTownNpcs(remote, stream, ciphers, conn);
                     await SpawnTownStash(remote, stream, ciphers, conn);
                     await SpawnDelveCrawler(remote, stream, ciphers, conn);
+                    await SpawnDelveGenerator(remote, stream, ciphers, conn);
                     await SpawnQuestRoomObjects(remote, stream, ciphers, conn);
                     await SpawnOpeningTutorial(remote, stream, ciphers, conn);
                     await SpawnGlyphQuest(remote, stream, ciphers, conn);
