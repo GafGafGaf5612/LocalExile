@@ -142,7 +142,10 @@ So:
    room the layout did not place has no points or objects even if its doodads fit: sibling rooms share their doodads
    (The Broken Bridge's `broken_bridge` and `broken_bridge_left`, The Wetlands' four `bandit_boss_*` rooms) and the
    unplaced sibling's fit on the placed one was a second Kraityn, a third Oak.
-   Seed 1 of every Act 1 area now has exactly one point per boss. Doing so for every room would change
+   `CampaignBossPlacementTests` (`$env:Game_BOSS_CHECK='1'`, needs the game files; skipped otherwise) generates every
+   act 1–10 area with Bosses at seeds 1, 2, 3 and 7 (`Game_BOSS_CHECK_SEEDS`) and fails when a boss is missing without
+   a listed reason, a unique stands twice or beyond the area's bosses, or the monster blob cannot write one.
+   Doing so for every room would change
    other areas: it adds twelve nest packs around a1q4's Rhoa Nests and moves the start points of The Coast's
    `to_coast` and The Tidal Island's `toislandcliff`, so other rooms keep the fit.
    A room with a quest server object takes its actual placement for its objects (its points keep the fit), from
