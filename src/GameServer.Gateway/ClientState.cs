@@ -341,6 +341,8 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Server frames ended so far (0x2b5).
     public long ServerFrame;
     public byte[] Carry = [];
+    /// <summary>Reads in a row that framed nothing (ClientInbox.UnframedRun).</summary>
+    public int UnframedRun;
     /// <summary>The portal cosmetic: the MicrotransactionPortalVariations row every portal is listed with (0x008f +0x26),
     /// 0 for the base effect. Applied to portals already standing as well as to new ones.</summary>
     public ushort CosmeticPortalVariation;

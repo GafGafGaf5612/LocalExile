@@ -171,6 +171,8 @@ partial class Program
                         }
                         total += n;
                         await OnClientData(remote, stream, ciphers, buffer.AsSpan(0, n).ToArray(), conn, inbox, Stopwatch.GetTimestamp());
+                        // A lost stream (ClientInbox.LostAfterUnframedReads): leaving the loop closes the connection.
+                        if (conn.UnframedRun >= ClientInbox.LostAfterUnframedReads) { reason = conn.CloseReason; break; }
                     }
                     reason ??= conn.CloseReason ?? "closed by the server";
                 }
@@ -255,6 +257,9 @@ partial class Program
                 Console.WriteLine($"[packets] {remote} <= 0x{id:x4} {bytes.Length} B: {Convert.ToHexString(bytes)}");
         }
         if (unknown.Length > 0) conn.Packets.Received(0xffff, unknown);   // bytes no known message frames ("unframed")
+        conn.UnframedRun = ClientInbox.UnframedRun(conn.UnframedRun, messages.Count, unknown.Length);
+        if (conn.UnframedRun == ClientInbox.LostAfterUnframedReads)
+            conn.CloseReason = $"the client's stream no longer decodes ({conn.UnframedRun} reads in a row framed nothing): closed, so the client can connect again";
         if (MoveTrace)
             foreach (var (id, bytes) in messages)
                 if (id is 0x0024 or 0x0025 or 0x0190 or 0x0191)
