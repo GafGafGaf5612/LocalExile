@@ -229,7 +229,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Object uses no longer also deal a melee contact hit.
   The client spawns the primary projectiles of its own gem skill use itself, every one of a volley, from where it
   stands; the server simulates them but sends no object for them (one fireball was two, 2026-10-29). Their
-  continuation children still get server objects; whether the client predicts ordinary bow arrows is not checked.
+  continuation children still get server objects.
+  GGG's server sends no object for ordinary bow arrows either, so the live client draws them itself (live capture
+  2026-10-29, [port record](../docs/dev/ranged-monster-actions-port.md) "Live reference").
   Tornado Shot fires `Metadata/Projectiles/TornadoShotArrow` (`SkillCatalog.ProjectileFallbacks`; its row is not named
   after the effect, so every use was refused and the server walked on while the client stopped, 2026-10-29); it is the
   basic straight-flight arrow only: the secondary arrows from the target point are not modelled yet.
@@ -644,7 +646,10 @@ and can require explicit recipes.
   particles. Projectile objects are created at their release point and their first move runs from there: the lazy
   snapshot used to create them where the simulation already had them, one to ten cells past the bow in a live log
   (2026-10-29). A Frida trace the same day saw the client create no projectile of its own for the default attack
-  (40 arrows) nor for a monster's action, so these server objects are the only visible shots. They leave from the
+  (40 arrows) nor for a monster's action, so these server objects are the only visible shots on our server.
+  On GGG's server the same shots have no objects and the client draws them; what in our answer stops it is open
+  (skill ids `0x102`/`0x103` against live `0x4000`/`0x8002`, and the `0x1af` fields, are the candidates).
+  Our arrows fly about 20% faster than live (367 against 308 cells/s). They leave from the
   releasing clip's contact keyframe (`data/animation-contacts.json` positions, `anim_contacts.py` v3): the Ranger's
   bow 5.5 cells ahead along the aim at 16 steps up, a wand's tip 7.5 cells ahead at 12 (the 5-step default, tuned on a
   fireball, had the arrow trail start at the hip, live 2026-10-29); the keyframe's lateral part is not applied.

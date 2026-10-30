@@ -36,6 +36,44 @@ The older pause fixture now observes the action echo after resume, consistent wi
 A queued-flinch test measures generation changes relative to the transfer's own invalidation.
 No private Ruthless catalog, PoB importer, character-stat port or league presentation was folded into this branch.
 
+## Live reference (official servers)
+
+On 2026-10-29, evrySniff (`../evrySniff`, next to the evryPath checkout) recorded the retail 3.29.3b client on GGG's
+servers. It was a level 1 Ranger with a bow: character creation, the Twilight Strand and Lioneye's Watch, about two
+minutes, 30 default attacks and 15 uses of the starting gem. The comparison capture is the same player on this
+branch's stack the same evening: 28 default attacks and 18 gem uses against the Gateway started at 22:51, after
+2dd0d763 and before 185ee748 moved the arrow release point. The capture files stay local:
+they hold account data and are not committed. The analysis used `sniff.py` on both.
+
+- **No arrow objects.** Over all 45 live shots, the server sent no `0x2b9` arrow and no `0x2bb` removal. A shot was
+  the `0x1ab` echo, `0x1ac` and a `0x2ba` on the player at once, then `0x1af`, `0x1b3` and `0x1b1` on the target when
+  it landed, so the live client draws its own arrows. This branch creates `Metadata/Projectiles/DefaultArrow` objects
+  (and the gem's projectile) for each shot. The Frida trace that saw no client arrows on our server therefore points
+  at something in our answer that stops the client from drawing its own. The likeliest causes are the skill ids
+  (live `0x4000` for the default attack and `0x8002` for the gem, ours `0x102`/`0x103`) and the `0x1af` fields below;
+  neither has been tested.
+- **`0x1af` on the player's arrow hits:**
+
+  | Field | Live | This branch |
+  |---|---|---|
+  | object header | the attacker's id, then a u32 that differs on every hit and u16 `0x0001` | zeros |
+  | skill index byte | 2 on all 43 | 0 |
+  | flags | `0x0200` (main hand) on all 43. The default attack: `0x4201`/`0x4601` with `0x0001` (blood); the gem: `0x4204`/`0x4604` with `0x0004` in its place. `0x0400` with a 300 ms stun on 22 hits, `0x0020` on 6 crits, `0x8000` once (meaning unknown) | `0x4001` (+ `0x0020`) |
+  | damage code | 0 or 8 (Physical, variation 0 or 1) for the default attack; 2, 10 or 18 (Fire, variations 0–2) for the gem | by damage type, variation 0 |
+  | kind | 3 | 3 |
+
+- **Hit timing.** Live, the hit arrives 258 ms + 3.25 ms per cell of shooter-to-target distance after the echo, so the
+  arrow flies about 308 cells/s (30 hits, 8–72 cells). Live delays also fall on about 33 ms steps. The gem's hits fit
+  267 ms + 3.90 ms per cell. This branch fits 249 ms + 2.72 ms per cell (about 367 cells/s): the release is close and
+  the arrow is about 20% fast.
+- **Monster hits on the player send no `0x1af`.** The player's life fell 39 → 32 → 24 with only `0x1b1` updates, and
+  no monster sent `0x1af` in the session (the Strand's melee monsters). This branch sends `0x1af` (kind 3, `0x4201`)
+  for a monster's hit on the player.
+- **Undecoded:** S→C `0x1b4` went 27 times to the player only. It carries the attack's skill id (`0x4000`/`0x8002`)
+  and a list of compact-int points, and may be the shot's path.
+- **Not covered:** no ranged monster appeared, so mortars and monster projectiles have no live reference yet. A capture
+  in an area with Sand Spitters would give one.
+
 ## Validation and limits
 
 The solution builds with zero warnings/errors.

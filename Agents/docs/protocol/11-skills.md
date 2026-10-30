@@ -968,6 +968,11 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   only queues the package until an action with that sequence consumes it, which the fabricated 0xffff never
   guarantees, and that 0x0400 asks the client to stun the target itself, with its own avoidance roll, through the
   same interruption routine as 0x1d1; the player's recovery is already the authoritative 0x1d1 below.
+  GGG's server does it differently (live capture 2026-10-29,
+  [ranged-monster-actions-port.md](../dev/ranged-monster-actions-port.md) "Live reference").
+  A bow's arrow hits, both the default attack's and the attack gem's, carry the main-hand bit `0x0200` and skill
+  index 2, and the header after the attacker's id is a per-hit u32 and u16 1, not zeros.
+  A monster's hit on the player sent no 0x1af at all, only 0x1b1.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's
