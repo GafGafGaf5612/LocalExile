@@ -135,6 +135,16 @@ partial class Program
             else if (rebuildMana)
                 await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
         })
+        .Add("stat", "/stat <stat name or client key> (dev: current character stat value)", async args =>
+        {
+            if (args.Length != 1 || Stats.Key(args[0]) is not uint stat)
+            {
+                await conn.Commands!.Reply("Usage: /stat <stat name or client key>");
+                return;
+            }
+            int value = CharacterPlayerStats(conn).GetValueOrDefault(stat);
+            await conn.Commands!.Reply($"{args[0]} (key {stat}) = {value}");
+        })
         .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
         {
             // "friendly": on the player's team (Positioned team 0); monsters are hostile (team 1) otherwise.

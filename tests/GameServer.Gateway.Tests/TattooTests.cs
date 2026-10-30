@@ -119,6 +119,35 @@ public class TattooTests
     }
 
     [Fact]
+    public void Conditional_Makanga_stats_are_mapped()
+    {
+        Assert.Contains(TattooStats.For("Tattoo of the Hinekora Makanga")!,
+            stat => stat.Key == Program.Stats.Key("curse_effect_+%"));
+        Assert.Contains(TattooStats.For("Tattoo of the Kitava Makanga")!,
+            stat => stat.Key == Program.Stats.Key("maximum_life_leech_rate_+%"));
+        Assert.Contains(TattooStats.For("Tattoo of the Ramako Makanga")!,
+            stat => stat.Key == Program.Stats.Key("number_of_additional_projectiles"));
+        Assert.Contains(TattooStats.For("Tattoo of the Rongokurai Makanga")!,
+            stat => stat.Key == Program.Stats.Key("chance_to_double_armour_effect_on_hit_%"));
+        Assert.Contains(TattooStats.For("Tattoo of the Tasalio Makanga")!,
+            stat => stat.Key == Program.Stats.Key("base_cooldown_speed_+%"));
+        Assert.Contains(TattooStats.For("Tattoo of the Tawhoa Makanga")!,
+            stat => stat.Key == Program.Stats.Key("flask_effect_+%"));
+    }
+
+    [Fact]
+    public void Life_regeneration_rate_increases_the_panel_rate()
+    {
+        int Get(string name) => name switch
+        {
+            "base_life_regeneration_rate_per_minute" => 10,
+            "life_regeneration_rate_+%" => 16,
+            _ => 0,
+        };
+        Assert.Equal(11.6, PanelStats.LifePerMinute(Get, 1000), 6);
+    }
+
+    [Fact]
     public void Ngamahu_Makanga_is_inactive_above_one_allocated_neighbour()
     {
         TestSaves.Ensure();

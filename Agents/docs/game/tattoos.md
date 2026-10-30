@@ -1,13 +1,12 @@
 # Tattoos
 
-**Status: in progress (documentation complete, catalogue 100/100; 36 tattoo rows client-verified).** The
+**Status: in progress (documentation complete, catalogue 100/100; 41 tattoo rows client-verified).** The
 client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries the inventory
 id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends the tattoo in
-`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Thirty-six rows are `works` (the ten pilot,
-22 plain stats and four Makanga adjacency gates), one is `partial` (Tukohama Makanga's seven-neighbour live
-check) and 63 are `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol,
-the target/limit rules and the implementation groups. The `Status` column is per row; `Reason` names the missing
-layer.
+`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Forty-one rows are `works` (the ten pilot,
+22 plain stats and nine Makanga gates), two are `inert` (Hinekora and Kitava Makanga have no gameplay consumer) and
+57 are `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the
+target/limit rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
 
 This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos`,
 `PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki
@@ -21,9 +20,9 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
 | Current (drop-enabled) | 53 | 26 | 0 | 0 | 27 |
-| Drop-disabled | 40 | 10 | 1 | 0 | 29 |
+| Drop-disabled | 40 | 15 | 0 | 2 | 23 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **36** | **1** | **0** | **63** |
+| **Total** | **100** | **41** | **0** | **2** | **57** |
 
 | Status | Meaning |
 |---|---|
@@ -41,7 +40,7 @@ stat already has a gameplay consumer. The first implementation pass must audit e
 |---|---|---|
 | 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 32/32 non-Makanga plain stats client-verified; the Makanga rows are in group 3. |
 | 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
-| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Honoured, Ngamahu, Arohongui and Valako Makanga are live-verified; Tukohama is unit-tested/partial. The six conditional Makanga, counting and limits are still not implemented. |
+| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | All 11 Makanga are mapped: 9 are live/consumer verified, Hinekora and Kitava are inert (no curse/leech-cap consumer). Counting and limits are still not implemented. |
 | 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
 | 5. Loyalty summons | The ten Summon Spirit triggers, each limited to 1 Loyalty Tattoo. | Not implemented. |
 
@@ -423,14 +422,14 @@ Four require at most 1 adjacent allocated passive (Arohongui, Ngamahu, Rongokura
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
 | **Tattoo of the Arohongui Makanga** | +1% to maximum Cold Resistance | Small Dexterity | drop-disabled | works | live MaxAdjacent 1; max cold 85 -> 84 with two neighbours |
-| **Tattoo of the Hinekora Makanga** | 8% increased Effect of your Curses | Small Intelligence | drop-disabled | not implemented | adjacency min 7; needs curse effect |
-| **Tattoo of the Kitava Makanga** | 80% increased Maximum total Life Recovery per second from Leech | Small Strength | drop-disabled | not implemented | adjacency min 7; needs leech recovery cap |
+| **Tattoo of the Hinekora Makanga** | 8% increased Effect of your Curses | Small Intelligence | drop-disabled | inert | stat applied (8% curse effect); no enemy-curse gameplay consumer |
+| **Tattoo of the Kitava Makanga** | 80% increased Maximum total Life Recovery per second from Leech | Small Strength | drop-disabled | inert | stat applied (80% max leech rate); no leech-cap consumer |
 | **Tattoo of the Ngamahu Makanga** | +1% to maximum Fire Resistance | Small Strength | drop-disabled | works | live MaxAdjacent 1; max fire 85 -> 84 with two neighbours |
-| **Tattoo of the Ramako Makanga** | Skills fire an additional Projectile | Small Dexterity | drop-disabled | not implemented | adjacency min 7; needs additional projectile |
-| **Tattoo of the Rongokurai Makanga** | 8% chance to Defend with 200% of Armour | Small Strength | drop-disabled | not implemented | adjacency max 1; needs armour-defend roll |
-| **Tattoo of the Tasalio Makanga** | 8% increased Cooldown Recovery Rate | Small Intelligence | drop-disabled | not implemented | adjacency min 7; needs cooldown recovery |
-| **Tattoo of the Tawhoa Makanga** | Flasks applied to you have 8% increased Effect | Small Dexterity | drop-disabled | not implemented | adjacency min 7; needs flask effect |
-| **Tattoo of the Tukohama Makanga** | 16% increased Life Regeneration rate | Small Strength | drop-disabled | partial | RequiresAdjacent 7 unit-tested; live life-regeneration panel check pending |
+| **Tattoo of the Ramako Makanga** | Skills fire an additional Projectile | Small Dexterity | drop-disabled | works | live 7-neighbour gate; +1 projectile (projectile modifier consumer) |
+| **Tattoo of the Rongokurai Makanga** | 8% chance to Defend with 200% of Armour | Small Strength | drop-disabled | works | live MaxAdjacent 1; 8% armour-double chance (RecentEnemyHits consumer) |
+| **Tattoo of the Tasalio Makanga** | 8% increased Cooldown Recovery Rate | Small Intelligence | drop-disabled | works | live 7-neighbour gate; 8% cooldown speed (cooldown consumer) |
+| **Tattoo of the Tawhoa Makanga** | Flasks applied to you have 8% increased Effect | Small Dexterity | drop-disabled | works | live 7-neighbour gate; 8% flask effect (flask consumer) |
+| **Tattoo of the Tukohama Makanga** | 16% increased Life Regeneration rate | Small Strength | drop-disabled | works | live 7-neighbour gate; 16% life-regeneration rate (panel/recovery consumer) |
 | **Tattoo of the Valako Makanga** | +1% to maximum Lightning Resistance | Small Intelligence | drop-disabled | works | live MaxAdjacent 1; max lightning 84 -> 83 with two neighbours |
 
 ### Forbidden (7)
@@ -538,8 +537,23 @@ Makanga live checks 2026-10-30 (client and server, real tree):
   command readout, so the live panel check remains.
 - The test nodes were refunded/removed; the character keeps its own 12 tattoos and 530 passives from the session.
 
-Not yet verified through the client: replace, reallocating a tattooed node, the 50 cap, Tukohama Makanga's live
-life-regeneration value, Journey Makanui, the seven Forbidden tattoos, and the six conditional Makanga.
+Conditional Makanga stats 2026-10-30 (client/server, `/stat` after the live gate):
+
+- **Hinekora** on 4367 (eight neighbours): `curse_effect_+% = 8`. No enemy-curse consumer; `inert`.
+- **Kitava** on 3644 (seven neighbours): `maximum_life_leech_rate_+% = 80`. No leech-cap consumer; `inert`.
+- **Ramako** on 20807 (seven neighbours): `number_of_additional_projectiles = 1`; the projectile modifier already
+  consumes the stat.
+- **Rongokurai** on 30733 (one neighbour): `chance_to_double_armour_effect_on_hit_% = 8`; on 3644 with seven
+  neighbours it is 0 (MaxAdjacent 1), so the gate works.
+- **Tasalio** on 4367 (eight neighbours): `base_cooldown_speed_+% = 8`; the cooldown path consumes it.
+- **Tawhoa** on 20807 (seven neighbours): `flask_effect_+% = 8`; the flask path consumes it.
+- **Tukohama** on 3644: `life_regeneration_rate_+% = 16`; refunding one neighbour (seven -> six) made it 0. The
+  panel/recovery formula now applies `life_regeneration_rate_+%`.
+- The test tattoos were removed and the extra nodes refunded; the tree is back to 530 passives and the user's 12
+  tattoos.
+
+Not yet verified through the client: replace, reallocating a tattooed node, the 50 cap, Journey Makanui and the
+seven Forbidden tattoos.
 
 ## See also
 

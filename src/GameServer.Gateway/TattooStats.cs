@@ -46,6 +46,14 @@ static class TattooStats
         ["Tattoo of the Ngamahu Makanga"] = [("base_maximum_fire_damage_resistance_%", 1)],
         ["Tattoo of the Tukohama Makanga"] = [("life_regeneration_rate_+%", 16)],
         ["Tattoo of the Valako Makanga"] = [("base_maximum_lightning_damage_resistance_%", 1)],
+        // The six conditional Makanga. Hinekora and Kitava currently have no gameplay consumer; Ramako,
+        // Rongokurai, Tasalio and Tawhoa feed the projectile/armour/cooldown/flask paths.
+        ["Tattoo of the Hinekora Makanga"] = [("curse_effect_+%", 8)],
+        ["Tattoo of the Kitava Makanga"] = [("maximum_life_leech_rate_+%", 80)],
+        ["Tattoo of the Ramako Makanga"] = [("number_of_additional_projectiles", 1)],
+        ["Tattoo of the Rongokurai Makanga"] = [("chance_to_double_armour_effect_on_hit_%", 8)],
+        ["Tattoo of the Tasalio Makanga"] = [("base_cooldown_speed_+%", 8)],
+        ["Tattoo of the Tawhoa Makanga"] = [("flask_effect_+%", 8)],
     };
 
     public static IReadOnlyCollection<string> Names => Entries.Keys;
