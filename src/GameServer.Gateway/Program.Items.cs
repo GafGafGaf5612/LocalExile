@@ -402,7 +402,7 @@ partial class Program
         if (TimelessJewelCatalog.IsTimeless(item, ItemsFor(conn)))
         {
             if (expansion) return "timeless jewels go in an ordinary passive tree socket";
-            int limit = ItemsFor(conn).Limits.Get("timeless_jewel", 1);
+            int limit = ItemsFor(conn).Limits.Get("timeless_jewel", SystemSettings.Default.TimelessJewelLimit);
             if (limit > 0)
             {
                 var items = ItemsOf(conn);
@@ -415,7 +415,7 @@ partial class Program
         }
         if (ImpossibleEscapeCatalogue.Read(item, ItemsFor(conn).Mods) is not null)
         {
-            int limit = ItemsFor(conn).Limits.Get("impossible_escape", 1);
+            int limit = ItemsFor(conn).Limits.Get("impossible_escape", SystemSettings.Default.ImpossibleEscapeLimit);
             if (limit > 0)
             {
                 var items = ItemsOf(conn);
@@ -428,9 +428,10 @@ partial class Program
         }
         if (expansion && RadiusJewelCatalogue.IsRadius(item, ItemsFor(conn).Mods))
             return "radius unique jewels go in an ordinary passive tree socket";
-        if (RadiusJewelCatalogue.EntryOf(item, ItemsFor(conn).Mods) is { Limit: > 0 } limited)
+        if (RadiusJewelCatalogue.EntryOf(item, ItemsFor(conn).Mods) is { } limited)
         {
-            int limit = ItemsFor(conn).Limits.Get($"radius:{limited.Name}", limited.Limit);
+            int baseLimit = limited.Limit > 0 ? limited.Limit : SystemSettings.Default.RadiusJewelDefaultLimit;
+            int limit = ItemsFor(conn).Limits.Get($"radius:{limited.Name}", baseLimit);
             var items = ItemsOf(conn);
             if (limit > 0 && items.Items(PlayerInventories.PassiveJewels)
                 .Count(i => i.X != x && RadiusJewelCatalogue.IsSameEntry(i.Item, item, ItemsFor(conn).Mods)) >= limit)

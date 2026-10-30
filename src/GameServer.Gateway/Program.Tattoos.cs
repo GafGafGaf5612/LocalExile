@@ -20,7 +20,7 @@ partial class Program
         if (!TargetMatches(passive, entry.Target)) return $"{entry.Name} replaces {entry.Target}, not {passive.Name} ({node})";
         if (conn.Tattoos.GetValueOrDefault(node) == entry.Name) return $"{passive.Name} ({node}) already has {entry.Name}";
         if (TattooStats.For(entry.Name) is null) return $"{entry.Name} has no server effect yet";
-        int totalLimit = ItemsFor(conn).Limits.Get("tattoo_total", 50);
+        int totalLimit = ItemsFor(conn).Limits.Get("tattoo_total", SystemSettings.Default.TattooTotalLimit);
         if (!conn.Tattoos.ContainsKey(node) && totalLimit > 0 && conn.Tattoos.Count >= totalLimit)
             return $"a character can have at most {totalLimit} tattoos";
         if (entry.EventOnly) return $"{entry.Name} is event-only and is not supported yet";
@@ -172,7 +172,7 @@ partial class Program
         TattooCatalogue.Entry entry, LimitSettings? limits = null)
     {
         if (entry.Limit < 0 || TattooCatalogue.LimitName(entry.Limit) is not { } group) return null;
-        int limit = (limits ?? LimitSettings.Default).Get($"tattoo:{group}", 1);
+        int limit = (limits ?? LimitSettings.Default).Get($"tattoo:{group}", SystemSettings.Default.TattooGroupLimit);
         if (limit == 0) return null;
         int count = 0;
         foreach (var (other, name) in tattoos)
