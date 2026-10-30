@@ -168,7 +168,7 @@ They refuse paused, leaving, closed or dead owners before combat mutation.
 | `/charges [<endurance\|frenzy\|power> <n>]`, `/charges add <type> [n]`, `/charges clear` | dev: each charge type's count, maximum, minimum, duration and time left; sets a count, gains like a skill (refreshing the duration) or clears them ([11](11-skills.md) §15) |
 | `/block_luck <attack\|spell\|both\|off>` | dev: force lucky block for testing |
 | `/blockhit <attack\|spell> <fire\|cold\|lightning\|chaos\|physical> <damage>` | dev: a hit through block and resistance |
-| `/god` | toggles 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12) |
+| `/god` | toggles 1000% increased attack and cast speed, 100% of life and 10 000 mana regenerated per second, +10 000 life, +1000 to each attribute ([11](11-skills.md) §12); remains enabled for this character across area changes and relogs until toggled off or Gateway restarts |
 | `/death_screen [hex flags]` | S→C 0x55 with these flags (default: the league's; 2 hides it), [11](11-skills.md) §7 |
 | `/quest_flag [<QuestFlags Id> [off]]` | lists the character's quest flags, or sets or clears one (saved); the quest's room objects follow ([12](12-quests.md) §5) |
 | `/goto <area id or name> [seed]` | change area as if through an area transition (e.g. `/goto 1_1_3`; ids from the atlas; a seed makes a new instance at it, towns keep 1), [08](08-area-transitions.md) §7 |

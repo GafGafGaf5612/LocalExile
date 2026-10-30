@@ -80,6 +80,10 @@ The bridge refuses a different executable path or code signatures. Addresses bel
 | `0x1421406f0` | Play with the chosen name view and list index. Set in-game state `+0xa48` to its class; push **state 11 (loading)**, which installs the assignment listener. Directly pushing state 4 skips that listener. |
 | `0x140d0f740` | Existing root login state's logout routine; preserves the correct login form lifecycle. |
 | `0x140dfb760` / `0x140dfb8c0` | Existing buffered socket writer/flush, for `0x153` return to selection and `0x15` slash commands. Encryption remains the client's. |
+| `0x14216e940` | Signature-checked reference for socket write coordination: mark writing, acquire the socket lock while threaded, write, release and unmark before flushing. |
+
+The bridge coordinates buffered writes with the network thread's flush through the socket's own lock.
+An unsynchronized write could desynchronize encryption permanently; author-reported native quest runs verified the fix.
 
 Live verified 2026-10-25: fresh `game:open`, login, actual level-100 OfflineWitch list, Play, return to selection, logout,
 wrong-password rejection, successful retry, Play again, and `/hit physical 1` received by the Gateway. In one persistent
