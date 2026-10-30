@@ -161,7 +161,7 @@ public static class InstanceEntities
             .Where(kv => nodes?.Contains(kv.Key) == true).OrderBy(kv => kv.Key).ToList();
         w.U16(checked((ushort)effects.Count));
         foreach (var (node, effect) in effects) w.RawU32(node | ((uint)effect << 16));
-        // The fifth list is the applied tattoos: node | PassiveSkillTattoos.Override << 16. The client stores it at
+        // The fifth list is the applied tattoos: node | PassiveSkillOverrides.HASH16 << 16. The client stores it at
         // tree +0x1f8 and looks the override up in PassiveSkillOverrides.dat for the replacement passive's name,
         // icon and stats.
         var applied = (tattoos ?? new Dictionary<ushort, ushort>()).OrderBy(kv => kv.Key).ToList();
