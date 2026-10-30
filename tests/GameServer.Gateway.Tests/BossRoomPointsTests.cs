@@ -53,6 +53,15 @@ public sealed class BossRoomPointsTests : IDisposable
     }
 
     [Fact]
+    public void A_boss_room_the_layout_did_not_place_has_no_boss()
+    {
+        // broken_bridge and broken_bridge_left share their doodads; only one is placed (rooms.json), but both fit it.
+        string data = Rooms(siblings: true);
+        var (points, _, _) = AreaPopulation.FitRooms("9_9_9", 1, [], data);
+        Assert.Equal([("mapboss1", 310, 320)], points.Where(p => p.Name.StartsWith("mapboss")).Select(p => (p.Name, p.X, p.Y)));
+    }
+
+    [Fact]
     public void A_boss_room_takes_its_placement_not_every_doodad_fit()
     {
         string data = Rooms();
@@ -65,11 +74,12 @@ public sealed class BossRoomPointsTests : IDisposable
         Assert.Equal(2, points.Count(p => p.Name == "%area%-nestpack"));
     }
 
+    const string SiblingRoom = "Metadata/Terrain/Test/boss_left.arm";
     const string BossRoom = "Metadata/Terrain/Test/boss.arm", PackRoom = "Metadata/Terrain/Test/pack.arm";
 
     // Two rooms with the same four doodads, captured twice in the area (at (100, 100) and (300, 300)); rooms.json places
-    // the boss room once.
-    string Rooms()
+    // the boss room once. With siblings, a second boss room with the same doodads that the layout did not place.
+    string Rooms(bool siblings = false)
     {
         string data = Path.Combine(folder, "data");
         Directory.CreateDirectory(Path.Combine(data, "walkability"));
@@ -82,8 +92,8 @@ public sealed class BossRoomPointsTests : IDisposable
         File.WriteAllText(Path.Combine(data, "room-points.json"), JsonSerializer.Serialize(new
         {
             note = "test",
-            areas = new Dictionary<string, string[]> { ["9_9_9"] = [BossRoom, PackRoom] },
-            rooms = new Dictionary<string, object> { [BossRoom] = Room("boss", "mapboss1", 10, 20), [PackRoom] = Room("pool", "%area%-nestpack", 4, 4) },
+            areas = new Dictionary<string, string[]> { ["9_9_9"] = siblings ? [BossRoom, SiblingRoom, PackRoom] : [BossRoom, PackRoom] },
+            rooms = new Dictionary<string, object> { [BossRoom] = Room("boss", "mapboss1", 10, 20), [SiblingRoom] = Room("boss", "mapboss1", 10, 20), [PackRoom] = Room("pool", "%area%-nestpack", 4, 4) },
         }));
         File.WriteAllText(Path.Combine(data, "walkability", "9_9_9_seed1.doodads.json"), JsonSerializer.Serialize(new
         {

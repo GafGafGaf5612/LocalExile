@@ -102,7 +102,11 @@ So:
    own generation of the area (`ServerLevels`), whenever there is one: the fit misses sparse rooms (the boat rooms have
    only two snowfall emitters around Hailrake's `mapboss`, Brutus's `boss_cells` rooms are bare) and matched a repeated
    room several times (four Necromancers in The Upper Prison seed 1, three goatmen on The Ledge), each match one more
-   unique boss. Seed 1 of every Act 1 area now has exactly one point per boss. Doing so for every room would change
+   unique boss. When the placements are known (a generated area, or a capture with its `rooms.json`), a boss or quest
+   room the layout did not place has no points or objects even if its doodads fit: sibling rooms share their doodads
+   (The Broken Bridge's `broken_bridge` and `broken_bridge_left`, The Wetlands' four `bandit_boss_*` rooms) and the
+   unplaced sibling's fit on the placed one was a second Kraityn, a third Oak.
+   Seed 1 of every Act 1 area now has exactly one point per boss. Doing so for every room would change
    other areas: it adds twelve nest packs around a1q4's Rhoa Nests and moves the start points of The Coast's
    `to_coast` and The Tidal Island's `toislandcliff`, so other rooms keep the fit.
    A room with a quest server object takes its actual placement for its objects (its points keep the fit), from
