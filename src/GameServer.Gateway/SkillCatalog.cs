@@ -566,6 +566,8 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         /// <summary>The weapon's own added elemental/chaos damage (its local added damage mods, ItemWeapons), added to
         /// every hit it makes; empty for unarmed and for weapons without such mods.</summary>
         public DamagePacket LocalAdded { get; init; } = DamagePacket.Empty;
+        public bool WieldingWand { get; init; }
+        public bool Melee { get; init; } = true;
 
         /// <summary>Unarmed attacks alternate hands, i.e. count as dual wielding, and the client adds dual wielding's 10%
         /// attack speed to the skill's main_hand_attack_speed_+% (live 2026-10-17: the skill read 10 that the server never
@@ -619,19 +621,36 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         public long IncreasedDamage(IReadOnlyDictionary<uint, int>? player)
         {
             long increased = 0;
-            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.AttackDamagePct, StatKeys.PhysicalDamagePct,
-                StatKeys.MeleeDamagePct, StatKeys.MeleePhysicalDamagePct])
+            foreach (uint k in (uint[])[StatKeys.DamagePct, StatKeys.AttackDamagePct, StatKeys.PhysicalDamagePct])
                 increased += player?.GetValueOrDefault(k) ?? 0;
+            if (Melee) increased += (long)(player?.GetValueOrDefault(StatKeys.MeleeDamagePct) ?? 0)
+                + (player?.GetValueOrDefault(StatKeys.MeleePhysicalDamagePct) ?? 0);
             return increased;
         }
 
         /// <summary>The physical hit packet: Characters.dat MinDamage..MaxDamage × (1 + increased / 100).</summary>
         public DamagePacket HitDamage(IReadOnlyDictionary<uint, int>? player)
         {
-            double increased = IncreasedDamage(player) + DamageStats.SpellAttackIncrease(player);
+            double transfer = DamageStats.SpellAttackIncrease(player, WieldingWand);
+            double increased = IncreasedDamage(player) + transfer;
             var hit = DamagePacket.Of(DamageType.Physical,
                 DamageStats.IncreaseAttackRange(new(MinDamage, MaxDamage), increased));
-            return hit.Add(LocalAdded);
+            return hit.Add(LocalAdded.Select((type, range) =>
+            {
+                int Get(uint key) => player?.GetValueOrDefault(key) ?? 0;
+                uint typed = type switch
+                {
+                    DamageType.Physical => StatKeys.PhysicalDamagePct,
+                    DamageType.Fire => StatKeys.FireDamagePct,
+                    DamageType.Cold => StatKeys.ColdDamagePct,
+                    DamageType.Lightning => StatKeys.LightningDamagePct,
+                    _ => StatKeys.ChaosDamagePct,
+                };
+                double localIncrease = (double)Get(StatKeys.DamagePct) + Get(StatKeys.AttackDamagePct) + Get(typed)
+                    + (DamageTypes.IsElemental(type) ? Get(StatKeys.ElementalDamagePct) : 0)
+                    + (Melee ? Get(StatKeys.MeleeDamagePct) : 0) + transfer;
+                return DamageStats.IncreaseAttackRange(range, localIncrease);
+            }));
         }
 
         /// <summary>The hit's damage range: Characters.dat MinDamage..MaxDamage × (1 + increased / 100), rounded down,

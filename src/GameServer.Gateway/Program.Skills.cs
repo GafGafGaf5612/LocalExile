@@ -266,7 +266,8 @@ partial class Program
         bool melee, GameServer.Core.World.DamageConversion? conversion)
     {
         int Get(string name) => RageStat(stats, name);
-        var hit = DamageStats.Added(weapon.HitDamage(stats), Get, spell: false, melee).Scale(ChargeDamageMore(stats));
+        var hit = DamageStats.Added(weapon.HitDamage(stats), Get, spell: false, melee,
+            wieldingWand: weapon.WieldingWand).Scale(ChargeDamageMore(stats));
         if (conversion is not null) hit = hit.Convert(conversion);
         return RageStats.ApplyAttack(hit, Get).Scale(GamblerFor(stats).DamageFactor);
     }
@@ -459,7 +460,7 @@ partial class Program
                 var damageRows = hitPlan.Kind == SkillHitKind.Spell
                     ? SpellPanelStats.Compute(hitPlan, supportedHit, Get("hundred_times_casts_per_second"),
                         includeMainHand: true)
-                    : PanelStats.HandDamage(supportedHit, "main_hand");
+                    : AttackPanelStats.Compute(hitPlan, supportedHit, Get("hundred_times_attacks_per_second"));
                 foreach (var (key, value) in damageRows)
                     if (Stats.Key(key) is uint statKey) stats[statKey] = value;
                 var display = SpellDamage.Display((supportedHit.MinTotal, supportedHit.MaxTotal), 1 / seconds);
