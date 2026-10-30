@@ -20,6 +20,9 @@ The setup and the log files themselves are in [GettingStarted](../../GettingStar
   (area change)`, `the client reset the connection (area change)`, `exit to character selection (0x0153)`,
   `handler error handling 0x…: …`, `error: IOException: …`, or `the client closed the connection (no area change or
   exit: a client crash or a closed game?)`.
+  A run of 25 reads containing only unknown, unframed bytes closes the connection with
+  `the client's stream no longer decodes`, allowing reconnection instead of leaving a deaf session open.
+  Any framed message resets this run; incomplete known messages do not count as unknown bytes.
 - **Earlier runs.** `live.ps1` moves the previous run's logs to `logs\archive\<yyyyMMdd-HHmmss>\` instead of deleting
   them, so a crash noticed only after a restart still has its log. A `-Only` restart's folder ends in the servers it
   restarted (`…-gateway`); the newest 10 full runs and the newest 20 restarts are kept.

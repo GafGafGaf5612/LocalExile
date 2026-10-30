@@ -62,6 +62,7 @@ partial class Program
             conn.QuestFlags = [.. save?.QuestFlags ?? [], .. Quests.EveryCharacter];
             conn.ExtraPassivePoints = save?.ExtraPassivePoints ?? 0;
             conn.RefundPoints = save?.RefundPoints ?? 0;
+            RestoreGod(conn);
             // The cluster jewel nodes are the client's own layout ids, so they come back only as far as the socketed
             // jewels still have room for them; with no cluster jewel they are dropped rather than listed for nodes the
             // client cannot resolve.

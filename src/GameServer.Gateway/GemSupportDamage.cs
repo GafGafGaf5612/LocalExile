@@ -7,6 +7,7 @@ static class GemSupportDamage
     static readonly HashSet<string> Unconditional =
     [
         "support_melee_physical_damage_+%_final", "support_weapon_elemental_damage_+%_final",
+        "delve_mod_attack_damage_+%_final", "delve_mod_spell_damage_+%_final",
         "support_area_concentrate_area_damage_+%_final", "support_multiple_projectile_damage_+%_final",
         "support_lesser_multiple_projectile_damage_+%_final", "support_chain_hit_damage_+%_final",
         "support_split_projectile_damage_+%_final", "support_fork_projectile_damage_+%_final",

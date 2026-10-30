@@ -35,6 +35,7 @@ sealed class ModCatalog(string folder = "data", bool ruthless = false, ModRangeP
         public int? BuffTemplate { get; init; }
         public string MonsterOnDeath { get; init; } = "";
         public int GrantedEffects { get; init; }
+        public IReadOnlyList<int> GrantedEffectLevels { get; init; } = [];
 
         /// <summary>The weight for an item with these tags: the first spawn tag it has, times the first generation tag
         /// it has / 100; 0 when no spawn tag matches.</summary>
@@ -158,6 +159,8 @@ sealed class ModCatalog(string folder = "data", bool ruthless = false, ModRangeP
                 BuffTemplate = r.TryGetProperty("BuffTemplate1", out var buff) && buff.ValueKind == JsonValueKind.Number ? buff.GetInt32() : null,
                 MonsterOnDeath = r.TryGetProperty("MonsterOnDeath", out var death) ? death.GetString() ?? "" : "",
                 GrantedEffects = r.TryGetProperty("GrantedEffectsPerLevelKeys", out var granted) ? granted.GetArrayLength() : 0,
+                GrantedEffectLevels = r.TryGetProperty("GrantedEffectsPerLevelKeys", out var effects)
+                    ? [.. effects.EnumerateArray().Select(e => e.GetInt32())] : [],
                 Tags = new[] { "TagsKeys", "ImplicitTagsKeys" }
                     .Where(key => r.TryGetProperty(key, out _))
                     .SelectMany(key => r.GetProperty(key).EnumerateArray().Select(k => k.GetInt32()))
