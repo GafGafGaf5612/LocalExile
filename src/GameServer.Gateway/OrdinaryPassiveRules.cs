@@ -17,6 +17,12 @@ sealed class OrdinaryPassiveRules(string folder = "data")
     public bool Loaded => _data.Value is not null;
     public bool GraphLoaded => Loaded;
 
+    /// <summary>The direct neighbours of an ordinary passive in the selected client graph, for tattoo adjacency
+    /// requirements such as the Makanga tattoos' <c>RequiresAdjacent</c>/<c>MaxAdjacent</c>.</summary>
+    public IReadOnlyCollection<ushort> Adjacent(ushort node, AscendancyFamily family) =>
+        _data.Value is { } data && data.Graphs.TryGetValue(family, out var graph) && graph.TryGetValue(node, out var set)
+            ? set : [];
+
     /// <summary>Checks a complete candidate set without modifying either supplied allocation. <paramref name="bypassNodes"/>
     /// are allocated nodes that an Intuitive Leap/Thread of Hope jewel lets stand without a path to the class start.
     /// They are allowed as individual exceptions, but do not bridge to their neighbours unless they are adjacent to

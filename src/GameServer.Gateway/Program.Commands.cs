@@ -135,6 +135,16 @@ partial class Program
             else if (rebuildMana)
                 await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
         })
+        .Add("stat", "/stat <stat name or client key> (dev: current character stat value)", async args =>
+        {
+            if (args.Length != 1 || Stats.Key(args[0]) is not uint stat)
+            {
+                await conn.Commands!.Reply("Usage: /stat <stat name or client key>");
+                return;
+            }
+            int value = CharacterPlayerStats(conn).GetValueOrDefault(stat);
+            await conn.Commands!.Reply($"{args[0]} (key {stat}) = {value}");
+        })
         .Add("spawn_mob", "/spawn_mob <MonsterVarieties row, Id or name>[@level] [friendly] [normal|magic|rare|unique] [name]", async args =>
         {
             // "friendly": on the player's team (Positioned team 0); monsters are hostile (team 1) otherwise.
@@ -406,6 +416,75 @@ partial class Program
                 && conn.Passives.Contains(keystone.GraphId);
             await conn.Commands!.Reply($"Impossible Escape ({query}) added to the inventory" +
                 (keystoneAllocated ? "" : ". Allocate the chosen keystone first; the ring and bypass only apply around an allocated keystone."));
+        })
+        .Add("tattoo", "/tattoo <name> | list (dev: a tattoo currency item into the inventory)", async args =>
+        {
+            if (args.Length == 0 || args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            {
+                await conn.Commands!.Reply(string.Join(", ", TattooCatalogue.Names));
+                return;
+            }
+            string query = string.Join(' ', args);
+            if (TattooCatalogue.Create(ItemsFor(conn), query) is not { } tattoo)
+            {
+                await conn.Commands!.Reply($"No tattoo \"{query}\"");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, tattoo));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /tattoo {query}");
+            var entry = TattooCatalogue.Find(query)!;
+            await conn.Commands!.Reply($"{entry.Name} added to the inventory (replaces {entry.Target}" +
+                (entry.EventOnly ? "; event-only, not normally obtainable" : entry.DropDisabled ? "; drop-disabled" : "") + ")");
+        })
+        .Add("tattoo_apply", "/tattoo_apply <tattoo name> <node> (dev: apply a pilot tattoo to an allocated passive)", async args =>
+        {
+            if (args.Length < 2 || !ushort.TryParse(args[^1], out ushort node))
+            {
+                await conn.Commands!.Reply("Usage: /tattoo_apply <tattoo name> <node>");
+                return;
+            }
+            string name = string.Join(' ', args.Take(args.Length - 1));
+            string? error = await ApplyTattoo(remote, stream, ciphers, conn, name, node);
+            await conn.Commands!.Reply(error ?? $"{name} applied to passive {node}");
+        })
+        .Add("journey_makanui", "/journey_makanui <node> [keystone] (dev: apply Journey Makanui, random or chosen)", async args =>
+        {
+            if (args.Length < 1 || !ushort.TryParse(args[0], out ushort node))
+            {
+                await conn.Commands!.Reply("Usage: /journey_makanui <node> [keystone name|graph id]");
+                return;
+            }
+            JourneyMakanuiCatalogue.Entry? chosen = null;
+            if (args.Length > 1)
+            {
+                chosen = JourneyMakanuiCatalogue.Find(string.Join(' ', args.Skip(1)));
+                if (chosen is null)
+                {
+                    await conn.Commands!.Reply($"No keystone \"{string.Join(' ', args.Skip(1))}\"");
+                    return;
+                }
+            }
+            string? error = await ApplyTattoo(remote, stream, ciphers, conn, "Journey Tattoo of Makanui", node,
+                chosenKeystone: chosen?.GraphId);
+            await conn.Commands!.Reply(error ?? $"Journey Tattoo of Makanui applied to passive {node}" +
+                (chosen is null ? " (random keystone)" : $" ({chosen.Name})"));
+        })
+        .Add("tattoo_remove", "/tattoo_remove <node> (dev: remove the tattoo from a passive)", async args =>
+        {
+            if (args.Length != 1 || !ushort.TryParse(args[0], out ushort node))
+            {
+                await conn.Commands!.Reply("Usage: /tattoo_remove <node>");
+                return;
+            }
+            string? error = await RemoveTattoo(remote, stream, ciphers, conn, node);
+            await conn.Commands!.Reply(error ?? $"Tattoo removed from passive {node}");
         })
         .Add("timeless", "/timeless <name> [seed] [conqueror] | list (dev: a Legion timeless jewel into the inventory; Elegant Hubris seeds are the displayed x20 values 2000-160000)", async args =>
         {

@@ -58,6 +58,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [re/011-level-generation.md](re/011-level-generation.md) | the client's level generator: stages, RNG, topology pick, tile hash, generation traces; the server port in progress |
 | [dev/debugging.md](dev/debugging.md) | log timestamps and archives, error stack traces, the packet history and dumps, `Game_TRACE`, client crashes, `bugreport.ps1` |
 | [dev/live-testing.md](dev/live-testing.md) | the older live-testing notes (GettingStarted supersedes them) |
+| [dev/ranged-monster-actions-port.md](dev/ranged-monster-actions-port.md) | standalone bow/wand and monster-action port, preserved upstream behavior and validation limits |
 | [dev/passive-graph-data.md](dev/passive-graph-data.md) | pinned PSG format and read-only analysis exports; no client installation or gameplay integration |
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |
@@ -74,6 +75,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [game/timeless-jewels.md](game/timeless-jewels.md) | Legion timeless jewels: item data, seed/conqueror rules, node replacement algorithm, radius geometry and implementation plan |
 | [game/timeless-jewel-list.md](game/timeless-jewel-list.md) | generated full list of timeless keystones, notables, small passives, 96 additions and 16 Militant Faith devotion mods with support status |
 | [game/cluster-jewel-list.md](game/cluster-jewel-list.md) | generated full list of cluster notables, small-passive themes and keystones with support status |
+| [game/tattoos.md](game/tattoos.md) | all 100 tattoos: mechanics, target/limit rules, the C->S 0x77 / 0x33 fifth-list protocol, acquisition, interactions and the full per-item status table |
 | [re/ascendancy-client-3.29.3b.md](re/ascendancy-client-3.29.3b.md) | native identity and point evidence |
 | [game/league-modes.md](game/league-modes.md) | Hardcore deaths, SSF isolation, Ruthless native rules and editable balance |
 

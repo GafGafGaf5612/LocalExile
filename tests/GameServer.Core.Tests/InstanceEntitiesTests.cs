@@ -502,6 +502,17 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Character_passives_carry_tattoos_in_the_fifth_list()
+    {
+        // The fifth u32 list is node | PassiveSkillOverrides.dat HASH16 << 16 (RawU32 is little-endian): node
+        // 0x5335, Firewalker override Ngamahu1 HASH16 0x5C2A.
+        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0001" + "3412"
+                + "0000" + "0000" + "0000" + "0001" + "35532A5C",
+            Convert.ToHexString(InstanceEntities.CharacterPassives(5, 3, [0x1234],
+                tattoos: new Dictionary<ushort, ushort> { [0x5335] = 0x5C2A })));
+    }
+
+    [Fact]
     public void Area_transition_blob_layout_and_type()
     {
         // Traced live 2026-10-16: the client consumed all 41 bytes (Positioned 16, Animated 1, AreaTransition 5, Stats 10,

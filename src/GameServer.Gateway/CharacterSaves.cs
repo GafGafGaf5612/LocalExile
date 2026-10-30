@@ -54,7 +54,8 @@ static class CharacterSaves
         OpeningTutorial? Tutorial = null, AscendancyProgress? MainAscendancy = null,
         Dictionary<string, Dictionary<string, HideoutPlacement>>? HideoutPlacements = null,
         uint? Life = null, uint? Mana = null, VitalsSession? VitalsOwner = null, List<ushort>? ClusterPassives = null,
-        ushort? Sulphite = null)
+        ushort? Sulphite = null, Dictionary<ushort, string>? Tattoos = null,
+        Dictionary<ushort, ushort>? TattooKeystones = null)
     {
         /// <summary>Fields this build doesn't know (a newer build wrote them): kept as they are by the next write.</summary>
         [JsonExtensionData] public Dictionary<string, JsonElement>? Unknown { get; init; }
@@ -294,6 +295,16 @@ static class CharacterSaves
     /// <summary>Records the cluster jewel nodes the client allocated, in the order it sent them.</summary>
     public static void SetClusterPassives(string character, IEnumerable<ushort> nodes) =>
         Update(character, s => s with { ClusterPassives = [.. nodes] });
+
+    /// <summary>Records the applied tattoos (passive node -> tattoo name). The map is independent of the allocated
+    /// passive list: unallocating a tattooed passive does not remove the tattoo.</summary>
+    public static void SetTattoos(string character, IReadOnlyDictionary<ushort, string> tattoos,
+        IReadOnlyDictionary<ushort, ushort>? keystones = null) =>
+        Update(character, s => s with
+        {
+            Tattoos = new(tattoos),
+            TattooKeystones = keystones is null ? s.TattooKeystones : new(keystones),
+        });
 
     /// <summary>
     /// Main ascendancy identity, its own nodes/point awards and any associated ordinary-node/refund changes commit in
