@@ -23,6 +23,10 @@ static class CurrencyEffects
     public const string GreaterEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor2";
     public const string GrandEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor3";
     public const string ExceptionalEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor4";
+    public const string LesserEldritchEmber = "Metadata/Items/Currency/CurrencyEldritchEmber1";
+    public const string GreaterEldritchEmber = "Metadata/Items/Currency/CurrencyEldritchEmber2";
+    public const string GrandEldritchEmber = "Metadata/Items/Currency/CurrencyEldritchEmber3";
+    public const string ExceptionalEldritchEmber = "Metadata/Items/Currency/CurrencyEldritchEmber4";
 
     /// <summary>The Eater of Worlds implicit tier an Eldritch Ichor adds (Lesser 1 … Exceptional 4).</summary>
     public static int? EldritchIchorTier(string id) => id switch
@@ -31,10 +35,22 @@ static class CurrencyEffects
         _ => null,
     };
 
+    /// <summary>The Searing Exarch implicit tier an Eldritch Ember adds (Lesser 1 … Exceptional 4).</summary>
+    public static int? EldritchEmberTier(string id) => id switch
+    {
+        LesserEldritchEmber => 1, GreaterEldritchEmber => 2, GrandEldritchEmber => 3, ExceptionalEldritchEmber => 4,
+        _ => null,
+    };
+
     /// <summary>Eldritch Ichor: adds an Eater of Worlds implicit to body armour, boots, gloves or a helmet, replacing
     /// the other implicit modifiers except Searing Exarch ones. Normal, magic and rare items only.</summary>
     public static Item? EldritchIchor(Item item, ItemCatalog.BaseType type, int tier, ItemRolls rolls, Random random) =>
         rolls.EldritchIchor(item, type, tier, random);
+
+    /// <summary>Eldritch Ember: adds a Searing Exarch implicit to body armour, boots, gloves or a helmet, replacing
+    /// the other implicit modifiers except Eater of Worlds ones. Normal, magic and rare items only.</summary>
+    public static Item? EldritchEmber(Item item, ItemCatalog.BaseType type, int tier, ItemRolls rolls, Random random) =>
+        rolls.EldritchEmber(item, type, tier, random);
 
     /// <summary>Orb of Annulment: one random unprotected explicit affix leaves a magic or rare item; implicits, the
     /// other affixes, rarity and name stay. Corrupted/mirrored/unsupported/unmodifiable bases and items without an

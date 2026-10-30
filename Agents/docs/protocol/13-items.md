@@ -656,7 +656,7 @@ ones come back through `AddAffix`, at most three of each kind, so the count stay
 Unknown/unsupported or `Unmodifiable` bases and empty pools are refused before spending.
 Official CoE Vaal outcomes are separate work; see [the admission check and boundary](../re/vaal-coe.md).
 
-### Eldritch Ichors (2026-10-30)
+### Eldritch Ichors and Embers (2026-10-30)
 
 `CurrencyEldritchIchor1..4` (Lesser, Greater, Grand, Exceptional), same 0x71/0x72 handler.
 `CurrencyEffects.EldritchIchor` delegates to `ItemRolls.EldritchIchor`: a normal, magic or rare body armour, boots,
@@ -665,8 +665,11 @@ except Searing Exarch ones; explicit affixes, quality, sockets, links, rarity an
 The tier selects the `...EldritchImplicitN` row, including the Unique/Pinnacle Presence variants where the base allows.
 Uniques, corrupted/mirrored items, non-armour classes and unsupported/unmodifiable bases are refused before spending.
 The item stores the implicit in its normal implicit list; a separate Eldritch dominance/influence state and the
-Ember/Conflict family are not modelled.
-See [the source comparison and limits](../re/eldritch-ichor-coe.md).
+Orb of Conflict are not modelled.
+The four `CurrencyEldritchEmber1..4` are the Searing Exarch mirror: `CurrencyEffects.EldritchEmber` adds the tier's
+Exarch implicit and replaces every other implicit except Eater of Worlds ones, with the same classes, rarity and
+admission.
+See [the Ichor comparison](../re/eldritch-ichor-coe.md) and [the Ember comparison](../re/eldritch-ember-coe.md).
 
 ### Orb of Fusing (2026-10-21, verified live)
 

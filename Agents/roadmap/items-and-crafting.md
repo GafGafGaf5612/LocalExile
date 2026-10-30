@@ -54,8 +54,9 @@ features.
   outcomes remain separate. See [the boundary](../docs/re/chance-coe.md).
   Annulment's removal rule has validated admission and CoE metamod/rarity checks; recheck it natively. See
   [the evidence](../docs/re/annulment-coe.md).
-  The four Eldritch Ichors add tiered Eater implicits and have CoE base/tier checks. Eldritch Embers, the Orb of
-  Conflict and a separate dominance/influence state remain separate. See [the evidence](../docs/re/eldritch-ichor-coe.md).
+  The four Eldritch Ichors and Embers add tiered Eater/Exarch implicits and have CoE base/tier checks. The Orb of
+  Conflict and a separate dominance/influence state remain separate. See [the Ichor evidence](../docs/re/eldritch-ichor-coe.md)
+  and [the Ember evidence](../docs/re/eldritch-ember-coe.md).
 - **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
   Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
   socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).

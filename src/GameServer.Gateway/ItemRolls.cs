@@ -105,13 +105,21 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
     /// <summary>The rare per-side limit: jewel classes allow two prefixes and two suffixes, other rare bases three.</summary>
     static int MaxAffixesPerSide(ItemCatalog.BaseType type) => type.Class is "Jewel" or "AbyssJewel" ? 2 : 3;
 
-    /// <summary>The Eater of Worlds implicits an Eldritch Ichor of this tier can add: the tier's ordinary and
-    /// Unique/Pinnacle Presence variants that the base's tags allow.</summary>
-    public IReadOnlyList<(ModCatalog.Mod Mod, int Weight)> EldritchIchorPool(ItemCatalog.BaseType type, int tier)
+    /// <summary>The Eater of Worlds implicits an Eldritch Ichor of this tier can add.</summary>
+    public IReadOnlyList<(ModCatalog.Mod Mod, int Weight)> EldritchIchorPool(ItemCatalog.BaseType type, int tier) =>
+        EldritchPool(type, EaterImplicit, tier);
+
+    /// <summary>The Searing Exarch implicits an Eldritch Ember of this tier can add.</summary>
+    public IReadOnlyList<(ModCatalog.Mod Mod, int Weight)> EldritchEmberPool(ItemCatalog.BaseType type, int tier) =>
+        EldritchPool(type, ExarchImplicit, tier);
+
+    /// <summary>The tier's ordinary and Unique/Pinnacle Presence variants of one Eldritch influence that the base's
+    /// tags allow.</summary>
+    IReadOnlyList<(ModCatalog.Mod Mod, int Weight)> EldritchPool(ItemCatalog.BaseType type, int influence, int tier)
     {
         if (tier is < 1 or > 4) return [];
         return [.. catalog.Mods.All
-            .Where(m => m.GenerationType == EaterImplicit && IsEldritchTier(m.Id, tier))
+            .Where(m => m.GenerationType == influence && IsEldritchTier(m.Id, tier))
             .Select(m => (m, m.WeightFor(type.Tags))).Where(p => p.Item2 > 0)];
     }
 
@@ -121,16 +129,24 @@ sealed class ItemRolls(ItemCatalog catalog, string folder = "data")
 
     /// <summary>Eldritch Ichor: adds an Eater of Worlds implicit of the ichor's tier to eligible armour, replacing the
     /// other implicit modifiers except Searing Exarch ones.</summary>
-    public Item? EldritchIchor(Item item, ItemCatalog.BaseType type, int tier, Random random)
+    public Item? EldritchIchor(Item item, ItemCatalog.BaseType type, int tier, Random random) =>
+        EldritchImplicit(item, type, tier, EaterImplicit, ExarchImplicit, random);
+
+    /// <summary>Eldritch Ember: adds a Searing Exarch implicit of the ember's tier to eligible armour, replacing the
+    /// other implicit modifiers except Eater of Worlds ones.</summary>
+    public Item? EldritchEmber(Item item, ItemCatalog.BaseType type, int tier, Random random) =>
+        EldritchImplicit(item, type, tier, ExarchImplicit, EaterImplicit, random);
+
+    Item? EldritchImplicit(Item item, ItemCatalog.BaseType type, int tier, int influence, int keptInfluence, Random random)
     {
         if (tier is < 1 or > 4 || item.Rarity is not (ItemRarity.Normal or ItemRarity.Magic or ItemRarity.Rare) ||
             type.Class is not ("Helmet" or "Body Armour" or "Gloves" or "Boots") ||
             !TryModifiable(item, out _)) return null;
-        var pool = EldritchIchorPool(type, tier);
+        var pool = EldritchPool(type, influence, tier);
         if (pool.Count == 0) return null;
         var chosen = Pick(pool, random);
         var kept = item.Mods.Where(m => m.Section != ModSection.Implicit ||
-            catalog.Mods.ByHash(m.Hash)?.GenerationType == ExarchImplicit).ToList();
+            catalog.Mods.ByHash(m.Hash)?.GenerationType == keptInfluence).ToList();
         int at = kept.FindLastIndex(m => m.Section == ModSection.Implicit) + 1;
         kept.Insert(at, chosen.Roll(ModSection.Implicit, random));
         return item with { Mods = kept };

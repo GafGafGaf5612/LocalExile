@@ -13,8 +13,9 @@ Only normal, magic or rare items are accepted; uniques, corrupted/mirrored items
 before spending. The item's explicit affixes, quality, sockets, links, rarity and name stay.
 
 The implicit is stored as a normal `ModSection.Implicit` entry in the item's single implicit list.
-A separate Eldritch dominance/influence state and the Eldritch Ember/Conflict family are not modelled here; the
-native client display of the new implicit still needs an acceptance run.
+The Ember family mirrors this (see [the Ember comparison](eldritch-ember-coe.md)); the Orb of Conflict and a separate
+Eldritch dominance/influence state are not modelled, and the native client display of the new implicit still needs an
+acceptance run.
 
 ## Pinned reference
 
@@ -66,8 +67,8 @@ variants; all selected rows have GenerationType 29 and a positive weight for the
 - CoE does not expose a usable Greater handler name; the local tier 2 is verified through the data table and the
   tier-suffix rule, not through a CoE apply.
 - `no_influence` cannot be enforced locally because the server has no Shaper/Elder/Elderslayer influence state.
-- The item carries the implicit in the normal implicit list; a separate Eldritch dominance state, the Ember/Conflict
-  family and the influence icons are out of scope.
+- The item carries the implicit in the normal implicit list; a separate Eldritch dominance state, the Orb of
+  Conflict and the influence icons are out of scope.
 - The wiki's "normal, magic or rare" rule is enforced; uniques are refused even though `TryModifiable` alone would
   allow them.
 
