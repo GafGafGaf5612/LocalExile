@@ -58,6 +58,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [re/011-level-generation.md](re/011-level-generation.md) | the client's level generator: stages, RNG, topology pick, tile hash, generation traces; the server port in progress |
 | [dev/debugging.md](dev/debugging.md) | log timestamps and archives, error stack traces, the packet history and dumps, `Game_TRACE`, client crashes, `bugreport.ps1` |
 | [dev/live-testing.md](dev/live-testing.md) | the older live-testing notes (GettingStarted supersedes them) |
+| [dev/ranged-monster-actions-port.md](dev/ranged-monster-actions-port.md) | standalone bow/wand and monster-action port, preserved upstream behavior and validation limits |
 | [dev/passive-graph-data.md](dev/passive-graph-data.md) | pinned PSG format and read-only analysis exports; no client installation or gameplay integration |
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |

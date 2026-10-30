@@ -23,9 +23,22 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
+/// <summary>How a monster's projectile skill releases its shot, from the rig and stat set the client itself plays
+/// (Program.MonsterReleaseFor): the clip, its contact keyframe as a fraction of the attack, the keyframe's position when
+/// the skill spawns the shot there (<c>projectile_uses_contact_position</c>), and whether the monster turns its back for
+/// it (<c>action_should_face_away_from_target</c>: the Sand Spitter spits from its rear).</summary>
+sealed record MonsterRelease(string Clip, double Fraction, ContactPoint? Point, bool FacesAway);
+
 sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
     public bool Ranged { get; init; }
+    /// <summary>When and from where a projectile skill releases its shot; null: half the attack time, 1.5 cells ahead at
+    /// the default height (no rig data for the variety).</summary>
+    public MonsterRelease? Release { get; init; }
+    /// <summary>A ranged skill's projectile (SkillCatalog.MonsterProjectile): the shot flies from the monster at the
+    /// attack's contact and lands its hit when it reaches the player (Program.ProjectileHostile.cs). Null keeps the
+    /// instant contact at half the attack time.</summary>
+    public SkillCatalog.MonsterProjectileInfo? Projectile { get; init; }
     /// <summary>The attack's final stats (the client derives none, 11-skills.md §4): the swing time, reach and damage.
     /// These also go on the monster's Stats component.</summary>
     public IReadOnlyList<(uint, int)> Stats()
@@ -87,13 +100,15 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public bool Hostile { get; init; } = true;
     // What it is, for the experience and items its death gives (null for monsters made without a variety).
     public MonsterCatalog.Variety? Variety { get; init; }
-    // Its TakeHit clips (index in the rig's animation list, length) for 0x1b2: the flinch and its sound on a hit that
-    // passes HitReaction's gates. One clip for most varieties; a few have a pool the server picks from.
+    // Its known TakeHit clip lengths supply HitReaction's recovery duration. Native Actor TakeHit selects the actual
+    // clip through its current ACT; rig indexes are retained as extraction/profile diagnostics.
     public IReadOnlyList<HitAnimation> HitAnimations { get; init; } = [];
     public byte Level { get; init; } = 1;
     public MonsterRarity Rarity { get; init; }
     // Its mods (MonsterMods.cs): the rarity's own and the rolled affixes, with what they change. Kept with the instance.
     public MonsterModSet Mods { get; init; } = MonsterModSet.None;
+    // The client's speed roll for this object in percent (MonsterSpeedRoll.cs); Walk's speed already includes it.
+    public int SpeedRoll { get; init; }
     // Damage over time not yet applied (fractions of a point between ticks).
     public double Burn;
     // Life regeneration not yet applied (fractions of a point between ticks; RegenerateMonsters).
@@ -102,14 +117,18 @@ sealed class SpawnedMonster(string label, WalkEstimator walk, int aggroRange, in
     public readonly ImpaleState Impale = new();
     // While a swing runs (Clock seconds) the monster neither chases nor swings again.
     public double BusyUntil;
+    // Every AI order owns a generation. A flinch invalidates queued echoes and contact work from that order.
+    // SwingGeneration identifies ordinary attack recovery so canceling it does not clear an emerge or boss stage.
+    public int ActionGeneration;
+    public int? SwingGeneration;
     public string Label => label;
     public WalkEstimator Walk { get; set; } = walk;
     public int AggroRange => aggroRange;
     public int StopRange => stopRange;
     public uint MaxLife { get; } = maxLife;
     public uint Life = maxLife;
-    // Until when its last flinch plays (Clock seconds; HitReaction): no new flinch before. Guarded by the Monsters
-    // lock.
+    // Until when its last flinch plays (Clock seconds; HitReaction): no new action or flinch before.
+    // Guarded by the Monsters lock.
     public double FlinchUntil = double.NegativeInfinity;
     public bool Aggro, Dead;
     // Soul credit alone is idempotent; this does not alter existing XP, loot, quest or charge policy.
@@ -190,6 +209,13 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
         lock (Monsters)
         {
             IncomingHitEpoch++;
+            // The action state machine replaces the old swing epoch argument. Retired work cannot
+            // resume after a failed transfer, even when admission reopens on this same connection.
+            foreach (var monster in Monsters.Values)
+            {
+                monster.ActionGeneration++;
+                monster.SwingGeneration = null;
+            }
             if (clear) { RecentEnemyHits.Clear(); ElementalAilments.Clear(); }
         }
     }

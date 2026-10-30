@@ -312,7 +312,7 @@ partial class Program
         reading.Cancel();
     }
 
-    // Monster AI, one tick every MonsterAiTickMs per connection. A monster within its aggro range (MonsterVarieties MaxAgroRange, in
+    // Monster AI, one decision every MonsterAiCadence.StepMilliseconds of game time per connection (RunMonsterAi). A monster within its aggro range (MonsterVarieties MaxAgroRange, in
     // cells) of the player starts chasing: it walks (Move action 0x1ab, skill 0x2909; the client paths it) to its own cell
     // around the player (MonsterSurround), re-ordered when that cell has moved by 3+ cells. Beyond twice the range it gives up and stops.
     // Positions are the server's estimates (WalkEstimator at MonsterVarieties MovementSpeed cells/s).

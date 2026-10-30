@@ -2,7 +2,7 @@ using GameServer.Core.World;
 
 namespace GameServer.Gateway.Tests;
 
-public class OrdinaryBowShotTests
+public class OrdinaryRangedShotTests
 {
     [Fact]
     public void Capture_keeps_existing_weapon_added_conversion_precedence_and_freezes_the_inputs()
@@ -20,7 +20,7 @@ public class OrdinaryBowShotTests
             var raw = new Dictionary<uint, int> { [1] = 3, [2] = 7, [3] = 50, [4] = 25, [5] = 20, [6] = 1, [7] = 7,
                 [StatKeys.MeleePhysicalDamagePct] = 20 };
             var weapon = new SkillCatalog.Unarmed(714, 5, 13, 120);
-            var shot = OrdinaryBowShot.Capture(weapon, raw, [(3, 100), (5, 10), (7, 3)], catalog, 321, 1234, 175);
+            var shot = OrdinaryRangedShot.Capture(weapon, raw, [(3, 100), (5, 10), (7, 3)], catalog, 321, 1234, 175);
             // Retain the existing ordinary attack's melee-physical treatment, and the player's conversion wins
             // a colliding default-skill key. Added fire is added before conversion, exactly once.
             Assert.Equal(new DamageRange(3, 7.8), shot.Hit[DamageType.Physical]);
