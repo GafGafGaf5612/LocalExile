@@ -1361,11 +1361,11 @@ partial class Program
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
         })
-        .Add("game_data", "/game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | setting <key> <value> | clear_setting <key> | settings | list (dev: SQLite game-data overrides; no restart)", async args =>
+        .Add("game_data", "/game_data reload | reference | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | limit <key> <value> | clear_limit <key> | setting <key> <value> | clear_setting <key> | settings | list (dev: SQLite game-data overrides; no restart)", async args =>
         {
             if (args.Length == 0)
             {
-                await conn.Commands!.Reply("Usage: /game_data reload | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | " +
+                await conn.Commands!.Reply("Usage: /game_data reload | reference | mod <mod> <stat> <min> <max> | clear_mod <mod> [stat] | " +
                     "limit <key> <value> | clear_limit <key> | setting <key> <value> | clear_setting <key> | settings | list");
                 return;
             }
@@ -1382,6 +1382,12 @@ partial class Program
                     case "reload":
                         GameData.Reload("command");
                         await conn.Commands!.Reply($"Game data reloaded: revision {GameData.Current.Revision}");
+                        return;
+                    case "reference":
+                        bool seeded = GameDataReference.Seed(store, force: true);
+                        await conn.Commands!.Reply(seeded
+                            ? "Reference tables rebuilt from data/tables"
+                            : "Reference tables need the extracted game tables");
                         return;
                     case "mod":
                         {
@@ -1501,7 +1507,7 @@ partial class Program
                             await conn.Commands!.Reply($"  limit {key} = {value}" + (value == 0 ? " (unlimited)" : ""));
                         return;
                     default:
-                        await conn.Commands!.Reply("Unknown /game_data action; use reload, mod, clear_mod, limit, clear_limit, setting, clear_setting, settings or list");
+                        await conn.Commands!.Reply("Unknown /game_data action; use reload, reference, mod, clear_mod, limit, clear_limit, setting, clear_setting, settings or list");
                         return;
                 }
             }

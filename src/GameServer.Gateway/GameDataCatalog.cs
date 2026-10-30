@@ -61,7 +61,7 @@ static class GameDataCatalog
 
     public static void Reload(GameDataStore store)
     {
-        var uniques = Load(store, "unique_item", UniqueSeed, entry => entry.Name);
+        var uniques = Load(store, "unique_item", UniqueSeed, UniqueKey);
         var radius = Load(store, "radius_jewel", RadiusSeed, RadiusKey);
         var threshold = Load(store, "threshold_jewel", ThresholdSeed, RadiusKey);
         var globals = Load(store, "unique_jewel_global", GlobalSeed, entry => entry.Name);
@@ -83,6 +83,7 @@ static class GameDataCatalog
 
     static T[] Load<T>(GameDataStore store, string kind, T[] seed, Func<T, string> key)
     {
+        if (kind == "unique_item") MigrateUniqueKeys(store);
         Seed(store, kind, seed, key);
         return [.. store.LoadCatalog(kind).Where(row => row.Enabled)
             .Select(row => JsonSerializer.Deserialize<T>(row.Payload, Json)
@@ -91,18 +92,27 @@ static class GameDataCatalog
 
     static void Seed<T>(GameDataStore store, string kind, T[] seed, Func<T, string> key)
     {
-        if (store.CatalogSeeded(kind)) return;
-        // A table populated by hand before the first seed already has a source of truth; mark it and keep the rows.
-        if (store.LoadCatalog(kind).Count > 0)
-        {
-            store.MarkCatalogSeeded(kind);
-            return;
-        }
+        // Add rows introduced by a newer build, but keep a row an admin has edited. The old per-kind flag is
+        // informational; the missing-key check is what makes an upgrade add the full unique catalogue.
+        var existing = store.LoadCatalog(kind).Select(row => row.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var entry in seed)
-            store.PutCatalogRow(kind, key(entry), JsonSerializer.Serialize(entry, Json));
-        store.MarkCatalogSeeded(kind);
+        {
+            string rowKey = key(entry);
+            if (!existing.Contains(rowKey))
+                store.PutCatalogRow(kind, rowKey, JsonSerializer.Serialize(entry, Json));
+        }
+        if (!store.CatalogSeeded(kind)) store.MarkCatalogSeeded(kind);
     }
 
+    /// <summary>The first full-catalogue build used the unique name alone as the key; move those rows aside once so
+    /// the same name can appear for different bases (Combat Focus, Doryani's Delusion, Grand Spectrum, Stormblood).</summary>
+    static void MigrateUniqueKeys(GameDataStore store)
+    {
+        foreach (string key in store.LoadCatalog("unique_item").Where(row => !row.Key.Contains('|')).Select(row => row.Key).ToList())
+            store.DeleteCatalogRow("unique_item", key);
+    }
+
+    static string UniqueKey(UniqueCatalog.Definition entry) => $"{entry.Name}|{entry.BaseTypeId}";
     static string RadiusKey(RadiusJewelCatalogue.Entry entry) => $"{entry.Name}|{entry.Base}";
 
     static IReadOnlyDictionary<string, (string Stat, int Value)[]> ToTattooMap(IEnumerable<TattooEffectRow> rows) =>

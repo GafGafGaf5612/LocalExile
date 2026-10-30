@@ -9,9 +9,11 @@ using GameServer.Core.Protocol.Instance;
 /// </summary>
 sealed class UniqueCatalog(ItemCatalog items, string folder = "data")
 {
-    public sealed record Definition(string Name, string BaseTypeId, string[] Mods, byte ItemLevel = 86);
+    public sealed record Definition(string Name, string BaseTypeId, string[] Mods, byte ItemLevel = 86,
+        bool Corrupted = false);
 
-    internal static readonly Definition[] Seed =
+    /// <summary>The two entries whose curated 3.29 data differs from the PoB export used for the full catalogue.</summary>
+    static readonly Definition[] Curated =
     [
         // Mageblood (Heavy Belt): the +25-35 Strength is the Heavy Belt implicit; the rest are the unique's mods.
         new("Mageblood", "Metadata/Items/Belts/Belt4",
@@ -23,6 +25,15 @@ sealed class UniqueCatalog(ItemCatalog items, string folder = "data")
             ["IncreasedAccuracyUniqueHelmetInt7", "LocalIncreasedEnergyShieldUniqueHelmetInt7",
              "FireResistUniqueHelmetInt7", "LifeLeechPermyriadUniqueHelmetInt7",
              "ManaLeechPermyriadUniqueHelmetInt7", "SpellDamageModifiersApplyToAttackDamageUniqueHelmetInt7"]),
+    ];
+
+    /// <summary>The generated full PoB catalogue (see scripts/re/unique_items.py), with the curated entries first so
+    /// the existing item tests and name lookup keep their 3.29 definitions.</summary>
+    internal static readonly Definition[] Seed =
+    [
+        .. Curated,
+        .. UniqueItemSeed.All.Where(entry => Curated.All(curated =>
+            !curated.Name.Equals(entry.Name, StringComparison.OrdinalIgnoreCase))),
     ];
 
     readonly Lazy<Dictionary<string, UniqueName>> _names = new(() => LoadNames(folder));
@@ -42,6 +53,7 @@ sealed class UniqueCatalog(ItemCatalog items, string folder = "data")
         var item = ItemCatalog.Create(type) with
         {
             ItemLevel = definition.ItemLevel, Rarity = ItemRarity.Unique, Identified = true,
+            Corrupted = definition.Corrupted,
             NameWords = [unique.Word], VisualIdentity = unique.VisualIdentity,
         };
         var mods = item.Mods.ToList();

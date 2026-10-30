@@ -14,6 +14,11 @@ public sealed class GameDataStore : IDisposable
     public sealed record LimitOverride(string Key, int Value);
     public sealed record CatalogRow(string Kind, string Key, string Payload, bool Enabled);
     public sealed record SettingRow(string Key, double Value);
+    public sealed record StatRow(string Id, int Row, uint Hash32, bool IsLocal, bool IsPublic, bool IsWeaponLocal,
+        int Category);
+    public sealed record ModRow(string Id, int Hash16, string Name, int Domain, int GenerationType, int Level,
+        string ModType);
+    public sealed record ModStatRow(string ModId, int StatIndex, string StatId, int Minimum, int Maximum, bool Local);
 
     private readonly SqliteConnection _db;
     private readonly object _gate = new();
@@ -56,6 +61,35 @@ public sealed class GameDataStore : IDisposable
                     value REAL NOT NULL,
                     updated_utc TEXT NOT NULL
                 ) STRICT;
+                CREATE TABLE IF NOT EXISTS stats (
+                    id TEXT PRIMARY KEY,
+                    row INTEGER NOT NULL,
+                    hash32 INTEGER NOT NULL,
+                    is_local INTEGER NOT NULL,
+                    is_public INTEGER NOT NULL,
+                    is_weapon_local INTEGER NOT NULL,
+                    category INTEGER NOT NULL
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS mods (
+                    id TEXT PRIMARY KEY,
+                    hash16 INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    domain INTEGER NOT NULL,
+                    generation_type INTEGER NOT NULL,
+                    level INTEGER NOT NULL,
+                    mod_type TEXT NOT NULL
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS mod_stats (
+                    mod_id TEXT NOT NULL,
+                    stat_index INTEGER NOT NULL,
+                    stat_id TEXT NOT NULL,
+                    minimum INTEGER NOT NULL,
+                    maximum INTEGER NOT NULL,
+                    "local" INTEGER NOT NULL,
+                    PRIMARY KEY (mod_id, stat_index)
+                ) STRICT;
+                CREATE INDEX IF NOT EXISTS mod_stats_stat_id ON mod_stats (stat_id);
+                CREATE INDEX IF NOT EXISTS mods_generation_type ON mods (generation_type, level);
                 CREATE TABLE IF NOT EXISTS catalog_entries (
                     kind TEXT NOT NULL,
                     key TEXT NOT NULL,
@@ -64,6 +98,13 @@ public sealed class GameDataStore : IDisposable
                     updated_utc TEXT NOT NULL,
                     PRIMARY KEY (kind, key)
                 ) STRICT;
+                CREATE VIEW IF NOT EXISTS effective_mod_stats AS
+                    SELECT m.mod_id, m.stat_index, m.stat_id,
+                           COALESCE(o.minimum, m.minimum) AS minimum,
+                           COALESCE(o.maximum, m.maximum) AS maximum,
+                           m."local"
+                    FROM mod_stats m
+                    LEFT JOIN mod_stat_overrides o ON o.mod_id = m.mod_id AND o.stat_index = m.stat_index;
                 CREATE TABLE IF NOT EXISTS item_templates (
                     id TEXT PRIMARY KEY,
                     label TEXT NOT NULL,
@@ -167,6 +208,82 @@ public sealed class GameDataStore : IDisposable
             using var command = Command("DELETE FROM limit_overrides WHERE key = $key", ("$key", key));
             command.ExecuteNonQuery();
         });
+    }
+
+    public bool ReferenceSeeded() => Meta("reference_seeded") is not null;
+
+    public void MarkReferenceSeeded() => SetMeta("reference_seeded", DateTime.UtcNow.ToString("O"));
+
+    /// <summary>Replace the reference tables in one transaction. This is the startup seed from the extracted
+    /// Stats/Mods tables; an admin edit lives in <c>mod_stat_overrides</c> and is not touched.</summary>
+    public void SeedReference(IReadOnlyList<StatRow> stats, IReadOnlyList<ModRow> mods,
+        IReadOnlyList<ModStatRow> modStats)
+    {
+        Atomically(() =>
+        {
+            Execute("DELETE FROM mod_stats");
+            Execute("DELETE FROM mods");
+            Execute("DELETE FROM stats");
+
+            using (var command = Command("""
+                INSERT INTO stats (id, row, hash32, is_local, is_public, is_weapon_local, category)
+                VALUES ($id, $row, $hash, $local, $public, $weapon, $category)
+                """, ("$id", ""), ("$row", 0), ("$hash", 0L), ("$local", 0), ("$public", 0), ("$weapon", 0),
+                ("$category", -1)))
+            {
+                command.Prepare();
+                foreach (var row in stats)
+                {
+                    command.Parameters["$id"].Value = row.Id;
+                    command.Parameters["$row"].Value = row.Row;
+                    command.Parameters["$hash"].Value = (long)row.Hash32;
+                    command.Parameters["$local"].Value = row.IsLocal ? 1 : 0;
+                    command.Parameters["$public"].Value = row.IsPublic ? 1 : 0;
+                    command.Parameters["$weapon"].Value = row.IsWeaponLocal ? 1 : 0;
+                    command.Parameters["$category"].Value = row.Category;
+                    command.ExecuteNonQuery();
+                }
+            }
+
+            using (var command = Command("""
+                INSERT INTO mods (id, hash16, name, domain, generation_type, level, mod_type)
+                VALUES ($id, $hash, $name, $domain, $generation, $level, $type)
+                """, ("$id", ""), ("$hash", 0), ("$name", ""), ("$domain", 1), ("$generation", 3), ("$level", 1),
+                ("$type", "")))
+            {
+                command.Prepare();
+                foreach (var row in mods)
+                {
+                    command.Parameters["$id"].Value = row.Id;
+                    command.Parameters["$hash"].Value = row.Hash16;
+                    command.Parameters["$name"].Value = row.Name;
+                    command.Parameters["$domain"].Value = row.Domain;
+                    command.Parameters["$generation"].Value = row.GenerationType;
+                    command.Parameters["$level"].Value = row.Level;
+                    command.Parameters["$type"].Value = row.ModType;
+                    command.ExecuteNonQuery();
+                }
+            }
+
+            using (var command = Command("""
+                INSERT INTO mod_stats (mod_id, stat_index, stat_id, minimum, maximum, "local")
+                VALUES ($mod, $index, $stat, $minimum, $maximum, $local)
+                """, ("$mod", ""), ("$index", 0), ("$stat", ""), ("$minimum", 0), ("$maximum", 0), ("$local", 0)))
+            {
+                command.Prepare();
+                foreach (var row in modStats)
+                {
+                    command.Parameters["$mod"].Value = row.ModId;
+                    command.Parameters["$index"].Value = row.StatIndex;
+                    command.Parameters["$stat"].Value = row.StatId;
+                    command.Parameters["$minimum"].Value = row.Minimum;
+                    command.Parameters["$maximum"].Value = row.Maximum;
+                    command.Parameters["$local"].Value = row.Local ? 1 : 0;
+                    command.ExecuteNonQuery();
+                }
+            }
+        });
+        MarkReferenceSeeded();
     }
 
     public IReadOnlyList<SettingRow> LoadSettings()

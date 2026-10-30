@@ -282,6 +282,16 @@ public class GameDataTests
     }
 
     [Fact]
+    public void The_generated_unique_catalogue_covers_the_full_pob_export()
+    {
+        Assert.True(UniqueItemSeed.All.Length >= 1200);
+        Assert.Contains(UniqueItemSeed.All, entry => entry.Name == "Mageblood");
+        Assert.Contains(UniqueItemSeed.All, entry => entry.Name == "Seven-League Step");
+        Assert.Equal(3, UniqueItemSeed.All.Count(entry => entry.Name == "Grand Spectrum"));
+        Assert.Equal(1302, UniqueCatalog.Seed.Length);
+    }
+
+    [Fact]
     public void A_gold_multiplier_above_one_increases_the_pile()
     {
         var drops = new ItemDrops(Program.Items);

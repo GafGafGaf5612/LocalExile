@@ -36,6 +36,7 @@ static class GameData
             _ = Program.Items.Mods.All;
             if (Program.Items.Error is { } error)
                 Console.WriteLine($"[gateway] game data: item reference data unavailable: {error}");
+            GameDataReference.Seed(store);
         }
         catch
         {
