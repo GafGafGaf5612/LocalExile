@@ -81,7 +81,14 @@ and the bonfire rooms (`bonfire1`–`6.arm`, scattered by the master's `FillTile
 So:
 
 1. `scripts/re/atlas` with `room-points` writes `data/room-points.json`: per area, the rooms of its RoomSet and
-   FillTiles that have `mapboss` or `%area%-…` points, with the points and the room's doodads (room cells).
+   FillTiles that have `mapboss`, `mapboss<n>` or `%area%-…` points, with the points and the room's doodads (room
+   cells). The room sets of the sub-graphs a graph embeds (nodes tagged `graph`, a graph file or a FileGroups group)
+   count too: The Upper Prison's graph is only two sub-graphs, "Prison" and "Warden" (Brutus), and The Cavern of
+   Anger embeds Merveil's arena (`_cave_river_boss1.dgr`). Before manifest version 5 these areas had no boss rooms.
+   `mapboss` takes any of WorldAreas `Bosses_MonsterVarietiesKeys`, `mapboss<n>` the n-th: The Upper Prison has the
+   Necromancer at `mapboss1` (`special_necroboss1`) and Brutus at `mapboss2` (the `boss_cells_*` rooms before his
+   arena), The Cavern of Anger the sea witch at `mapboss1` and Merveil at `mapboss2` (`river_boss_1a`), The Ledge the
+   totem at `mapboss1` and the goatman at `mapboss2` (`camp`).
    Rooms with a quest server object (an NPC, a `Metadata/QuestObjects/` object or a quest chest; lore objects under
    `Metadata/NPC/Info/` excepted, `RoomFile.IsQuestObject`) are kept too, without any point (version 4): Fairgraves'
    ship, Piety's room in The Upper Prison, the blocked road at Prisoner's Gate, so quests find their objects
@@ -90,11 +97,14 @@ So:
 3. `AreaPopulation.LoadPoints` fits each candidate room: anchored on the room doodad whose model is rarest in the
    capture, it tries each captured doodad of that model × the 8 turns/flips, and keeps a placement when ≥ 70% of the
    room's doodads land within 2 cells of a captured doodad of the same model. The points go through the same placement.
-   The Tidal Island's `medicine_boat` rooms have only two snowfall emitters around Hailrake's `mapboss`, too few for
-   that: when no placement fits, they (and only they, `MercyMission.BoatRooms`) take their actual placement from
-   `<area>_seed<seed>.rooms.json` (12-quests.md, opening encounter). Doing so for every sparse room would change other
-   areas: on the captures it adds The Mud Flats' `miniboss5` mapboss (Oozeback Bloom) and twelve nest packs around
-   a1q4's Rhoa Nests, and moves the start points of The Coast's `to_coast` and The Tidal Island's `toislandcliff`.
+   A room with a unique boss point (and The Tidal Island's `medicine_boat` rooms, `MercyMission.BoatRooms`) takes its
+   actual placement instead, from `<area>_seed<seed>.rooms.json` (12-quests.md, opening encounter) or the Gateway's
+   own generation of the area (`ServerLevels`), whenever there is one: the fit misses sparse rooms (the boat rooms have
+   only two snowfall emitters around Hailrake's `mapboss`, Brutus's `boss_cells` rooms are bare) and matched a repeated
+   room several times (four Necromancers in The Upper Prison seed 1, three goatmen on The Ledge), each match one more
+   unique boss. Seed 1 of every Act 1 area now has exactly one point per boss. Doing so for every room would change
+   other areas: it adds twelve nest packs around a1q4's Rhoa Nests and moves the start points of The Coast's
+   `to_coast` and The Tidal Island's `toislandcliff`, so other rooms keep the fit.
    A room with a quest server object takes its actual placement for its objects (its points keep the fit), from
    `rooms.json` or the Gateway's own generation (`ServerLevels`), whenever there is one: the fit misses sparse rooms and
    matches a repeated one more than once. Seed 1 places Fairgraves on his ship in The Ship Graveyard at (742, 374), the

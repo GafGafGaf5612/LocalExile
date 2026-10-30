@@ -11,12 +11,29 @@ namespace Atlas;
 /// </summary>
 static class RoomPoints
 {
+    // "mapboss" takes one of the area's unique bosses; "mapboss1", "mapboss2" … the boss of that place in WorldAreas
+    // Bosses_MonsterVarietiesKeys (The Upper Prison's Brutus, The Cavern of Anger's sea witch).
     public static bool IsMonsterPoint(string name) =>
-        name.Equals("mapboss", StringComparison.OrdinalIgnoreCase) || name.StartsWith("%area%-", StringComparison.OrdinalIgnoreCase);
+        System.Text.RegularExpressions.Regex.IsMatch(name, "^mapboss[0-9]*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+        || name.StartsWith("%area%-", StringComparison.OrdinalIgnoreCase);
 
     // "default": where a player starts in the area (The Twilight Strand's washed-up beach, 12-quests.md).
     static bool IsKeptPoint(string name) => IsMonsterPoint(name) || name.Equals("default", StringComparison.OrdinalIgnoreCase)
         || name == "Metadata/Chests/TutorialSupportGemChest";
+
+    /// <summary>The master files (.tsi) whose room sets an area's graph uses: its own, and those of the sub-graphs its
+    /// "graph" nodes embed (The Upper Prison's dummy graph is two sub-graphs, "Prison" and "Warden" with Brutus's rooms;
+    /// The Cavern of Anger embeds Merveil's arena), every candidate of a FileGroups group.</summary>
+    static IEnumerable<string> Masters(GameFiles files, GraphFile graph, int depth)
+    {
+        yield return graph.MasterFile;
+        if (depth >= 4) yield break;
+        foreach (var node in graph.Nodes.Where(n => n.Tag.Equals("graph", StringComparison.OrdinalIgnoreCase) && n.Names.Count > 0))
+            foreach (var sub in AtlasBuilder.SubGraphs(files, graph.MasterFile, node.Names[0], []))
+                if (files.Graph(sub) is { } g)
+                    foreach (var master in Masters(files, g, depth + 1))
+                        yield return master;
+    }
 
     // Plain doodads are the client's own; anything else in a room (an NPC, a quest blocker) is an object the server creates.
     const string PlainDoodad = "Metadata/MiscellaneousObjects/Doodad";
@@ -32,10 +49,12 @@ static class RoomPoints
             foreach (var topo in area.Topologies)
             {
                 if (!byId.TryGetValue(topo, out var t) || files.Graph(t.Graph) is not { } graph) continue;
+                foreach (var master in Masters(files, graph, 0))
+                {
                 // The room set (.rs) and the fill tiles (.gft: rooms the generator scatters, e.g. The Coast's bonfires).
-                var tsi = files.Tsi(graph.MasterFile);
+                var tsi = files.Tsi(master);
                 var lists = new[] { "RoomSet", "FillTiles" }.Select(k => tsi?.GetValueOrDefault(k)).OfType<string>();
-                foreach (var arm in lists.SelectMany(l => files.List(TerrainText.Resolve(graph.MasterFile, l.Trim()), ".arm")))
+                foreach (var arm in lists.SelectMany(l => files.List(TerrainText.Resolve(master, l.Trim()), ".arm")))
                 {
                     // Rooms with a quest server object are kept too, without any point (RoomFile.IsQuestObject).
                     if (files.Room(arm) is not { } room
@@ -49,6 +68,7 @@ static class RoomPoints
                             ? (object)new { model = d.Model, x = d.X, y = d.Y }
                             : new { model = d.Model, x = d.X, y = d.Y, type = d.Type, angle = d.Angle, scale = d.Scale }),
                     });
+                }
                 }
             }
             if (found.Count > 0) areaRooms[area.Id] = [.. found];

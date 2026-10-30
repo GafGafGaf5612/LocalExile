@@ -118,7 +118,13 @@ static class AreaPopulation
     /// angle (radians) and scale, through the room's placement.</summary>
     public sealed record RoomObject(string Type, string Model, int X, int Y, float Angle, float Scale);
 
-    static bool IsMonsterPoint(string name) => name == "mapboss" || name.StartsWith("%area%-", StringComparison.Ordinal);
+    static bool IsMonsterPoint(string name) => BossPoint(name) is not null || name.StartsWith("%area%-", StringComparison.Ordinal);
+
+    /// <summary>A unique boss point: "mapboss" (0: any of the area's bosses) or "mapboss&lt;n&gt;", the n-th of WorldAreas
+    /// Bosses_MonsterVarietiesKeys (The Upper Prison: mapboss1 the Necromancer, mapboss2 Brutus in the cells before his
+    /// arena; The Cavern of Anger: mapboss1 the sea witch, mapboss2 Merveil). Null for other names.</summary>
+    public static int? BossPoint(string name) =>
+        name == "mapboss" ? 0 : name.StartsWith("mapboss", StringComparison.Ordinal) && int.TryParse(name.AsSpan(7), out int n) && n > 0 ? n : null;
 
     // One scattered pack per this many walkable cells (The Coast seed 1: 404 620 cells → 45 packs).
     public const int CellsPerPack = 9000;
@@ -143,11 +149,12 @@ static class AreaPopulation
         foreach (var p in points.Where(p => IsMonsterPoint(p.Name)))
         {
             string name = p.Name.Replace("%area%-", "", StringComparison.Ordinal);
-            if (name == "mapboss")
+            if (BossPoint(name) is int nth)
             {
-                var bosses = area.Bosses.Where(spawnable).ToList();
-                if (bosses.Count == 0) { notes.Add($"room point mapboss at ({p.X}, {p.Y}): no unique boss for {area.AreaId}"); continue; }
-                AddMember(spawns, taken, walkable, (p.X, p.Y), bosses[rng.Next(bosses.Count)], MonsterRarity.Unique, "mapboss", rng, 0);
+                // "mapboss<n>" is one boss of the list; "mapboss" any of them.
+                var bosses = (nth == 0 ? area.Bosses : area.Bosses.Skip(nth - 1).Take(1)).Where(spawnable).ToList();
+                if (bosses.Count == 0) { notes.Add($"room point {name} at ({p.X}, {p.Y}): no unique boss for {area.AreaId}"); continue; }
+                AddMember(spawns, taken, walkable, (p.X, p.Y), bosses[rng.Next(bosses.Count)], MonsterRarity.Unique, name, rng, 0);
                 if (area.Named.TryGetValue("bosspack", out var guards)) AddPack(spawns, taken, walkable, (p.X, p.Y), guards, MonsterRarity.Normal, false, rng, spawnable);
             }
             else if (area.Named.TryGetValue(name, out var pack))
@@ -339,7 +346,7 @@ static class AreaPopulation
                         points.Add(placement.Place(point));
                 continue;
             }
-            int fittedObjects = objects.Count;
+            int fitted = points.Count, fittedObjects = objects.Count;
             // Only the client's own doodads are in the capture: a room's server objects (an NPC, a quest blocker) are not.
             var plain = room.Doodads.Where(d => d.Type is null).ToList();
             var seen = plain.Where(d => byModel.ContainsKey(d.Model)).ToList();
@@ -364,12 +371,17 @@ static class AreaPopulation
                     notes.Add($"room {path.Split('/')[^1]} at ({ox}, {oy}) turn [{a} {b}; {cc} {dd}]: {hits}/{plain.Count} doodads match; " +
                         string.Join(", ", room.Points.Select(p => $"{p.Name} at {At(p.X, p.Y)}")));
                 }
-            // The Tidal Island's medicine_boat rooms have only two snowfall emitters around Hailrake's "mapboss", too few for
-            // the fit: they take their actual placement, when the recorder captured it (<area>_seed<seed>.rooms.json). Only
-            // these rooms: in other areas this would add points the fit never placed (e.g. The Mud Flats' miniboss and
-            // nest packs around a1q4's Rhoa Nests) and change start points; that needs its own review.
-            if (origins.Count == 0 && MercyMission.BoatRooms.Contains(path)
-                && TutorialObjects.RoomPlacements(areaId, seed, path, walkability, level is not null) is { Count: > 0 } placements)
+            // A room with a unique boss point takes its actual placement, when the recorder captured it
+            // (<area>_seed<seed>.rooms.json) or the Gateway generated the area, instead of the doodad fit: the fit misses
+            // sparse rooms (The Tidal Island's medicine_boat rooms have only two snowfall emitters around Hailrake's
+            // "mapboss"; The Upper Prison's boss_cells rooms with Brutus's "mapboss2") and matches repeated ones more than
+            // once (four Necromancers in The Upper Prison), and each extra match would be one more unique boss. Other
+            // rooms keep the fit: their points would add what the fit never placed (e.g. The Mud Flats' nest packs around
+            // a1q4's Rhoa Nests) and change start points; that needs its own review.
+            bool bossRoom = MercyMission.BoatRooms.Contains(path) || room.Points.Any(p => BossPoint(p.Name) is not null);
+            if (bossRoom && TutorialObjects.RoomPlacements(areaId, seed, path, walkability, level is not null) is { Count: > 0 } placements)
+            {
+                points.RemoveRange(fitted, points.Count - fitted);
                 foreach (var placement in placements)
                 {
                     points.AddRange(room.Points.Select(placement.Place));
@@ -377,6 +389,7 @@ static class AreaPopulation
                     notes.Add($"room {path.Split('/')[^1]} at its captured placement ({placement.X}, {placement.Y}) code {placement.Code}: " +
                         string.Join(", ", room.Points.Select(p => $"{p.Name} at ({placement.Place(p).X}, {placement.Place(p).Y})")));
                 }
+            }
             // A room with a quest server object (Fairgraves on his ship, Piety, a quest chest, MerveilExitBlocker) takes its
             // actual placement for its objects (its points keep the fit), when the recorder captured it or the Gateway
             // generated the area: the fit misses sparse rooms and matches a repeated one more than once, which would put a
