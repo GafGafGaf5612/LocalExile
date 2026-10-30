@@ -80,6 +80,8 @@ tables. The server can only create items the client can resolve by an existing h
 | `socket_max_helmet`, `socket_max_gloves`, `socket_max_boots` | 4 | armour sockets |
 | `socket_max_shield` | 3 | shield sockets |
 | `socket_max_belt` | 0 | belt sockets (the base has no Sockets component by default) |
+| `rare_max_prefixes`, `rare_max_suffixes` | 3 | rare item prefix/suffix caps (0..6); a cap sum above six extends the 4-6 count by the excess |
+| `rare_jewel_max_prefixes`, `rare_jewel_max_suffixes` | 2 | the same caps for jewel and abyss jewel bases |
 | `passive_points_per_level` | 1 | passive points per level after the first |
 | `gold_drop_multiplier` | 1 | multiplier on the mode's gold amount; the Ruthless 0.25 base still applies |
 | `gold_drop_chance_multiplier` | 1 | multiplier on the per-rarity gold drop chance |
@@ -101,6 +103,9 @@ tables. The server can only create items the client can resolve by an existing h
 The socket value is the class cap, clamped to the client's six sockets. It is not tied to the inventory cell count: a
 1x3 wand set to six can carry six sockets (the old `Game_SOCKET_CAPACITY` dev flag already exercised this). Item level
 still limits what currency rerolls may create through `CurrencyEffects.MaximumSockets`; `/sockets` uses the class cap.
+Rare affix caps are read by `ItemRolls` on every roll. The defaults reproduce the existing 4-6 count with at most
+three prefixes/suffixes (jewels 3-4 with two each). Lowering a cap reduces the count to the caps' sum; raising the sum
+above the class default (six ordinary, four jewel) adds the excess to the count, so 4/4 gives 6-8 ordinary affixes.
 `passive_points_per_level` is read through `Progression.PassivePoints`; changing it affects the next point calculation or
 area/level refresh, not a retroactive trim of an online character. `gold_drop_multiplier` multiplies the already
 mode-scaled amount, so the ordinary mode default 1 and Ruthless 0.25 keep their current behaviour.
@@ -372,7 +377,7 @@ warms the reference data the admin panel needs (mod list, base list, tags, exist
 catalogue, not a query per item. The first connection then sees the same snapshot.
 
 On a fresh database the same open also seeds the overlay: `GameDataCatalog.Reload` writes the catalogue rows,
-`SystemSettings.Reload` the 41 settings, and `GameDataReference.Seed` the `stats`/`mods`/`mod_stats` tables from
+`SystemSettings.Reload` the 45 settings, and `GameDataReference.Seed` the `stats`/`mods`/`mod_stats` tables from
 `data/tables/Stats.json` and `Mods.json`. The Gateway logs the reference counts every start
 (`[gateway] game data reference: 23346 stat(s), 40355 mod(s), 60695 default mod stat row(s)`); `empty` means the
 extraction is missing those tables. `scripts/dev/extract-data.ps1` checks `BaseItemTypes.json`, `ItemClasses.json`,
@@ -422,11 +427,12 @@ server process edits the same file later, add a `revision` check or a file-watch
    unique jewel art. `stats`/`mods`/`mod_stats` hold the default stat keys and ranges behind
    `effective_mod_stats`. The current code arrays seed each kind on the first run; after that the database is the
    source. `GameDataCatalog` swaps the typed arrays/dictionaries on reload.
-5. **System settings (done).** `system_settings` seeds socket caps by item class, passive points per level, gold
-   chance/amount/auto-loot, category drop multipliers, pack density/size, experience multiplier, maximum level, default
-   tattoo/jewel limits and grace period; `/game_data setting`, `clear_setting` and `settings` expose them. Socket
-   capacity, drop weights, packs, experience, limits and grace read the snapshot; `Progression.PassivePoints` and
-   `Progression.MaxLevel` read the per-level and cap values.
+5. **System settings (done).** `system_settings` seeds socket caps by item class, rare prefix/suffix caps (separate for
+   jewels), passive points per level, gold chance/amount/auto-loot, category drop multipliers, pack density/size,
+   experience multiplier, maximum level, default tattoo/jewel limits and grace period; `/game_data setting`,
+   `clear_setting` and `settings` expose them. Socket capacity, rare affix rolls, drop weights, packs, experience,
+   limits and grace read the snapshot; `Progression.PassivePoints` and `Progression.MaxLevel` read the per-level and
+   cap values.
 6. **Item templates + custom name (next).** Add `Item.CustomName`, save it, add a template validator and
    `/item_template`; tests for existing base + existing mods + custom name + relog. The `item_templates` schema is in
    place but has no reader/writer yet.
@@ -466,7 +472,7 @@ Live check 2026-10-30 (Gateway and real client):
 - Changing the `Crown of Eyes` row's `ItemLevel` from 86 to 50 in `catalog_entries`, `/game_data reload`, and
   `/item Crown of Eyes` produced an ilvl 50 item. Restoring 86 and reloading published revision 3 with the original
   values.
-- `system_settings` seeded 41 rows: 21 socket caps (wand 3, body 6, helmet/gloves/boots 4, shield 3, belt 0, two-handed 6),
+- `system_settings` seeded 45 rows: 21 socket caps (wand 3, body 6, helmet/gloves/boots 4, shield 3, belt 0, two-handed 6),
   `passive_points_per_level` 1, the gold/drop/pack/experience/max-level/limit/grace defaults above. `/game_data settings`
   listed them; the first upgrade added the new keys without overwriting existing rows.
 - Set `socket_max_wand` 6, created a Kinetic Wand, and `/sockets RRGBBB` gave it six sockets; set the key back to 3 and

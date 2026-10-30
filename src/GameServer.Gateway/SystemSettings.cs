@@ -31,6 +31,10 @@ sealed class SystemSettings
         ["socket_max_boots"] = 4,
         ["socket_max_shield"] = 3,
         ["socket_max_belt"] = 0,
+        ["rare_max_prefixes"] = 3,
+        ["rare_max_suffixes"] = 3,
+        ["rare_jewel_max_prefixes"] = 2,
+        ["rare_jewel_max_suffixes"] = 2,
         ["passive_points_per_level"] = 1,
         ["gold_drop_multiplier"] = 1,
         ["gold_drop_chance_multiplier"] = 1,
@@ -95,6 +99,13 @@ sealed class SystemSettings
         SocketKeys.TryGetValue(itemClass, out string? key)
             ? Math.Clamp(GetInt(key), 0, SocketLayout.MaximumSockets)
             : 0;
+
+    /// <summary>The most prefixes/suffixes one rare item may have. Jewels keep their own, lower defaults.</summary>
+    public const int MaxRareAffixesPerSide = 6;
+    public int RareMaxPrefixes => Math.Clamp(GetInt("rare_max_prefixes"), 0, MaxRareAffixesPerSide);
+    public int RareMaxSuffixes => Math.Clamp(GetInt("rare_max_suffixes"), 0, MaxRareAffixesPerSide);
+    public int RareJewelMaxPrefixes => Math.Clamp(GetInt("rare_jewel_max_prefixes"), 0, MaxRareAffixesPerSide);
+    public int RareJewelMaxSuffixes => Math.Clamp(GetInt("rare_jewel_max_suffixes"), 0, MaxRareAffixesPerSide);
 
     public int PassivePointsPerLevel => Math.Clamp(GetInt("passive_points_per_level"), 1, 100);
 
@@ -163,6 +174,11 @@ sealed class SystemSettings
         {
             if (value < 0 || value > SocketLayout.MaximumSockets || value != Math.Round(value))
                 error = $"{key} is an integer 0..{SocketLayout.MaximumSockets}";
+        }
+        else if (key is "rare_max_prefixes" or "rare_max_suffixes" or "rare_jewel_max_prefixes" or "rare_jewel_max_suffixes")
+        {
+            if (value < 0 || value > MaxRareAffixesPerSide || value != Math.Round(value))
+                error = $"{key} is an integer 0..{MaxRareAffixesPerSide}";
         }
         else if (key.Equals("passive_points_per_level", StringComparison.OrdinalIgnoreCase))
         {

@@ -189,7 +189,22 @@ public class GameDataTests
         Assert.Equal(15, SystemSettings.Seeds["gold_auto_loot_radius"]);
         Assert.Equal(50, SystemSettings.Seeds["tattoo_total_limit"]);
         Assert.Equal(60, SystemSettings.Seeds["grace_period_seconds"]);
-        Assert.Equal(41, SystemSettings.Seeds.Count);
+        Assert.Equal(3, SystemSettings.Seeds["rare_max_prefixes"]);
+        Assert.Equal(3, SystemSettings.Seeds["rare_max_suffixes"]);
+        Assert.Equal(2, SystemSettings.Seeds["rare_jewel_max_prefixes"]);
+        Assert.Equal(2, SystemSettings.Seeds["rare_jewel_max_suffixes"]);
+        Assert.Equal(45, SystemSettings.Seeds.Count);
+    }
+
+    [Fact]
+    public void Rare_affix_caps_are_validated_as_integers_from_zero_to_six()
+    {
+        Assert.True(SystemSettings.Validate("rare_max_prefixes", 4, out _));
+        Assert.True(SystemSettings.Validate("rare_max_suffixes", 6, out _));
+        Assert.True(SystemSettings.Validate("rare_jewel_max_prefixes", 0, out _));
+        Assert.False(SystemSettings.Validate("rare_max_prefixes", -1, out _));
+        Assert.False(SystemSettings.Validate("rare_max_suffixes", 7, out _));
+        Assert.False(SystemSettings.Validate("rare_jewel_max_suffixes", 2.5, out _));
     }
 
     [Fact]
