@@ -105,7 +105,7 @@ static class AreaTransitionCatalog
             if (fixedTopology is null)
                 notes.Add($"no capture {Folder}/{id}_seed{seed}.transitions.json yet (run live.ps1 -Walkmaps)");
         }
-        return [.. placed.Select((t, i) => (FirstId + (uint)i, t))];
+        return [.. placed.Select((t, i) => (FirstId + (uint)i, t with { InTown = area.IsTown }))];
     }
 
     internal static bool TryDelveEntrance(string area, string? model, out ushort destination)
@@ -228,7 +228,7 @@ static class AreaTransitionCatalog
 
     // Only the fields the Gateway uses; the serializer skips the rest of the atlas.
     sealed record AtlasFileData(List<AtlasArea>? Areas);
-    sealed record AtlasArea(string Id, string? Name, ushort Hash16, List<AtlasTopology>? Topologies);
+    sealed record AtlasArea(string Id, string? Name, ushort Hash16, List<AtlasTopology>? Topologies, bool IsTown = false);
     sealed record AtlasTopology(string Id, string? Kind, List<AtlasTransition>? Transitions);
     sealed record AtlasTransition(string? Model, string? ObjectType, bool? Enabled, string? Status, string? Destination,
         ushort? DestinationHash16, AtlasGrid? Grid);
