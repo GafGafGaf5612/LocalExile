@@ -371,11 +371,30 @@ call `Lazy.Value` again; it should replace a snapshot field.
 warms the reference data the admin panel needs (mod list, base list, tags, existing limits). That warm-up is one read per
 catalogue, not a query per item. The first connection then sees the same snapshot.
 
+On a fresh database the same open also seeds the overlay: `GameDataCatalog.Reload` writes the catalogue rows,
+`SystemSettings.Reload` the 41 settings, and `GameDataReference.Seed` the `stats`/`mods`/`mod_stats` tables from
+`data/tables/Stats.json` and `Mods.json`. The Gateway logs the reference counts every start
+(`[gateway] game data reference: 23346 stat(s), 40355 mod(s), 60695 default mod stat row(s)`); `empty` means the
+extraction is missing those tables. `scripts/dev/extract-data.ps1` checks `BaseItemTypes.json`, `ItemClasses.json`,
+`Stats.json`, `Mods.json`, `Tags.json` and `UniqueStashLayout.json` as part of its `tables` entry, so a partial
+extraction is rerun before the Gateway starts. This is the zero-to-play path: extract, start the Gateway, and the
+database has the catalogues, settings and reference rows.
+
+The same seed can run without starting a server:
+
+```powershell
+dotnet run --project src/GameServer.Gateway -- seed-game-data [database]
+```
+
+It creates the overlay tables in `data/saves.db` (or `Game_SAVES_DB`), prints the catalogue/reference counts and exits
+with 1 when `Stats.json`/`Mods.json` are missing. Use it before the first server start for an editor, or to check a
+fresh installation. Stop the Gateway first: a running process keeps its own snapshot until `/game_data reload`.
+
 ### Interface
 
 The first interface is the developer chat command (implemented):
 
-- `/game_data list` — the current revision and the rows in the snapshot;
+- `/game_data list` — the current revision, the catalogue counts and the `stats`/`mods`/`mod_stats` reference row counts;
 - `/game_data reload` — re-read the override tables and publish a new snapshot;
 - `/game_data mod <mod-id> <stat-index> <min> <max>` — set a range;
 - `/game_data clear_mod <mod-id> [stat-index]`;

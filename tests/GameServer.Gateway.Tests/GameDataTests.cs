@@ -91,6 +91,29 @@ public class GameDataTests
     }
 
     [Fact]
+    public void A_fresh_database_gets_the_reference_tables_from_the_extracted_game_data()
+    {
+        string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"localexile-reference-{Guid.NewGuid():N}.db");
+        try
+        {
+            using var store = new GameDataStore(path);
+            Assert.True(GameDataReference.Seed(store));
+            Assert.True(store.ReferenceSeeded());
+            var (stats, mods, modStats) = store.ReferenceCounts();
+            Assert.True(stats > 20_000, $"{stats} stat rows");
+            Assert.True(mods > 40_000, $"{mods} mod rows");
+            Assert.True(modStats > 60_000, $"{modStats} mod stat rows");
+            // The seed runs once; a second startup keeps the extracted tables as they are.
+            Assert.False(GameDataReference.Seed(store));
+        }
+        finally
+        {
+            foreach (string file in new[] { path, path + "-wal", path + "-shm" })
+                try { File.Delete(file); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
     public void The_game_data_store_round_trips_catalog_rows_and_keeps_a_seeded_flag()
     {
         string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"localexile-catalog-{Guid.NewGuid():N}.db");

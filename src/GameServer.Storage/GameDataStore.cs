@@ -214,6 +214,20 @@ public sealed class GameDataStore : IDisposable
 
     public void MarkReferenceSeeded() => SetMeta("reference_seeded", DateTime.UtcNow.ToString("O"));
 
+    /// <summary>The rows the first Gateway start writes from data/tables; 0 when the extraction is missing.</summary>
+    public (int Stats, int Mods, int ModStats) ReferenceCounts()
+    {
+        lock (_gate)
+        {
+            int Count(string table)
+            {
+                using var command = Command($"SELECT COUNT(*) FROM {table}");
+                return Convert.ToInt32(command.ExecuteScalar());
+            }
+            return (Count("stats"), Count("mods"), Count("mod_stats"));
+        }
+    }
+
     /// <summary>Replace the reference tables in one transaction. This is the startup seed from the extracted
     /// Stats/Mods tables; an admin edit lives in <c>mod_stat_overrides</c> and is not touched.</summary>
     public void SeedReference(IReadOnlyList<StatRow> stats, IReadOnlyList<ModRow> mods,

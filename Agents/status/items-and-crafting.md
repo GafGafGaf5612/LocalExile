@@ -91,7 +91,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   caps. `catalog_entries` now seeds and reloads the unique-item, radius/threshold/unique/timeless jewel, tattoo-effect
   and jewel-art catalogues (1,302 / 76 / 43 / 6 / 48 / 190 rows on the live database; the unique rows are the full
   generated PoB catalogue); the code arrays are the fresh-database seed. The `stats`/`mods`/`mod_stats` tables hold
-  23,346 / 40,355 / 60,695 reference rows and `effective_mod_stats` joins the range overrides. `system_settings` seeds 41 numeric knobs: 21 socket caps by item class (wand 3, body 6, helmet/gloves/boots 4,
+  23,346 / 40,355 / 60,695 reference rows and `effective_mod_stats` joins the range overrides. A fresh database gets all
+  of them on the first Gateway start; `extract-data.ps1` checks `Stats.json`, `Mods.json`, `BaseItemTypes.json`,
+  `ItemClasses.json`, `Tags.json` and `UniqueStashLayout.json` as part of its `tables` entry. `system_settings` seeds 41 numeric knobs: 21 socket caps by item class (wand 3, body 6, helmet/gloves/boots 4,
   shield 3, belt 0, two-handed 6), passive points per level, gold chance/amount/auto-loot, six drop multipliers, pack
   density/size, experience multiplier, maximum level, default tattoo/jewel limits and grace period; `/game_data setting`
   changes a number and reloads it. Live: a wand set to six sockets accepted `RRGBBB` and was reduced back to three;

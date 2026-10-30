@@ -1410,9 +1410,10 @@ partial class Program
                         return;
                     case "reference":
                         bool seeded = GameDataReference.Seed(store, force: true);
+                        var (stats, mods, modStats) = store.ReferenceCounts();
                         await conn.Commands!.Reply(seeded
-                            ? "Reference tables rebuilt from data/tables"
-                            : "Reference tables need the extracted game tables");
+                            ? $"Reference tables rebuilt: {stats} stat(s), {mods} mod(s), {modStats} default mod stat row(s)"
+                            : "Reference tables need the extracted game tables (scripts/dev/extract-data.ps1)");
                         return;
                     case "mod":
                         {
@@ -1526,6 +1527,9 @@ partial class Program
                         await conn.Commands!.Reply($"Game data revision {GameData.Current.Revision}: " +
                             $"{GameData.Current.ModRanges.Count} mod range override(s), {GameData.Current.Limits.Count} limit override(s), " +
                             $"{SystemSettings.Default.Values.Count} system setting(s); " + GameDataCatalog.Summary);
+                        var reference = store.ReferenceCounts();
+                        await conn.Commands!.Reply($"  reference: {reference.Stats} stat(s), {reference.Mods} mod(s), " +
+                            $"{reference.ModStats} default mod stat row(s)");
                         foreach (var (key, range) in GameData.Current.ModRanges.OrderBy(kv => kv.Key.ModId).ThenBy(kv => kv.Key.Index))
                             await conn.Commands!.Reply($"  mod {key.ModId}[{key.Index}] = {range.Min}..{range.Max}");
                         foreach (var (key, value) in GameData.Current.Limits.OrderBy(kv => kv.Key))

@@ -52,8 +52,6 @@ static class GameDataReference
         }
 
         store.SeedReference(stats, mods, modStats);
-        Console.WriteLine($"[gateway] game data reference: {stats.Count} stat(s), {mods.Count} mod(s), " +
-            $"{modStats.Count} default mod stat row(s)");
         return true;
     }
 }

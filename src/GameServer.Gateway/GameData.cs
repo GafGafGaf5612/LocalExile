@@ -37,6 +37,10 @@ static class GameData
             if (Program.Items.Error is { } error)
                 Console.WriteLine($"[gateway] game data: item reference data unavailable: {error}");
             GameDataReference.Seed(store);
+            var (stats, mods, modStats) = store.ReferenceCounts();
+            Console.WriteLine(stats == 0 || mods == 0 || modStats == 0
+                ? "[gateway] game data reference: empty; extract the game tables (scripts/dev/extract-data.ps1) and restart"
+                : $"[gateway] game data reference: {stats} stat(s), {mods} mod(s), {modStats} default mod stat row(s)");
         }
         catch
         {

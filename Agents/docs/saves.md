@@ -26,6 +26,14 @@ and the future `item_templates`), which is not player progress: the Gateway load
 startup and republishes the snapshot after a `/game_data` edit. See
 [editable game data](dev/editable-game-data.md) for the client-compatibility boundary and the cache rules.
 
+The first Gateway start after `scripts/dev/extract-data.ps1` creates the overlay tables and fills them once:
+`catalog_entries` with the 1,302-row unique catalogue and the jewel/tattoo rows, `system_settings` with its 41 defaults,
+and `stats`/`mods`/`mod_stats` with 23,346 / 40,355 / 60,695 rows from `data/tables/Stats.json` and `Mods.json`.
+Later starts add only missing seed rows and keep edited ones. The Gateway log reports the reference counts
+(`[gateway] game data reference: ...`); `/game_data reference` rebuilds the reference tables without a restart.
+`dotnet run --project src/GameServer.Gateway -- seed-game-data` fills the overlay without starting the server (stop the
+Gateway first, or run `/game_data reload` after it).
+
 Not saved, on purpose, as in the real game: monsters, dead monsters, items on the ground and an opened map's portals
 belong to their area instance, in memory. They last while the instance does (across logouts and disconnects) and are gone
 when it expires or the Gateway restarts.
