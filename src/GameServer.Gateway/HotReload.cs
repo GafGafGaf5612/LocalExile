@@ -146,7 +146,7 @@ static class HotReload
         Tell($"Hot-reload is applied{took}.");
     }
 
-    static void Tell(string text)
+    internal static void Tell(string text)
     {
         foreach (var conn in Players.Keys)
         {

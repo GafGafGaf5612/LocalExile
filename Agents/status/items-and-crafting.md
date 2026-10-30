@@ -106,7 +106,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Item mods: rarity (normal, magic, rare, unique), identified, and the implicit, explicit, enchant, scourge and hidden
   mod lists in the Mods component; new items roll their BaseItemTypes implicits (Driftwood Wand 8-12% increased Spell
   Damage); magic names come from the affixes; rarity and mods are saved with the item (characters and stash);
-  `/mod`, `/mod set`, `/mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item;
+  `/item_mod`, `/item_mod set`, `/item_mods`, `/rarity`, `/sockets` (colours and links, e.g. `/sockets RRGBBB`) on the held item;
   `Game_SOCKET_CAPACITY=1..6` (dev) lets `/sockets` give any socketable base that many, e.g. a 6-link wand (its own
   capacity is 3).
   Magic and rare items: affixes rolled from Mods.dat by domain, item level, the item's tags and families, rare names
@@ -184,8 +184,17 @@ Part of [Status](../Status.md); what to build next in this area is in
   older per-character gold moves into the account at login; `/gold <±amount>`.
   Code: `InstanceEntities.Gold`, `AccountStash`, Gateway.
   Docs: [04](../docs/protocol/04-player-entity.md) §6.
-- Loot: dying monsters drop currency, gems, flasks and equipment (our own table) around the corpse.
-  Code: `ItemDrops.cs`, Gateway (`DropLoot`).
+- Loot: dying monsters drop currency, gems, flasks and equipment around the corpse, rolled in stages like the game's
+  with our own numbers: how many (by monster rarity, times item quantity: the league's, a mod's, the player's
+  increased quantity, no cap), the kind, for equipment the slot (armour often, jewellery seldom) and then any base the
+  level allows, and last the rarity: unique (one of that base's uniques, else rare), rare, magic, each chance raised
+  by item rarity. Bases tagged not_for_sale (unique-only bases like "Ring", Stygian Vise, Heist, Ritual, Expedition
+  bases) are left out, the atlas bases kept. Currency runs from Scrolls of Wisdom down to the Mirror, each from its
+  DropLevel. A unique's weight is the inverse of its disenchant value (`VillageUniqueDisenchantValues`, Ruthless has its
+  own column), so a Mageblood is about 840 times as rare as a Wanderlust, and a base whose uniques add up to less than 1
+  mostly gives a rare instead. Drops have the monster's level as item level, +1 from magic, +2 from rare and +3 from unique
+  monsters.
+  Code: `ItemDrops.cs`, Gateway (`DropLoot`, `CommitProjectileKill`).
   Docs: [15](../docs/protocol/15-progression.md) §3.
 
 ## Partly working
@@ -216,9 +225,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   implicit); the client shows the unique tooltip.
   While Mageblood is worn, the leftmost 2–4 magic utility flasks in the flask bar apply their effects permanently without
   charges or a timer, and using them is refused (client mod, server backstop); the stats refresh when the belt or the
-  flask bar changes.
-  Not yet: other uniques, unique drops/chancing, the permanent flask buff icons, the "effects cannot be removed"
-  backstop, the Foulborn rightmost variant and Enkindling (`UniqueCatalog`, `Program.Mageblood`;
+  flask bar changes. Its flasks keep their buffs on the client without a timer (not seen live yet).
+  Headhunter: killing a rare gives each of its rolled affixes as a stack of character stats for 60 s (the same one resets
+  its time), with one Headhunter buff showing the count and the longest time, and
+  its rolled increased damage against rares (not seen live yet; they end on an area change, where the game keeps them).
+  Not yet: other uniques' mechanics, chancing, the "effects cannot be removed" backstop, the Foulborn rightmost variant,
+  Replica Headhunter and Enkindling (`UniqueCatalog`, `Program.Mageblood`, `StolenMods`, `Program.UniqueBelts`;
   [13](../docs/protocol/13-items.md) §2e, §8a).
 
 - Ruthless uses native mod/flask alternatives, reduced tunable drops and vendor returns, and refuses bench crafting.
@@ -310,6 +322,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   See [13](../docs/protocol/13-items.md), "Armourer's Scrap".
 - **Blacksmith's Whetstone (verified live, 2026-10-21):** +1% quality on weapons, up to 20%; Scouring resets it.
   See [13](../docs/protocol/13-items.md), "Blacksmith's Whetstone".
+- **Ancient Orb:** reforges an uncorrupted unique piece of equipment as another of its item class, by the uniques' drop
+  weights, keeping item level, quality, sockets and links. Only uniques of the same inventory size; no corrupted or Replica
+  results (`UniqueCatalog.Reforge`). Not checked in game yet.
 - **Orb of Chance:** the documented local rule: a normal weapon / armour piece → rare (30%, 4-6 affixes) or magic
   (2-4 affixes, at most two per side), identified. Corrupted/mirrored/unsupported/`Unmodifiable` and empty-pool
   targets are refused before spending.
@@ -373,7 +388,7 @@ Part of [Status](../Status.md); what to build next in this area is in
 
 ## Not working yet
 
-- Most uniques and special mods (#60), and unique drops/chancing; Mageblood and normal Crown of Eyes have definitions;
+- Most uniques and special mods (#60), and chancing; Mageblood and normal Crown of Eyes have definitions;
   currency other than Scroll of Wisdom, Chromatic Orb, Jeweller's Orb, Orb of Fusing, Orb of Alchemy, Chaos Orb,
   Divine Orb, Orb of Scouring, Orb of Transmutation, Orb of Alteration, Orb of Augmentation, Regal Orb, Exalted Orb,
   Orb of Annulment, Armourer's Scrap, Blacksmith's Whetstone, Orb of Chance, Vaal Orb, the four Eldritch Ichors and

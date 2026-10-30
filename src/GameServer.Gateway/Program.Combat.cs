@@ -234,7 +234,7 @@ partial class Program
             var hit = AttackHitConverted(weapon, player, WeaponProfileFor(conn, activeSet: true).Melee,
                 ConversionFor(conn, attackEffect, 1, attack: true));
             var gambler = GamblerFor(player);
-            var ownRolled = (gambler with { DamageMorePct = 0 }).RollOutgoingHit(hit, Random.Shared);
+            var ownRolled = WithDamageVsRarity(player, m, (gambler with { DamageMorePct = 0 }).RollOutgoingHit(hit, Random.Shared));
             critical = RollCriticalStrike(conn, conn.Pools.AttackCriticalStrikeChance, ownPenetration, skillRoll: criticalRoll)
                 && GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom);
             int sourceCriticalMultiplier = AttackCriticalMultiplier(conn, player);
@@ -891,7 +891,7 @@ partial class Program
                 if (!spell && !accuracy.CannotBeEvaded && !m.AttackEvasion.Hits(hitChance, ProjectileWorldTime(conn), conn.AttackAccuracyRandom)) continue;
                 if (MonsterBlocks(m, Random.Shared, spell)) continue;
                 var gambler = GamblerFor(player);
-                var rolled = (gambler with { DamageMorePct = 0 }).RollOutgoingHit(sweepHit, Random.Shared);
+                var rolled = WithDamageVsRarity(player, m, (gambler with { DamageMorePct = 0 }).RollOutgoingHit(sweepHit, Random.Shared));
                 critical = RollCriticalStrike(conn, SupportedCriticalChance(conn, skillId), skillStats, attack: !spell, skillRoll: criticalRoll)
                     && (spell || GameServer.Core.World.EvasionEntropy.ConfirmsCritical(hitChance, conn.AttackAccuracyRandom));
                 int multiplier = CriticalMultiplierOn(m, sweepMultiplier);
@@ -1175,7 +1175,11 @@ partial class Program
         lock (conn.Monsters) { at = m.Walk.Position(now); player = conn.Walk.Position(now); alive = conn.PlayerLife > 0; }
         await SendVaalSouls(remote, stream, ciphers, conn);
         if (m.Variety is not { } variety || !m.Hostile) return;
+        var killer = PlayerOf(conn);
+        var monster = ModMonster(m, at);
+        await ServerMods.MonsterKilled(new(killer, monster));
         ChargesOnKill(conn, m);
+        StealMonsterMods(conn, m);
         if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
             && CharacterSaves.Load(CharacterName(conn))?.Tutorial is { ZombieKilled: false })
         {
@@ -1186,7 +1190,8 @@ partial class Program
         await DropQuestItems(remote, stream, ciphers, conn, variety.Id, at);   // a1q5: Hailrake's Medicine Chest
         if (alive && Dist(at, player) <= ExperienceRange && Monsters.BaseExperience(variety, m.Level) is int baseXp)
         {
-            uint xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level);
+            uint xp = ServerMods.Experience(killer, monster,
+                Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, m.Rarity, conn.Pools.Level, m.Level));
             // The gems gain their share of the kill only (not a quest's level or /add_xp), at the character's cap too.
             await GainGemExperience(remote, stream, ciphers, conn, xp);
             await GainExperience(remote, stream, ciphers, conn, xp, $"{m.Rarity} {m.Label} 0x{id:x}");
@@ -1208,15 +1213,26 @@ partial class Program
     {
         if (Environment.GetEnvironmentVariable("Game_DROPS") == "0") return;
         var balance = conn.Ruthless ? RuthlessSettings.Current : null;
-        List<ItemDrops.Drop> drops = [.. DropsFor(conn).Roll(m.Level, m.Rarity, Random.Shared, IncreasedItemRarity(conn),
-            balance?.ItemDropMultiplier ?? 1, balance?.EquipmentRarityMultiplier ?? 1)];
-        // A generic map drop (approximate rates): use the open map's tier in a map, tier 1 in the campaign.
-        int mapTier = MapDevice.OpenOf(CharacterName(conn)) is { } openMap && openMap.Area.Hash16 == conn.Layout.Hash
-            ? openMap.Area.Tier : 0;
-        if (DropsFor(conn).Map(m.Level, m.Rarity, mapTier, Random.Shared) is { } mapDrop) drops.Add(mapDrop);
-        // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
-        if (DropsFor(conn).Gold(m.Level, m.Rarity, Random.Shared,
-            (balance?.GoldMultiplier ?? 1) * SystemSettings.Default.GoldDropMultiplier) is { } gold) drops.Add(gold);
+        // The mods' changes (Program.Mods.cs): their multipliers on top of the league's, their own items besides.
+        var modded = ServerMods.Drops(PlayerOf(conn), ModMonster(m, at));
+        List<ItemDrops.Drop> drops = [];
+        if (modded is not { Cancel: true })
+        {
+            drops.AddRange(DropsFor(conn).Roll(m.Level, m.Rarity, Random.Shared, IncreasedItemRarity(conn),
+                (balance?.ItemDropMultiplier ?? 1) * (modded?.Quantity ?? 1) * ItemQuantityFactor(conn), (balance?.EquipmentRarityMultiplier ?? 1) * (modded?.Rarity ?? 1)));
+            // A generic map drop (approximate rates): use the open map's tier in a map, tier 1 in the campaign.
+            int mapTier = MapDevice.OpenOf(CharacterName(conn)) is { } openMap && openMap.Area.Hash16 == conn.Layout.Hash
+                ? openMap.Area.Tier : 0;
+            if (DropsFor(conn).Map(m.Level, m.Rarity, mapTier, Random.Shared) is { } mapDrop) drops.Add(mapDrop);
+            // And a pile of gold (ItemDrops.Gold), picked up into the stash's gold.
+            if (DropsFor(conn).Gold(m.Level, m.Rarity, Random.Shared,
+                (balance?.GoldMultiplier ?? 1) * SystemSettings.Default.GoldDropMultiplier * (modded?.Gold ?? 1)) is { } gold) drops.Add(gold);
+        }
+        foreach (string query in modded?.Items ?? [])
+        {
+            if (ModDrop(conn, query, m.Level) is { } extra) drops.Add(extra);
+            else Console.WriteLine($"[mods] a mod's drop \"{query}\" is no item type or unique the server can create");
+        }
         foreach (var drop in drops)
         {
             // A ring around the corpse, 3 to 6 cells out.

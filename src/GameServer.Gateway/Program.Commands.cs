@@ -50,8 +50,25 @@ partial class Program
                 foreach (string line in text.Split('\n').Select(l => l.Length == 0 ? " " : l))
                     await Send(remote, stream, ciphers, InstanceChat.ChatLine(line), $"0x0017 chat line \"{line}\"");
             },
+            ModCommand = (name, args) => ServerMods.RunCommand(PlayerOf(conn), name, args),
+            ModUsages = () => ServerMods.Commands,
         }
-        .Add("raw", "/raw <hex> (send one S→C message)", async args =>
+        .Add("mod", "/mod (the mods in Mods/Binaries/: loaded ones with their version, kind and hooks, and why the others are not)", async _ =>
+        {
+            var mods = ServerMods.Mods();
+            await conn.Commands!.Reply(mods.Count == 0 ? $"No mods in {ServerMods.Folder}/ (Agents/docs/dev/modding.md)."
+                : string.Join('\n', mods.Select(m => m.Error is { } error ? $"{m.Id} - not loaded, {error}"
+                    : $"{m.Id} {m.Version} - {m.Kind?.ToString().ToLowerInvariant()}, {m.Hooks} hook(s)").Prepend($"--- Mods in {ServerMods.Folder}/ ---")));
+        })
+        .Add("mod_reload", "/mod_reload [id] (reload one mod and the mods that depend on it from its folder, or every mod; their state starts over)", async args =>
+        {
+            string? id = args.Length > 0 ? args[0] : null;
+            ServerMods.Reload(id);
+            await conn.Commands!.Reply(id is null ? "Mods reloaded (/mod for the list)." : $"Mod {id} reloaded (/mod for the list).");
+        })
+        .Add("mod_enable", "/mod_enable <id> (load a mod, now and at every start)", args => SetModEnabled(conn, args, true))
+        .Add("mod_disable", "/mod_disable <id> (unload a mod and the mods that depend on it, now and at every start)", args => SetModEnabled(conn, args, false))
+        .Add("raw","/raw <hex> (send one S→C message)", async args =>
         {
             byte[] m = ChatCommands.ParseHex(args);
             await Send(remote, stream, ciphers, m, $"0x{m[0] << 8 | m[1]:x4} raw ({m.Length} bytes)");
@@ -818,7 +835,7 @@ partial class Program
                 ? $"Map portals will be created at {conn.PortalRotationDegrees:0.#}°."
                 : $"{rebuilt} map portal(s) rebuilt at {conn.PortalRotationDegrees:0.#}°.");
         })
-        .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod set [section] <mod> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
+        .Add("item_mod", "/item_mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /item_mod set [section] <mod> [values…] | /item_mod clear [section] (the held item; missing values are rolled)", async args =>
         {
             if (args.Length == 0) throw new ArgumentException("which mod?");
             ModSection? section = null;
@@ -835,7 +852,7 @@ partial class Program
                 int existing = held.Item.Mods.Select((m, index) => (m, index))
                     .Where(p => p.m.Hash == replacement.Hash && (setSection is null || p.m.Section == setSection))
                     .Select(p => p.index).DefaultIfEmpty(-1).First();
-                if (existing < 0) { await conn.Commands!.Reply($"The held item has no {setMod.Id}; use /mod to add it"); return; }
+                if (existing < 0) { await conn.Commands!.Reply($"The held item has no {setMod.Id}; use /item_mod to add it"); return; }
                 var targetSection = held.Item.Mods[existing].Section;
                 replacement = replacement with { Section = targetSection };
                 await ChangeHeldItem(remote, stream, ciphers, conn, i =>
@@ -868,7 +885,7 @@ partial class Program
             await ChangeHeldItem(remote, stream, ciphers, conn, i => RollsFor(conn).Roll(level is byte l ? i with { ItemLevel = l } : i, rarity, Random.Shared),
                 $"rolled {rarity}");
         })
-        .Add("mods", "/mods (the held item's rarity and mods)", async args =>
+        .Add("item_mods", "/item_mods (the held item's rarity and mods)", async args =>
         {
             if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
             await conn.Commands!.Reply($"{(held.Item.NameWords.Count > 0 ? RollsFor(conn).NameOf(held.Item.NameWords) + ", " : "")}" +

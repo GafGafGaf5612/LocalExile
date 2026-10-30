@@ -359,6 +359,8 @@ In game:
 - **The Coast:** click "The Coast" on the east side of town. Ctrl+click it to open the Instance Manager instead (pick
   an instance or create a new one).
 - **Commands:** type in chat with Enter, for example `/commands` (or `/com`), `/set_speed 200`.
+- **Mods:** `/mod` lists the mods the Gateway found in `Mods\Binaries\` (`live.ps1` builds the ones in `Mods\Source\` there), `/mod_enable <id>` and `/mod_disable <id>` turn one on or off;
+  a mod rebuilt while you play reloads by itself ([modding](docs/dev/modding.md)).
 
 Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and `walkmaps.log`), plus the client's own
 `Client\logs\Client.txt`. Every line starts with the time; the previous run's logs are in `logs\archive\`, and each
@@ -444,6 +446,8 @@ Environment variables, read when each server starts:
 | `Game_TRACE` | unset | dev traces, a comma list: `move`, `latency`, `ticks`, `ai`, `packets`, or `all` ([debugging](docs/dev/debugging.md)) |
 | `Game_PACKET_DUMPS` | `logs\packets` (given by `live.ps1` to the servers it starts) | folder for each connection's last packets, written when it closes; `0` = none |
 | `Game_LOG_TIMESTAMPS` | unset | `0` = no time at the start of each log line |
+| `Game_MODS` | unset | `0` = the Gateway loads no mods ([modding](docs/dev/modding.md)) |
+| `Game_MODS_FOLDER` | `mods` | the folder the Gateway loads mods from and watches |
 
 ## Files you will have afterwards
 
@@ -458,6 +462,7 @@ Environment variables, read when each server starts:
 | `data\tables\`, `data\*-types.json`, `data\hideouts.json` … | extracted game data (step 7) and their stamps, `data\extract-stamps.json` | no (game data) |
 | `data\walkability\` | captured walk maps | no (derived from game data) |
 | `logs\` | server logs | only when reporting a bug, and read them first |
+| `Mods\Binaries\` | built mods: `Mods\Source\`'s, and any you add ([modding](docs/dev/modding.md)) | yours, if you like |
 
 ## Start over
 

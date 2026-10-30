@@ -60,7 +60,7 @@ tables. The server can only create items the client can resolve by an existing h
 | Unique/radius/timeless definitions that reuse existing base types, mod hashes, art and word hashes | **Yes** | The item wire data is made of existing client records. The server decides the values and the limit. |
 | Item limits (radius jewels, timeless, Impossible Escape, tattoos) | **Yes** | The limit is enforced by the server. The client tooltip may still print its own limit text; that is display data, not enforcement. |
 | Custom item name | **Yes** | `MagicProperties.Write` already has the client's custom-name bit (`0x80`, a length-prefixed string). `Item` does not expose it yet; adding a `CustomName` field and saving it is enough. |
-| Custom item from an existing base + existing mods + explicit values | **Yes** | This is what `/mod` does manually today. A template table makes it repeatable. |
+| Custom item from an existing base + existing mods + explicit values | **Yes** | This is what `/item_mod` does manually today. A template table makes it repeatable. |
 | Drop chances, vendor prices, crafting costs | **Yes, later** | Server-only decisions. They need their own typed settings and tests. |
 | Base item name, hash, class, width/height, components, tags, visual identity | **No** | The client owns these and renders the item from them. A server-only change desynchronises the inventory, tooltip or model. |
 | New base item types, new mod rows, new word hashes, new art | **No** | The client has no row for them. A new HASH32/HASH16 is an unknown object to the client. Use an existing base/mod/word/visual instead. |

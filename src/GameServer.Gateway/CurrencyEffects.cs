@@ -19,6 +19,7 @@ static class CurrencyEffects
     public const string RegalOrb = "Metadata/Items/Currency/CurrencyUpgradeMagicToRare";
     public const string ExaltedOrb = "Metadata/Items/Currency/CurrencyAddModToRare";
     public const string OrbOfAnnulment = "Metadata/Items/Currency/CurrencyRemoveMod";
+    public const string AncientOrb = "Metadata/Items/Currency/CurrencyRerollUnique";
     public const string LesserEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor1";
     public const string GreaterEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor2";
     public const string GrandEldritchIchor = "Metadata/Items/Currency/CurrencyEldritchIchor3";

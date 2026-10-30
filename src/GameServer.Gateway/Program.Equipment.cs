@@ -287,7 +287,7 @@ partial class Program
             await SendModel(remote, stream, ciphers, conn, equipped, "weapon requirements changed");
     }
 
-    // Dev commands (/mod, /rarity, /sockets): changes the held item and replaces it on the cursor (0xbf removing and adding
+    // Dev commands (/item_mod, /rarity, /sockets): changes the held item and replaces it on the cursor (0xbf removing and adding
     // its id). The item needs the component the change is about.
     static async Task ChangeHeldItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, Func<Item, Item> change, string what,
         string component = "Mods")

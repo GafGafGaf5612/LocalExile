@@ -17,6 +17,8 @@ partial class Program
             if (conn.Closed) return;
             // A terminal Hardcore owner may only leave for character selection.
             if (HardcoreProgressBlocked(conn) && id != 0x0153) continue;
+            // A mod may take the message (Program.Mods.cs): then the Gateway's own handler below does not run.
+            if (ServerMods.WantsPacket(id) && await ServerMods.Packet(PlayerOf(conn), id, bytes)) continue;
             if (id == InstanceDelve.RouteId)
             {
                 var route = InstanceDelve.ReadRoute(bytes);
@@ -676,7 +678,9 @@ partial class Program
                     // An area the Gateway does not generate itself (ServerLevels) runs on the client's layout alone.
                     if (!ServerLevels.IsSupported(conn.Layout.Id) && !CaptureTour.Active(CharacterName(conn)))
                         await conn.Commands!.Reply(ServerLevels.UnsupportedMessage);
+                    await ServerMods.AreaGenerated(PlayerOf(conn));
                     _ = RunMonsterRegeneration(remote, stream, ciphers, conn);
+                    _ = RunUniqueBeltEffects(remote, stream, ciphers, conn);
                     await SyncQuestItems(remote, stream, ciphers, conn, removeItems: true);   // a1q5: the Medicine Chest's flag
                     _ = RunMercyMission(remote, stream, ciphers, conn);
                     _ = RunServerFrames(remote, stream, ciphers, conn);

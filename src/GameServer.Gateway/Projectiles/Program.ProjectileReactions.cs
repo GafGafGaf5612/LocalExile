@@ -87,7 +87,12 @@ partial class Program
         var position = monster.Walk.Position(at / (double)ProjectileRuntime.QuantaPerSecond);
         // Match ordinary kills: corpses stay until area teardown, and impales retain their own expiry/hit state.
         if (HardcoreProgressBlocked(conn) || monster.Variety is not { } variety || !monster.Hostile) return;
+        // The mods (Program.Mods.cs) as in MonsterKilled: their modifiers here, inside the commit; the kill after it.
+        var killer = PlayerOf(conn);
+        var modMonster = ModMonster(monster, position);
+        session.Enqueue(() => ServerMods.MonsterKilled(new(killer, modMonster)));
         ChargesOnKill(conn, monster);
+        StealMonsterMods(conn, monster);
         if (conn.Layout.Id == TutorialObjects.Strand && variety.Id == TutorialObjects.Zombie
             && CharacterSaves.Load(CharacterName(conn))?.Tutorial is { ZombieKilled: false })
         {
@@ -108,7 +113,8 @@ partial class Program
         uint xp = 0;
         if (conn.PlayerLife > 0 && Dist(position, conn.Walk.Position(at / (double)ProjectileRuntime.QuantaPerSecond)) <= ExperienceRange
             && Monsters.BaseExperience(variety, monster.Level) is int baseXp)
-            xp = Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, monster.Rarity, conn.Pools.Level, monster.Level);
+            xp = ServerMods.Experience(killer, modMonster,
+                Progression.MonsterExperience(baseXp, variety.ExperienceMultiplier, monster.Rarity, conn.Pools.Level, monster.Level));
         var (gemPackets, leveled) = CommitGemExperience(conn, xp);
         foreach (var packet in gemPackets) session.Packet(packet);
         if (leveled) session.Enqueue(() => SendSkills(session.remote, session.stream, session.ciphers, conn));
@@ -137,9 +143,17 @@ partial class Program
         if (Environment.GetEnvironmentVariable("Game_DROPS") != "0")
         {
             var balance = conn.Ruthless ? RuthlessSettings.Current : null;
-            List<ItemDrops.Drop> drops = [.. DropsFor(conn).Roll(monster.Level, monster.Rarity, random, IncreasedItemRarity(conn),
-                balance?.ItemDropMultiplier ?? 1, balance?.EquipmentRarityMultiplier ?? 1)];
-            if (DropsFor(conn).Gold(monster.Level, monster.Rarity, random, balance?.GoldMultiplier ?? 1) is { } gold) drops.Add(gold);
+            var modded = ServerMods.Drops(killer, modMonster);
+            List<ItemDrops.Drop> drops = [];
+            if (modded is not { Cancel: true })
+            {
+                drops.AddRange(DropsFor(conn).Roll(monster.Level, monster.Rarity, random, IncreasedItemRarity(conn),
+                    (balance?.ItemDropMultiplier ?? 1) * (modded?.Quantity ?? 1) * ItemQuantityFactor(conn), (balance?.EquipmentRarityMultiplier ?? 1) * (modded?.Rarity ?? 1)));
+                if (DropsFor(conn).Gold(monster.Level, monster.Rarity, random, (balance?.GoldMultiplier ?? 1) * (modded?.Gold ?? 1)) is { } gold) drops.Add(gold);
+            }
+            foreach (string query in modded?.Items ?? [])
+                if (ModDrop(conn, query, monster.Level) is { } extra) drops.Add(extra);
+                else Console.WriteLine($"[mods] a mod's drop \"{query}\" is no item type or unique the server can create");
             foreach (var drop in drops)
             {
                 double angle = random.NextDouble() * Math.Tau, radius = 3 + random.NextDouble() * 3;

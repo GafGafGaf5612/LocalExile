@@ -475,6 +475,12 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public Flasks.Effects FlaskEffects { get; } = new();
     /// <summary>The utility flasks whose effect runs (UtilityFlasks); their stats count in the pools until they end.</summary>
     public UtilityFlasks.Effects UtilityFlaskEffects { get; } = new();
+    /// <summary>What Headhunter took from slain rares (StolenMods).</summary>
+    public StolenMods StolenMods { get; } = new();
+    /// <summary>The Headhunter buff on the client, 0 for none (Monsters lock).</summary>
+    public ushort StolenModsBuff;
+    /// <summary>The flask buffs Mageblood has on the client, by flask item id (Program.StepMagebloodBuffs; Monsters lock).</summary>
+    public Dictionary<uint, (byte Slot, ushort Buff, ushort? Extra)> MagebloodBuffs { get; } = [];
     /// <summary>The flasks' partial charges and the crit charge cooldown (FlaskCharges).</summary>
     public FlaskCharges.Carry FlaskChargeCarry { get; } = new();
     /// <summary>One change of the flask bar and its S→C 0xbf at a time (Program.ChangeFlaskBar), so the revisions go out in

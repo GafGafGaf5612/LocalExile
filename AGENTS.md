@@ -14,6 +14,7 @@ All agent and contributor documentation is in [Agents/](Agents/). Read these fir
 Tip: `live.ps1` runs the Gateway with hot reload, so a saved Gateway edit usually applies while the player stays in
 game; it may be worth trying before a restart.
 Suggestions for working with it are in [live testing](Agents/docs/dev/live-testing.md) ("hot reload").
+A feature that fits the [mod API](Agents/docs/dev/modding.md) can also be a mod in `Mods/Source/`, which reloads on build.
 
 ## Rules
 
