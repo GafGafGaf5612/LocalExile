@@ -40,6 +40,23 @@ public class ArrowPresentationTests
         Assert.True(IndexOf(wire, ObjectHeader(InstanceProtocol.MoveToId, id)) >= 0, "one move to the flight's end");
     }
 
+    // The object flies at the height the bow releases it: the Ranger's attack1_bow keyframe is 127.5 world units up, 16
+    // marker steps, not the 5-step default tuned for spells (live 2026-10-29: the arrow trail started at the hip).
+    [Fact]
+    public async Task An_arrow_is_created_at_the_height_its_clip_releases_it()
+    {
+        await using var f = new ProjectileRuntimeFixture();
+        var bow = new ContactPoint(-6.29f, -59.84f, -127.5f);
+        Assert.Equal(16, bow.HeightSteps);
+        Assert.Equal(59.84 / WorldUnits.PerCell, bow.ForwardCells, 3);
+        f.Release(f.Shot(offense: new ProjectileOffense(DamagePacket.Of(DamageType.Physical, 10, 10), false, int.MaxValue, 0, 150, "ordinary bow")
+            { Presentation = Program.OrdinaryArrowPresentation with { LaunchHeight = bow.HeightSteps } }));
+        byte[] wire = await f.Read();
+        var atBowHeight = new ProjectileObject("Metadata/Projectiles/DefaultArrow", 10, 10, (float)Math.Atan2(1, -0.0), Team: 0, Height: -16).Blob();
+        Assert.True(IndexOf(wire, atBowHeight) >= 0, "created 16 steps up");
+        Assert.Equal(-1, IndexOf(wire, ArrowBlob(10, 10)));
+    }
+
     [Fact]
     public async Task An_arrow_sends_the_hit_packet_and_stays_in_its_target_for_a_second()
     {

@@ -605,6 +605,10 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   Pause freezes game time, and disabled AI or a dead player does not accumulate work to replay afterward.
   Hostile monsters neither chase nor swing while the entry grace period still protects the player.
   Chasers take surround cells around the player (`MonsterSurround`); a negative footprint keeps its direct approach.
+  A ranged chaser (its first effect a ranged attack, or a ranged weapon) stands off: its first ring lies one cell inside
+  its reach (MonsterVarieties `MaximumAttackDistance`, the Sand Spitter's 30; `MinimumAttackDistance` 6 is not read
+  yet) and a full ring sends it inward, so it stops where its attack covers the player instead of walking to the melee
+  contact ring (live 2026-10-29: Spitters chasing to the contact ring came in close).
   Chase repaths have a separate 100 ms minimum interval and require at least three cells of Manhattan target change;
   a chaser that stopped short of its cell retries it after arrival, at most every 0.5 s.
   This retains the current walk when the target moves slightly instead of repeatedly restarting its path.
@@ -613,10 +617,26 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   Its busy period covers the full attack duration from the actual action send; contact still occurs halfway through:
   the hit lands if the monster lives and the player is still within reach + 2 (0x1af, then 0x1b1 on the player).
   A mortar skill (Sand Spitter: `monster_mortar_attack`, GrantedEffects SkillID 183 → MonsterMortar 183 →
-  `Metadata/Projectiles/SandspitterMortarProjectile`, 1170 units/s) releases a server projectile object at that
-  halfway point instead (`Program.ProjectileHostile.cs`): it is lobbed at the player's cell on the shared runtime,
-  team 2 so no monster is in its way, and the same contact pipeline commits the hit when it lands on a player
-  within the splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells; the skill's stats carry no radius). The
+  `Metadata/Projectiles/SandspitterMortarProjectile`, 1170 units/s) releases a server projectile object instead
+  (`Program.ProjectileHostile.cs`), at the clip's contact keyframe rather than halfway: MonsterMortar's `Animation`
+  (row 20, Animation.dat `SpellProjectile`) names the ACT pool (`SpellProjectile = "attack1,attack2"`), the native
+  selector seeded with the action's 0xffff sequence picks `attack1` (as it picks the player's wand clip), and that
+  clip's `contact` is at 374.5 of 1000 ms in the Spitter's .ao (`exclude_metadata_events = true` replaces the rig's
+  416 ms) with position [1.33, 45.89, −71.56]: model units, +x the model's left, −y its front, −z up. With
+  `projectile_uses_contact_position` the shot leaves there: 45.9 units (4.2 cells) behind a body that faces away from
+  its target (`action_should_face_away_from_target`), so toward the player, and 71.6 units (9 marker steps) up; the
+  lateral part is not applied (the grid's handedness is not established and it is under a cell), the offset scales
+  with the model when `use_scaled_contact_offset` says so (MonsterVarieties `ModelSizeMultiplier`), and the flight
+  still runs from the monster toward the aim (`maintain_projectile_direction_when_using_contact_position`). Data:
+  `data/monster-contacts.json` (`scripts/re/monster_contacts.py`: per variety the ACT pools of `Melee` and the
+  projectile tables' animation keys, each clip's index, length, contact and position, rig events merged with the .ao
+  chain's as `ot_components.rig_clips`). Whether the client seeds a monster action's clip choice from the 0xffff
+  sequence is assumed from the wand's selector and still needs a live check (the two clips differ by 75 ms and 1.3
+  cells). The lob lands on the player's cell on the shared runtime, no closer to the Spitter than the skill's
+  `projectile_minimum_range` (50 units, 4.6 cells: a player at its feet stands in the dead zone), team 2 so no
+  monster is in its way, and the same contact pipeline commits the hit when it lands on a player within the splash
+  (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells; the skill's stats carry no radius; `projectile_spread_radius` 3 is
+  not modelled). Melee swings still land at half the attack time. The
   client creates no projectile of its own for a monster's action (Frida 2026-10-29: 27 Sand Spitter attacks, no
   client-side object), so without the server's object there is nothing to see. Such a skill also carries its stat
   set's own entries beside the attack's numbers (`MonsterProjectileSkillStats`: `action_should_face_away_from_target`,
@@ -1322,7 +1342,11 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   entries (tile data pointer, +0x36 rotation code, +0x30 i16 height offset), result = the tile's height at the
   tile-local cell (`0x141d7d100`) + terrain +0x104 × the tile's offset; `0x141e35800` interpolates four cells. With a
   height grid (`TerrainHeights`, data/walkability/<area>_seed<seed>.heights.bin, int16 per cell, −32768 = unknown) the
-  Gateway uses terrain + `Game_PROJECTILE_HEIGHT` steps (default 5, the torso) as the Positioned marker `m`.
+  Gateway uses terrain + the release point's height as the Positioned marker `m`: the releasing clip's contact
+  keyframe (`ProjectilePresentation.LaunchHeight`, from `data/animation-contacts.json` "positions" and
+  `data/monster-contacts.json`: the Ranger's attack1_bow at −127.5 world units = 16 steps, its attack1_wand −94 = 12,
+  the Sand Spitter's spit −71.6 = 9), else `Game_PROJECTILE_HEIGHT` steps (default 5; it had been tuned as "the torso"
+  on a fireball, and left the arrow trail at the hip, live 2026-10-29).
   Positioned f0 0x04 carries i32 `m` and f32 world z `-m * 7.8125`; 0x1ba carries the same marker `m`.
   Without a grid it uses the bare offset.
   The grid covers natural terrain, not doodads/platforms; the protocol carries no player z, so platforms and doodads
@@ -1368,6 +1392,12 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   monster or wall contact described above. `/mob_move` and `Game_MOVE_MODE=move` still pass a speed in that field.
 - **Ordinary bow attacks (#203).** Ground and object uses share `LaunchOrdinaryRanged`:
   the action is confirmed, then the game clock waits for `attack1_bow` contact without the melee walk-in offset.
+  The shot leaves from that keyframe's position (`OrdinaryRangedContact`, `ContactPoint`): the Ranger's bow
+  59.8 units (5.5 cells) in front of the body along the aim, never past half way to it, at 127.5 units (16 steps) up;
+  a wand bolt from the ACT-selected clip's tip (attack1_wand: 82 units ahead, 94 up). Without rig data for the class
+  or weapon the old 1.5 cells ahead at `Game_PROJECTILE_HEIGHT` remain. The positions come from the rig .amd events
+  (plus the .ao chain's event lists; the Ranger's parent DexNoWind.ao adds only trail and timing events), extracted
+  by `scripts/re/anim_contacts.py` (manifest `animation-contacts` v3).
   The original action, life and area epoch must still be valid at creation. An already-paused use is rejected before
   changing action, walk or attack pacing; an accepted echo/creation queued behind a later pause waits for resume.
   Ground confirmation runs outside serial input dispatch, so resume and a cancelling move remain processable.

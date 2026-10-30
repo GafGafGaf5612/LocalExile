@@ -258,8 +258,13 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   (109 varieties' first effect) take their projectile from the monster's weapon art (MonsterVarieties
   `Weapon1_ItemVisualIdentityKeys`, e.g. `SkeletonArrow1`), a link the server does not read yet, so those monsters
   still hit instantly at half the attack time with no visible shot. Monster spell projectiles
-  (`MonsterProjectileSpell`) are a separate adapter. The mortar splash radius is a development default; the
-  monster's attack animation contact (the release time) is still half the attack time.
+  (`MonsterProjectileSpell`) are a separate adapter. The mortar splash radius is a development default and
+  `projectile_spread_radius` (3) is not modelled. Mortars release at their clip's contact keyframe and point
+  (`data/monster-contacts.json`); melee swings still land at half the attack time although the same pools carry
+  `Melee` keyframes. Open: whether the client seeds a monster action's clip choice from the 0xffff sequence (the
+  Spitter's attack2 would spit 75 ms earlier and 1.3 cells farther back), the grid handedness of a keyframe's lateral
+  offset (not applied), MonsterVarieties `MinimumAttackDistance` (6 for the Spitter) and the minimum-range dead zone,
+  all to check live.
 - **Start:** user-run Fireball/KB checks from the skill guide, including return, terrain and overlapping explosions.
   Calibrate cluster radial distribution, counter-clockwise sequence timing and native art against client evidence.
   Build a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas

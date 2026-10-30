@@ -9,6 +9,9 @@ static class OrdinaryRangedAttack
     // Playing that clip triggers the AO's WandTrailImpact sound and wand_impact particles; this is not an AO path.
     public const uint WandImpactAnimation = 0;
     public const double WandImpactSeconds = 0.5;
+    /// <summary>How far in front of the body a shot leaves when the rig gives no release point: 1.5 cells, as the
+    /// fireball's <c>Game_PROJECTILE_AHEAD</c> (11-skills.md §10).</summary>
+    public const double ReleaseAheadCells = 1.5;
 
     // DefaultArrow has no impact clip; the stopped arrow object stays this long where it hit (a feel value, not measured).
     public const double ArrowStuckSeconds = 1.0;

@@ -23,9 +23,18 @@ sealed record PendingTransfer(ushort Area, ulong Instance, bool New, bool AtSpaw
 
 // A monster this connection spawned: label for /mobs, the server's estimate of its walk, and its AI state.
 // A monster's attack: its skill id, attack time, reach (cells, centre to centre) and damage per hit.
+/// <summary>How a monster's projectile skill releases its shot, from the rig and stat set the client itself plays
+/// (Program.MonsterReleaseFor): the clip, its contact keyframe as a fraction of the attack, the keyframe's position when
+/// the skill spawns the shot there (<c>projectile_uses_contact_position</c>), and whether the monster turns its back for
+/// it (<c>action_should_face_away_from_target</c>: the Sand Spitter spits from its rear).</summary>
+sealed record MonsterRelease(string Clip, double Fraction, ContactPoint? Point, bool FacesAway);
+
 sealed record MonsterAttack(ushort SkillId, double Seconds, double Range, DamagePacket Damage)
 {
     public bool Ranged { get; init; }
+    /// <summary>When and from where a projectile skill releases its shot; null: half the attack time, 1.5 cells ahead at
+    /// the default height (no rig data for the variety).</summary>
+    public MonsterRelease? Release { get; init; }
     /// <summary>A ranged skill's projectile (SkillCatalog.MonsterProjectile): the shot flies from the monster at the
     /// attack's contact and lands its hit when it reaches the player (Program.ProjectileHostile.cs). Null keeps the
     /// instant contact at half the attack time.</summary>

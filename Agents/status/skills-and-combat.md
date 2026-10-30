@@ -233,8 +233,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Tornado Shot fires `Metadata/Projectiles/TornadoShotArrow` (`SkillCatalog.ProjectileFallbacks`; its row is not named
   after the effect, so every use was refused and the server walked on while the client stopped, 2026-10-29); it is the
   basic straight-flight arrow only: the secondary arrows from the target point are not modelled yet.
-  Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
-  without a capture they use the bare offset.
+  Projectiles spawn at the captured terrain height + the releasing clip's keyframe height (the bow 16 steps, a wand
+  12, the Sand Spitter's spit 9; `Game_PROJECTILE_HEIGHT`, 5 steps, without rig data) on natural ground; without a
+  capture they use the bare offset.
   An attack gem at the ground swings (and pays its mana) when the point is within the weapon's reach, and only walks
   (attack-move, no mana) beyond it; the client spends the mana itself on either use, so the Gateway answers an
   attack-move with the authoritative mana.
@@ -643,11 +644,19 @@ and can require explicit recipes.
   particles. Projectile objects are created at their release point and their first move runs from there: the lazy
   snapshot used to create them where the simulation already had them, one to ten cells past the bow in a live log
   (2026-10-29). A Frida trace the same day saw the client create no projectile of its own for the default attack
-  (40 arrows) nor for a monster's action, so these server objects are the only visible shots.
+  (40 arrows) nor for a monster's action, so these server objects are the only visible shots. They leave from the
+  releasing clip's contact keyframe (`data/animation-contacts.json` positions, `anim_contacts.py` v3): the Ranger's
+  bow 5.5 cells ahead along the aim at 16 steps up, a wand's tip 7.5 cells ahead at 12 (the 5-step default, tuned on a
+  fireball, had the arrow trail start at the hip, live 2026-10-29); the keyframe's lateral part is not applied.
   Monster projectiles: a mortar skill's shot (Sand Spitter, `monster_mortar_attack` via GrantedEffects SkillID →
-  MonsterMortar → Projectiles) is a server object on the same runtime, lobbed at the player's cell at the attack's
-  halfway point, team 2, and its landing splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells) runs the monster
-  contact pipeline (`HostileProjectileOffense`, `Program.ProjectileHostile.cs`). The object plays its rig's flight
+  MonsterMortar → Projectiles) is a server object on the same runtime, released at the clip the client plays for the
+  skill (MonsterMortar.Animation → the ACT's `SpellProjectile` pool, the native selector on the action's 0xffff
+  sequence: attack1, contact at 37.5 % of the attack) from that clip's keyframe (4.2 cells behind the body that faces
+  away, so toward the player, 9 steps up: `projectile_uses_contact_position`; `data/monster-contacts.json`,
+  `scripts/re/monster_contacts.py`), lobbed at the player's cell but no closer than the skill's
+  `projectile_minimum_range` (4.6 cells), team 2, and its landing splash (`Game_MONSTER_MORTAR_RADIUS`, default 10
+  cells) runs the monster contact pipeline (`HostileProjectileOffense`, `Program.ProjectileHostile.cs`). Not checked
+  live yet: that the client seeds a monster's clip choice from the sequence, and the dead zone. The object plays its rig's flight
   clip from spawn and its impact clip where it lands (`data/projectile-clips.json`, `scripts/re/projectile_clips.py`:
   every Projectiles row's clip indexes and lengths, and its .ao default animation), without which a mortar is
   invisible (its .ao declares no default animation, the wand bolt's does). Weapon-projectile monsters
@@ -658,7 +667,8 @@ and can require explicit recipes.
   and nonzero intrinsic attack repeats remain open.
   Real-input held-output, moving-target, wall, evasion, pierce, return, pause, transfer, impale and actor-scale checks
   exercise this same runtime. Native bow/skill controls and animation alignment still require client validation.
-  Straight flight uses captured ground plus `Game_PROJECTILE_HEIGHT` (default 5); missing captures use the bare offset.
+  Straight flight uses captured ground plus the release keyframe's height, else `Game_PROJECTILE_HEIGHT` (default 5);
+  missing captures use the bare offset.
   Creation, glide and stop retain the same height; independent effects still follow client terrain.
   Platforms/doodads still need a surface model (#182). Integer walk estimates and shared radius remain approximations.
   Code: Core `Projectiles/`, Gateway `Projectiles/` (`Program.ProjectileRanged.cs`), `Program.RangedAttacks.cs`,

@@ -35,21 +35,40 @@ partial class Program
         double speed = ProjectileSpeed.CellsPerSecond(projectile.Speed, _ => 0, _ => 0,
             Environment.GetEnvironmentVariable("Game_PROJECTILE_SPEED"));
         double distance = Math.Max(1, (aim - from).Length);
+        var toward = (aim - from).Unit;
+        // The release point: the clip's contact keyframe along the line to the aim (the Spitter's lies 4.2 cells behind a
+        // body that faces away from its target, so toward the player, 9 steps up), else 1.5 cells ahead at the default
+        // height; never past half way to the aim, so a close target is not behind the shot. The shot still flies from the
+        // monster toward the aim (maintain_projectile_direction_when_using_contact_position); the keyframe's lateral part
+        // is not applied (ContactPoint).
+        var release = a.Release;
+        double ahead = release?.Point is { } point ? point.ForwardCells * (release.FacesAway ? -1 : 1) : OrdinaryRangedAttack.ReleaseAheadCells;
+        ahead = Math.Min(ahead, distance / 2);
+        var origin = from + toward * ahead;
+        // A lob lands on the aim, but no closer to the monster than the skill's minimum range (projectile_minimum_range,
+        // the Spitter's 50 units = 4.6 cells): a player at its feet stands inside the dead zone. The runtime lands a lob
+        // at its aim, so the aim itself moves out to the landing point.
+        double landing = Math.Max(0.5, Math.Max((aim - origin).Length, projectile.MinimumRange / WorldUnits.PerCell - ahead));
+        var target = projectile.Lobbed ? origin + toward * landing : aim;
         var profile = new ProjectileProfile(projectile.Metadata)
         {
             Speed = speed, Radius = projectile.CollisionRadius, Count = 1, Lobbed = projectile.Lobbed,
             // A lobbed shot's range is its landing distance; a straight one flies on past the aim.
-            Range = projectile.Lobbed ? distance : Math.Max(distance, a.Range) * 1.5 + 5,
+            Range = projectile.Lobbed ? landing : Math.Max(distance, a.Range) * 1.5 + 5,
             DirectDamage = !projectile.Lobbed,
             EndArea = projectile.Lobbed ? new ProjectileAreaRecipe("monster mortar", MonsterMortarRadius()) : null,
             EndAreaReasons = projectile.Lobbed
                 ? new HashSet<ProjectileEndReason> { ProjectileEndReason.Landing, ProjectileEndReason.Terrain } : null,
         };
         var owner = session.ActorKey(id, m);
-        // A target closer than the muzzle must not end up behind the released projectile.
-        var origin = from + (aim - from).Unit * Math.Min(1.5, distance / 2);
-        var presentation = MonsterProjectilePresentation(SkillsFor(conn).Clips(projectile.Metadata), (aim - origin).Length / speed);
-        return new ProjectileUse(profile, owner, owner, 2, origin, aim)
+        double flightCells = projectile.Lobbed ? landing : (aim - origin).Length;
+        var presentation = MonsterProjectilePresentation(SkillsFor(conn).Clips(projectile.Metadata), flightCells / speed);
+        if (release?.Point is { } launch) presentation = (presentation ?? new ProjectilePresentation()) with { LaunchHeight = launch.HeightSteps };
+        Console.WriteLine($"[gateway] {session.remote} monster 0x{id:x} ({m.Label}) releases {projectile.Metadata} from {origin}"
+            + $" ({ahead:0.0} cells toward the aim, {(release?.Point is { } up ? up.HeightSteps.ToString() : "default")} steps up"
+            + $"{(release is null ? "" : $", clip {release.Clip} at {release.Fraction:0.000} of the attack{(release.FacesAway ? ", facing away" : "")}")})"
+            + $" aim={aim}{(projectile.Lobbed ? $" lands at {target} ({landing:0.0} cells)" : "")}");
+        return new ProjectileUse(profile, owner, owner, 2, origin, target)
             { Payload = new HostileProjectileOffense(id, m, a, action, $"{m.Label} {projectile.Metadata}") { Presentation = presentation } };
     }
 

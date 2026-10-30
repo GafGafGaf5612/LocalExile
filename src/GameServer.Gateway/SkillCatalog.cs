@@ -531,7 +531,66 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     /// <summary>A monster skill's projectile (Projectiles.dat Id, speed in world units per second, whether it is lobbed at
     /// the aim, collision radius in cells). Speed is the row's ProjectileSpeed; <c>Lobbed</c> flights land where they were
     /// aimed and damage an area there.</summary>
-    public sealed record MonsterProjectileInfo(string Metadata, int Speed, bool Lobbed, double CollisionRadius);
+    public sealed record MonsterProjectileInfo(string Metadata, int Speed, bool Lobbed, double CollisionRadius)
+    {
+        /// <summary>The Animation.dat Id of the clips the client plays for the skill (MonsterMortar.Animation: the Sand
+        /// Spitter mortar's <c>SpellProjectile</c>, row 20), the key of the variety's ACT pool; null when the row names none.</summary>
+        public string? AnimationKey { get; init; }
+        /// <summary>The skill's <c>projectile_minimum_range</c> in world units (the Spitter's 50): a lob lands no closer
+        /// to the monster than this. 0 without the stat.</summary>
+        public int MinimumRange { get; init; }
+    }
+
+    /// <summary>One clip of a monster's attack pool (data/monster-contacts.json, scripts/re/monster_contacts.py): its name,
+    /// its index in the rig's animation list, its length, and its contact keyframe's time and position when it has one
+    /// (the Sand Spitter's attack1: 375 of 1000 ms, 45.9 units behind the model and 71.6 up).</summary>
+    public sealed record MonsterClipContact(string Animation, uint Index, int LengthMs, int? ContactMs, ContactPoint? Point)
+    {
+        public double? ContactFraction => ContactMs is int ms && LengthMs > 0 ? (double)ms / LengthMs : null;
+    }
+
+    /// <summary>The clip the client plays for a monster's action: the variety's ACT pool for the skill's animation key
+    /// (<c>SpellProjectile</c> for the Spitter's mortar), chosen as the client chooses it, with the native selector seeded
+    /// by the action's sequence (AnimationVariantSelector; the Gateway's monster actions send 0xffff, so the choice is the
+    /// same for every swing). Null without data for the variety or key.</summary>
+    public MonsterClipContact? MonsterContact(string varietyId, string animationKey, ushort sequence)
+    {
+        if (!_monsterContacts.Value.TryGetValue(varietyId, out var pools) || !pools.TryGetValue(animationKey, out var pool)
+            || pool.Length == 0) return null;
+        Span<uint> weights = stackalloc uint[pool.Length];
+        weights.Fill(1);
+        return pool[AnimationVariantSelector.Select(sequence, weights)];
+    }
+
+    private readonly Lazy<Dictionary<string, Dictionary<string, MonsterClipContact[]>>> _monsterContacts = new(() =>
+    {
+        string path = Path.Combine(folder, "monster-contacts.json");
+        var result = new Dictionary<string, Dictionary<string, MonsterClipContact[]>>(StringComparer.Ordinal);
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var variety in d.RootElement.EnumerateObject())
+        {
+            if (!variety.Value.TryGetProperty("pools", out var pools) || pools.ValueKind != JsonValueKind.Object) continue;
+            var byKey = new Dictionary<string, MonsterClipContact[]>(StringComparer.Ordinal);
+            foreach (var pool in pools.EnumerateObject())
+            {
+                if (pool.Value.ValueKind != JsonValueKind.Array) continue;
+                var clips = new List<MonsterClipContact>();
+                foreach (var c in pool.Value.EnumerateArray())
+                {
+                    if (!c.TryGetProperty("animation", out var name) || name.ValueKind != JsonValueKind.String
+                        || !c.TryGetProperty("index", out var index) || index.ValueKind != JsonValueKind.Number
+                        || !c.TryGetProperty("length", out var length) || length.ValueKind != JsonValueKind.Number) continue;
+                    int? contact = c.TryGetProperty("contact", out var ms) && ms.ValueKind == JsonValueKind.Number ? ms.GetInt32() : null;
+                    var point = c.TryGetProperty("position", out var position) ? AnimationContacts.Point(position) : null;
+                    clips.Add(new(name.GetString() ?? "", index.GetUInt32(), length.GetInt32(), contact, point));
+                }
+                if (clips.Count > 0) byKey[pool.Name] = [.. clips];
+            }
+            if (byKey.Count > 0) result[variety.Name] = byKey;
+        }
+        return result;
+    });
 
     /// <summary>The projectile of a monster's granted effect: for a mortar skill (ActiveSkills Id <c>monster_mortar*</c>)
     /// the GrantedEffects row's SkillID is the MonsterMortar row that names it (every Sand Spitter variant: SkillID 183 →
@@ -539,7 +598,16 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
     /// (<c>monster_projectile_weapon</c>, <c>monster_snipe</c>: SkillID 0 for all) take their projectile from the monster's
     /// weapon art, which is not resolved here: null, and such a monster keeps its instant contact.</summary>
     public MonsterProjectileInfo? MonsterProjectile(int effectRow) =>
-        _monsterProjectiles.Value.TryGetValue(effectRow, out var projectile) ? projectile : null;
+        _monsterProjectiles.Value.TryGetValue(effectRow, out var projectile)
+            ? projectile with { MinimumRange = MonsterProjectileMinimumRange(effectRow) } : null;
+
+    /// <summary>The skill's <c>projectile_minimum_range</c> (a constant of its stat set, so level 1 reads it), 0 without.</summary>
+    private int MonsterProjectileMinimumRange(int effectRow)
+    {
+        if (_stats.Key("projectile_minimum_range") is not uint key) return 0;
+        foreach (var (statKey, value) in EffectStats(effectRow, 1)) if (statKey == key) return value;
+        return 0;
+    }
 
     private readonly Lazy<Dictionary<int, MonsterProjectileInfo>> _monsterProjectiles = new(() =>
     {
@@ -552,12 +620,25 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
             Id: r.TryGetProperty("Id", out var id) ? id.GetString() ?? "" : "",
             Speed: r.TryGetProperty("ProjectileSpeed", out var s) && s.ValueKind == JsonValueKind.Number ? s.GetInt32() : 0,
             Radius: r.TryGetProperty("CollisionRadius", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 1)).ToList();
+        // Animation.dat Ids: a mortar row's Animation names the ACT key of the clips the client plays for the skill.
+        var animationIds = new List<string>();
+        if (File.Exists(TablePath("Animation")))
+        {
+            using var animations = JsonDocument.Parse(File.ReadAllBytes(TablePath("Animation")));
+            foreach (var r in animations.RootElement.EnumerateArray())
+                animationIds.Add(r.TryGetProperty("Id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() ?? "" : "");
+        }
         using var mortars = JsonDocument.Parse(File.ReadAllBytes(TablePath("MonsterMortar")));
-        var mortarRows = new Dictionary<int, int>();
+        var mortarRows = new Dictionary<int, (int Projectile, string? AnimationKey)>();
         foreach (var r in mortars.RootElement.EnumerateArray())
             if (r.TryGetProperty("Id", out var id) && id.ValueKind == JsonValueKind.Number
                 && r.TryGetProperty("Projectile", out var p) && p.ValueKind == JsonValueKind.Number)
-                mortarRows.TryAdd(id.GetInt32(), p.GetInt32());
+            {
+                string? key = r.TryGetProperty("Animation", out var a) && a.ValueKind == JsonValueKind.Number
+                    && a.GetInt32() >= 0 && a.GetInt32() < animationIds.Count && animationIds[a.GetInt32()].Length > 0
+                    ? animationIds[a.GetInt32()] : null;
+                mortarRows.TryAdd(id.GetInt32(), (p.GetInt32(), key));
+            }
         using var active = JsonDocument.Parse(File.ReadAllBytes(TablePath("ActiveSkills")));
         var mortarSkills = active.RootElement.EnumerateArray().Select((r, i) => (r, i))
             .Where(a => a.r.TryGetProperty("Id", out var id) && id.GetString() is { } name
@@ -570,10 +651,10 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
             row++;
             if (!e.TryGetProperty("ActiveSkill", out var a) || a.ValueKind != JsonValueKind.Number || !mortarSkills.Contains(a.GetInt32())) continue;
             if (!e.TryGetProperty("SkillID", out var k) || k.ValueKind != JsonValueKind.Number
-                || !mortarRows.TryGetValue(k.GetInt32(), out int projectile) || projectile < 0 || projectile >= rows.Count) continue;
-            var p = rows[projectile];
+                || !mortarRows.TryGetValue(k.GetInt32(), out var mortar) || mortar.Projectile < 0 || mortar.Projectile >= rows.Count) continue;
+            var p = rows[mortar.Projectile];
             if (p.Id.Length == 0 || p.Speed <= 0) continue;
-            result[row] = new(p.Id, p.Speed, Lobbed: true, Math.Max(1, p.Radius));
+            result[row] = new(p.Id, p.Speed, Lobbed: true, Math.Max(1, p.Radius)) { AnimationKey = mortar.AnimationKey };
         }
         return result;
     });

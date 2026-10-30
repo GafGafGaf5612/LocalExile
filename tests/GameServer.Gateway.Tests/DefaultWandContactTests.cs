@@ -15,7 +15,7 @@ public class DefaultWandContactTests : IDisposable
               "amd": "witch.amd", "act": "witch.act", "animations": { "attack1_wand": [600,300] },
               "defaultWand": {
                 "Wand": [
-                  {"animation":"attack1_wand","index":31,"length":600,"contact":300,"weight":1},
+                  {"animation":"attack1_wand","index":31,"length":600,"contact":300,"weight":1,"position":[5.1,-82.0,-94.0]},
                   {"animation":"attack2_wand","index":36,"length":600,"contact":233,"weight":1},
                   {"animation":"attack3_wand","index":39,"length":600,"contact":200,"weight":1},
                   {"animation":"attack4_wand","index":42,"length":600,"contact":366,"weight":1}
@@ -34,6 +34,19 @@ public class DefaultWandContactTests : IDisposable
     }
 
     public void Dispose() => Directory.Delete(folder, recursive: true);
+
+    [Fact]
+    public void The_selected_clip_carries_its_release_point_when_one_is_recorded()
+    {
+        var contacts = new AnimationContacts(folder);
+        Assert.True(contacts.TryDefaultWandContact(Ao, Wand(), 65535, out var first));
+        Assert.Equal("attack1_wand", first.Animation);
+        Assert.Equal(new ContactPoint(5.1f, -82.0f, -94.0f), first.Point);
+        Assert.Equal(12, first.Point!.Value.HeightSteps);
+        Assert.True(contacts.TryDefaultWandContact(Ao, Wand(), 4097, out var fourth));
+        Assert.Equal("attack4_wand", fourth.Animation);
+        Assert.Null(fourth.Point);
+    }
 
     [Theory]
     [InlineData(4097, "attack4_wand", 42u, 366)]

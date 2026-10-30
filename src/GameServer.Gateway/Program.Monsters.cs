@@ -28,6 +28,29 @@ partial class Program
         return [.. SkillsFor(conn).EffectStats(effect, level).Where(s => !taken.Contains(s.Item1)), .. own];
     }
 
+    /// <summary>The sequence of a monster's actions (0x1ab); the client's clip selector is seeded with it.</summary>
+    internal const ushort MonsterActionSequence = 0xffff;
+
+    // A projectile skill's release, from what the client itself plays: the clip of the variety's ACT pool for the skill's
+    // animation key (MonsterMortar.Animation; the Spitter's SpellProjectile = attack1, attack2), chosen with the native
+    // sequence-seeded selector, gives the contact keyframe's time, which the client stretches to the attack time, and its
+    // position. The skill's stats say whether the shot leaves from that position (projectile_uses_contact_position),
+    // whether the offset follows the model's scale (use_scaled_contact_offset, MonsterVarieties ModelSizeMultiplier) and
+    // whether the monster turns its back for it (action_should_face_away_from_target). Without rig data: null, the
+    // halfway release and the default point.
+    internal static MonsterRelease? MonsterReleaseFor(ClientState conn, MonsterCatalog.Variety variety, int effect, int level,
+        SkillCatalog.MonsterProjectileInfo projectile)
+    {
+        var catalog = SkillsFor(conn);
+        var stats = catalog.EffectStats(effect, level);
+        bool Has(string name) => Stats.Key(name) is uint key && stats.Any(s => s.Item1 == key && s.Item2 != 0);
+        var clip = catalog.MonsterContact(variety.Id, projectile.AnimationKey ?? "Melee", MonsterActionSequence);
+        if (clip is null) return null;
+        var point = Has("projectile_uses_contact_position") ? clip.Point : null;
+        if (point is { } p && Has("use_scaled_contact_offset")) point = p.Scaled(variety.ModelScale);
+        return new(clip.Animation, clip.ContactFraction ?? 0.5, point, Has("action_should_face_away_from_target"));
+    }
+
     // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     internal static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
@@ -60,13 +83,16 @@ partial class Program
         // affixes' increased damage, attack speed and extra elemental / chaos damage (MonsterModEffects.Hit).
         var (baseMin, baseMax) = Monsters.BaseDamage(variety, level) ?? (1, 1);
         bool rangedAttack = MonsterAttackIsRanged(variety);
+        // A mortar skill's projectile (Sand Spitter): the shot flies and lands its hit; other ranged skills keep the
+        // instant contact until their projectile is known (SkillCatalog.MonsterProjectile). Its release time and point
+        // come from the clip the client plays for it (MonsterReleaseFor).
+        var projectile = rangedAttack && variety.GrantedEffects is [int rangedEffect, ..] ? SkillsFor(conn).MonsterProjectile(rangedEffect) : null;
         var attack = new MonsterAttack(SkillCatalog.FirstSkillId, mods.Effects.AttackSeconds(variety.AttackMs / 1000.0), variety.AttackRange,
             mods.Effects.Hit(DamagePacket.Of(DamageType.Physical, baseMin, baseMax)))
         {
             Ranged = rangedAttack,
-            // A mortar skill's projectile (Sand Spitter): the shot flies and lands its hit; other ranged skills keep the
-            // instant contact until their projectile is known (SkillCatalog.MonsterProjectile).
-            Projectile = rangedAttack && variety.GrantedEffects is [int rangedEffect, ..] ? SkillsFor(conn).MonsterProjectile(rangedEffect) : null,
+            Projectile = projectile,
+            Release = projectile is null ? null : MonsterReleaseFor(conn, variety, variety.GrantedEffects![0], level, projectile),
         };
         var skill = variety.GrantedEffects is [int effect, ..]
             ? SkillsFor(conn).FindByRow(attack.SkillId, effect, level,
@@ -251,7 +277,7 @@ partial class Program
                 }
                 else if (LivingCollision.Blocks(m))
                     askers.Add((new(id, mx, my, LivingCollision.Size(m), m.LastTarget,
-                        m.Attack?.Range ?? double.PositiveInfinity), m, d));
+                        m.Attack?.Range ?? double.PositiveInfinity, m.Attack?.Ranged == true), m, d));
             }
             if (askers.Count == 0) return plan;
             // Every other living body near the player keeps its place: the chasers' cells go around it.
@@ -313,9 +339,10 @@ partial class Program
     }
 
     // A monster swings at the player: its skill as an action aimed at the player (0x1ab, flags | 0x80 + target id, sequence
-    // 0xffff), then at the contact point (half the attack time) the hit lands if the monster still lives and the player is
-    // still in reach (walking away dodges it): the player's life goes down by the monster's damage (0x1b1 on the player).
-    // At 0 the client runs the player's death.
+    // 0xffff), then at the contact point (half the attack time for a melee swing; a projectile skill's clip contact,
+    // MonsterRelease) the hit lands if the monster still lives and the player is still in reach (walking away dodges
+    // it): the player's life goes down by the monster's damage (0x1b1 on the player). At 0 the client runs the player's
+    // death.
     // PoE's evasion entropy (wiki: Evasion): shared by every attack against the player, reset after 3.33 s. Call under
     // the Monsters lock.
     static bool EvadesLocked(ClientState conn, int hitChance, double now)
@@ -462,9 +489,11 @@ partial class Program
             var player = conn.Walk.Position(startedAt);
             m.BusyUntil = startedAt + a.Seconds;
             m.SwingGeneration = action;
-            return InstanceProtocol.ActionStarted(id, from.X, from.Y, player.X, player.Y, a.SkillId, 0xffff, 0x0408, targetObjectId: PlayerId);
+            return InstanceProtocol.ActionStarted(id, from.X, from.Y, player.X, player.Y, a.SkillId, MonsterActionSequence, 0x0408, targetObjectId: PlayerId);
         }, $"0x01ab monster 0x{id:x} ({m.Label}) attacks the player, attack time {a.Seconds:0.00} s")) return;
-        if (!await WaitMonsterActionTime(conn, id, m, action, startedAt + a.Seconds / 2)) return;
+        // The contact: the clip's keyframe for a projectile skill (the Spitter's attack1 spits at 37.5 % of the attack),
+        // half the attack time for a melee swing (its clips' keyframes are not read yet).
+        if (!await WaitMonsterActionTime(conn, id, m, action, startedAt + a.Seconds * (a.Release?.Fraction ?? 0.5))) return;
         if (a.Projectile is { } projectile)
         {
             // The shot leaves at the contact and flies; its hit lands when it reaches the player (Program.ProjectileHostile.cs).

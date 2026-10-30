@@ -35,8 +35,13 @@ $manifest = @(
        Args = @('run', '--project', 'scripts/re/atlas', '--', 'Client/Content.ggpk', 'hideouts'); Version = 3; Needs = @('tables', 'object-types')
        UsedBy = 'hideouts and their decorations (21-hideouts.md)' }
     @{ Name = 'animation-contacts'; Outputs = @('data\animation-contacts.json'); Runner = 'python'
-       Args = @('scripts/re/anim_contacts.py'); Version = 2; Needs = @('tables')
-       UsedBy = 'class spell contacts and ACT-selected ordinary wand release timing (11-skills.md)' }
+       Args = @('scripts/re/anim_contacts.py'); Version = 3; Needs = @('tables')
+       UsedBy = 'class spell contacts, ACT-selected ordinary wand release timing and the contact keyframes'' positions: where an arrow or wand bolt leaves (11-skills.md)' }
+    # monster-contacts: the clips a variety plays for its projectile attacks, with their contact keyframe's time and position:
+    # when and from where a Sand Spitter mortar leaves (the skill's own animation key, the native clip selector).
+    @{ Name = 'monster-contacts'; Outputs = @('data\monster-contacts.json'); Runner = 'python'
+       Args = @('scripts/re/monster_contacts.py'); Version = 1; Needs = @('tables')
+       UsedBy = 'monster projectile release timing and points (Program.ProjectileHostile.cs, 11-skills.md section 6)' }
     # monster-takehit also gives each variety's Emerge clip and its length: how long an emerge monster takes to rise.
     @{ Name = 'monster-takehit'; Outputs = @('data\monster-takehit.json'); Runner = 'python'
        Args = @('scripts/re/monster_takehit.py'); Version = 3; Needs = @('tables')

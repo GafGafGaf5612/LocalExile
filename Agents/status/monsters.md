@@ -62,6 +62,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Docs: [14](../docs/protocol/14-monster-packs.md) §5.
 - Monster decisions use 50 ms of elapsed game time, with no catch-up burst after pauses or slow steps.
   Chase repaths use a separate 100 ms budget and require at least three cells of Manhattan target change.
+  A ranged chaser stands off one cell inside its reach (MonsterVarieties `MaximumAttackDistance`: the Sand Spitter's
+  30), moving inward only when that ring is full, instead of taking a melee contact cell (`MonsterSurround.Asker.Ranged`;
+  live 2026-10-29: Spitters came in close). `MinimumAttackDistance` is not read yet.
   Attack busy time covers the full attack duration; pending swing and stage generations prevent duplicate work.
   Three native AI-enable controls issued one chase each after 43, 38 and 50 ms.
   Four deliberate turns produced four chase orders at 249 ms intervals without duplicate orders between turns.

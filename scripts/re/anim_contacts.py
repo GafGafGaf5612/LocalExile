@@ -2,9 +2,12 @@
 #
 # The "contact" keyframe of every character class's animations: for each Characters.dat AOFile, follows the .ao's
 # "extends" chain to its AnimationController metadata (.amd, e.g. Art/Models/CHARACTERS/Witch/rig.amd) and reads, per
-# animation, its length and the time of its "contact" event, both in ms. That keyframe is when an attack lands and when
-# a spell is released (Witch spell_projectile_wand: 1066 ms long, contact at 599). The Gateway reads the output to
-# release projectiles at the right moment of the cast (Agents/docs/protocol/11-skills.md §9).
+# animation, its length and the time of its "contact" event, both in ms, plus the event's position in the model's
+# space ("positions": [x, y, z] world units; -y is forward, -z is up: the Ranger's attack1_bow releases 59.8 units in
+# front and 127.5 up). That keyframe is when an attack lands and when a spell or arrow is released (Witch
+# spell_projectile_wand: 1066 ms long, contact at 599). The Gateway reads the output to release projectiles at the right
+# moment of the cast and from the right point (Agents/docs/protocol/11-skills.md §9, §10). Events an .ao of the chain
+# adds (or substitutes with exclude_metadata_events) are merged as the client merges them (ot_components.rig_clips).
 # Also reads each Characters.dat ACTFile's ordinary wand Melee pools, resolving nested stance inheritance and
 # preserving ACT order for the native sequence-seeded variant selector. Only the current simple, unconditional
 # animation lists are accepted; aliases/modifiers/conditions fail extraction instead of inventing a native choice.
@@ -16,16 +19,26 @@
 import json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ot_components import REPO, amd_animations, amd_of, fetch, read_text  # noqa: E402
+from ot_components import REPO, amd_of, fetch, first_contact, read_text, rig_clips  # noqa: E402
 
 
 def contacts(animations):
-    """{animation: [length ms, contact ms]} for the .amd's animations that have a contact event."""
+    """{animation: [length ms, contact ms]} for the rig's animations that have a contact event (the earliest one)."""
     out = {}
     for a in animations:
-        contact = next((int(t) for ev, t, _ in a["events"] if ev == "contact" and t.lstrip("-").isdigit()), None)
-        if contact is not None:
-            out[a["name"]] = [a["length"], contact]
+        if (contact := first_contact(a["events"])) is not None:
+            out[a["name"]] = [a["length"], contact[0]]
+    return out
+
+
+def positions(animations):
+    """{animation: [x, y, z]} for the animations whose earliest contact event carries a position (model units: +x
+    the model's left, -y forward, -z up)."""
+    out = {}
+    for a in animations:
+        contact = first_contact(a["events"])
+        if contact is not None and contact[1] is not None:
+            out[a["name"]] = contact[1]
     return out
 
 
@@ -98,6 +111,7 @@ def ordinary_wand_pools(text, animations):
         raise ValueError("Wand stance must define its ordinary main-hand Melee pool")
     clips = {a["name"]: (i, a) for i, a in enumerate(animations)}
     contact_times = contacts(animations)
+    contact_positions = positions(animations)
     result = {}
     for name in ("Wand", "WandShield", "WandWand"):
         assignments = dict(inherited)
@@ -116,7 +130,8 @@ def ordinary_wand_pools(text, animations):
             length, contact = contact_times[animation]
             if length <= 0 or not 0 <= contact <= length:
                 raise ValueError(f"Invalid ordinary wand contact: {name}/{animation}")
-            pool.append({"animation": animation, "index": index, "length": length, "contact": contact, "weight": 1})
+            pool.append({"animation": animation, "index": index, "length": length, "contact": contact, "weight": 1,
+                         "position": contact_positions.get(animation)})
         result[name] = pool
     return result
 
@@ -130,7 +145,7 @@ def main():
         if not ao or ao in result:
             continue
         amd = amd_of(ao)
-        animations = amd_animations(amd) if amd else []
+        animations = (rig_clips(amd, ao) if amd else None) or []
         act = c.get("ACTFile")
         if not act or not animations:
             raise ValueError(f"Missing character ACT/rig for {c['Name']}")
@@ -138,7 +153,7 @@ def main():
         text = read_text(act)
         if text is None:
             raise ValueError(f"Missing character ACT asset: {act}")
-        result[ao] = {"amd": amd, "act": act, "animations": contacts(animations),
+        result[ao] = {"amd": amd, "act": act, "animations": contacts(animations), "positions": positions(animations),
                       "defaultWand": ordinary_wand_pools(text, animations)}
         print(f"{c['Name']}: {ao} -> {amd}, {len(result[ao]['animations'])} animations with a contact", file=sys.stderr)
     with open(dest, "w", encoding="utf-8") as f:

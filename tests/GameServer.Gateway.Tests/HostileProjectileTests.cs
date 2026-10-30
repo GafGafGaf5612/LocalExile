@@ -22,11 +22,16 @@ public class HostileProjectileTests
 
     static byte[] ObjectHeader(ushort id, uint objectId) => new LoginWriter().U16(id).U32(objectId).U32(0).U16(0).ToArray();
 
-    static SpawnedMonster Shooter(int x, int y, SkillCatalog.MonsterProjectileInfo projectile) =>
+    static SpawnedMonster Shooter(int x, int y, SkillCatalog.MonsterProjectileInfo projectile, MonsterRelease? release = null) =>
         new("spitter", new(x, y, 10, width: 300, height: 300), 60, 3, 100)
         {
-            Attack = new MonsterAttack(0x102, 0.99, 30, DamagePacket.Of(DamageType.Physical, 10, 10)) { Ranged = true, Projectile = projectile },
+            Attack = new MonsterAttack(0x102, 0.99, 30, DamagePacket.Of(DamageType.Physical, 10, 10))
+                { Ranged = true, Projectile = projectile, Release = release },
         };
+
+    // The Sand Spitter's attack1 keyframe (data/monster-contacts.json): 375 of 1000 ms, 45.9 units behind the body and 71.6
+    // up; the skill turns the body away from its target and spawns the shot at the keyframe.
+    static readonly MonsterRelease SpitterRelease = new("attack1", 0.375, new ContactPoint(1.33f, 45.89f, -71.56f), FacesAway: true);
 
     [Theory]
     [InlineData(true)]
@@ -112,6 +117,49 @@ public class HostileProjectileTests
         await f.Read();
         Assert.Equal(100u, f.Conn.PlayerLife);
         Assert.Empty(f.Session.Runtime.Projectiles);
+    }
+
+    // The shot leaves from the clip's keyframe: 4.2 cells behind a body that faces away from the player, so toward them,
+    // and flies at the keyframe's height (9 steps: the fixture has no ground data, so the straight bolt shows it; a lob
+    // without ground data keeps the client's terrain sampling).
+    [Fact]
+    public async Task A_shot_leaves_the_clips_contact_point_behind_a_spitter_that_faces_away()
+    {
+        await using var f = new ProjectileRuntimeFixture();
+        var m = Shooter(40, 10, Bolt, SpitterRelease);
+        f.Conn.Monsters.Add(MonsterId, m);
+        var use = Program.MonsterProjectileUse(f.Session, MonsterId, m, m.Attack!, Bolt, m.ActionGeneration);
+        Assert.Equal(40 - 45.89 / WorldUnits.PerCell, use.Origin.X, 3);
+        Assert.Equal(10, use.Origin.Y, 3);
+        Assert.Equal(9, ((HostileProjectileOffense)use.Payload!).Presentation?.LaunchHeight);
+        f.Session.Schedule(f.Session.Runtime.Now, () => true, () => use);
+        f.Advance(0.02);
+        byte[] flight = await f.Read();
+        var direction = (use.Aim - use.Origin).Unit;
+        var blob = new ProjectileObject(Bolt.Metadata, (int)Math.Round(use.Origin.X), 10, (float)Math.Atan2(direction.X, -direction.Y),
+            Team: 1, Height: -9).Blob();
+        Assert.True(IndexOf(flight, blob) >= 0, "created at the spit point, 9 steps up");
+    }
+
+    // A lob lands no closer to the Spitter than the skill's projectile_minimum_range (50 units): a player at its feet is in
+    // the dead zone, and the release point never passes half way to them.
+    [Fact]
+    public async Task A_mortar_lands_no_closer_to_its_spitter_than_the_skills_minimum_range()
+    {
+        await using var f = new ProjectileRuntimeFixture();
+        var mortar = Mortar with { MinimumRange = 50 };
+        var m = Shooter(13, 10, mortar, SpitterRelease);   // three cells from the player at (10, 10)
+        f.Conn.Monsters.Add(MonsterId, m);
+        var use = Program.MonsterProjectileUse(f.Session, MonsterId, m, m.Attack!, mortar, m.ActionGeneration);
+        Assert.Equal(11.5, use.Origin.X, 3);
+        Assert.Equal(13 - 50 / WorldUnits.PerCell, use.Aim.X, 3);
+        Assert.Equal(use.Origin.X - use.Aim.X, use.Profile.Range, 3);
+
+        // From thirty cells the lob still lands on the player.
+        var far = Shooter(40, 10, mortar, SpitterRelease);
+        var onTarget = Program.MonsterProjectileUse(f.Session, MonsterId, far, far.Attack!, mortar, far.ActionGeneration);
+        Assert.Equal(10, onTarget.Aim.X, 3);
+        Assert.Equal(40 - 45.89 / WorldUnits.PerCell - 10, onTarget.Profile.Range, 3);
     }
 
     // Sand Spitter's mortar effect (GrantedEffects row 617, 3.29.3b tables): the server resolves its projectile and sends
