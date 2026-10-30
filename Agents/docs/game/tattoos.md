@@ -1,12 +1,13 @@
 # Tattoos
 
-**Status: in progress (documentation complete, catalogue 100/100; 41 tattoo rows client-verified).** The
+**Status: in progress (documentation complete, catalogue 100/100; 44 tattoo rows client-verified).** The
 client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries the inventory
 id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends the tattoo in
-`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Forty-one rows are `works` (the ten pilot,
-22 plain stats and nine Makanga gates), two are `inert` (Hinekora and Kitava Makanga have no gameplay consumer) and
-57 are `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the
-target/limit rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
+`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Forty-four rows are `works` (the ten pilot,
+22 plain stats, nine Makanga gates and three Journey tattoos), one is `partial` (Ancestral Bloodlines: ES recovery
+works, life/mana recovery stats are unread), two are `inert` (Hinekora and Kitava Makanga) and 53 are
+`not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the target/limit
+rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
 
 This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos`,
 `PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki
@@ -19,10 +20,10 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
-| Current (drop-enabled) | 53 | 26 | 0 | 0 | 27 |
-| Drop-disabled | 40 | 15 | 0 | 2 | 23 |
+| Current (drop-enabled) | 53 | 29 | 0 | 0 | 24 |
+| Drop-disabled | 40 | 15 | 1 | 2 | 22 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **41** | **0** | **2** | **57** |
+| **Total** | **100** | **44** | **1** | **2** | **53** |
 
 | Status | Meaning |
 |---|---|
@@ -40,7 +41,7 @@ stat already has a gameplay consumer. The first implementation pass must audit e
 |---|---|---|
 | 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 32/32 non-Makanga plain stats client-verified; the Makanga rows are in group 3. |
 | 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
-| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | All 11 Makanga are mapped: 9 are live/consumer verified, Hinekora and Kitava are inert (no curse/leech-cap consumer). Counting and limits are still not implemented. |
+| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Makanga and Journey counting are implemented (Journey Body/Mind/Soul work; Ancestral is partial); the Honoured attribute-notable limit and Journey Makanui are still not implemented. |
 | 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
 | 5. Loyalty summons | The ten Summon Spirit triggers, each limited to 1 Loyalty Tattoo. | Not implemented. |
 
@@ -250,9 +251,9 @@ These three drop-enabled Journey tattoos count themselves for their own per-allo
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Journey Tattoo of the Body** | +25 to maximum Life per Allocated Journey Tattoo of the Body | Notable (+30 Str) | Ngakanu | not implemented | needs per-allocated-Journey-Tattoo counting |
-| **Journey Tattoo of the Mind** | +30 to maximum Mana per Allocated Journey Tattoo of the Mind | Notable (+30 Dex) | Te Onui | not implemented | needs per-allocated-Journey-Tattoo counting |
-| **Journey Tattoo of the Soul** | +40 to maximum Energy Shield per Allocated Journey Tattoo of the Soul | Notable (+30 Int) | Moti Aro | not implemented | needs per-allocated-Journey-Tattoo counting |
+| **Journey Tattoo of the Body** | +25 to maximum Life per Allocated Journey Tattoo of the Body | Notable (+30 Str) | Ngakanu | works | live +25 maximum Life per allocated copy; base life 5535 -> 5550 after replacing Prowess |
+| **Journey Tattoo of the Mind** | +30 to maximum Mana per Allocated Journey Tattoo of the Mind | Notable (+30 Dex) | Te Onui | works | live +30 maximum Mana per allocated copy; base mana 2336 -> 2365 |
+| **Journey Tattoo of the Soul** | +40 to maximum Energy Shield per Allocated Journey Tattoo of the Soul | Notable (+30 Int) | Moti Aro | works | live +40 maximum Energy Shield per allocated copy; ES 34 -> 74 |
 
 ### Arohongui (5)
 
@@ -360,7 +361,7 @@ Limited to 1 Ancestral Tattoo.
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Ancestral Tattoo of Bloodlines** | 2% increased Recovery Rate of Life, Mana and Energy Shield per Tribe for which you have an allocated Tattoo | Small Attribute | drop-disabled | not implemented | needs per-tribe tattoo counting; limit 1 Ancestral Tattoo |
+| **Ancestral Tattoo of Bloodlines** | 2% increased Recovery Rate of Life, Mana and Energy Shield per Tribe for which you have an allocated Tattoo | Small Attribute | drop-disabled | partial | live +18% recovery for 9 tribes; ES recovery consumed, life/mana recovery stats unread |
 
 ### Honoured (18)
 
@@ -551,6 +552,19 @@ Conditional Makanga stats 2026-10-30 (client/server, `/stat` after the live gate
   panel/recovery formula now applies `life_regeneration_rate_+%`.
 - The test tattoos were removed and the extra nodes refunded; the tree is back to 530 passives and the user's 12
   tattoos.
+
+Counting tattoos 2026-10-30 (client/server, `/stat`):
+
+- **Journey Body** on 52714 (Prowess, +30 Strength): base maximum life 5535 -> 5550. The net +15 is because the
+  replaced Prowess stats were removed; the counting pass adds +25 per allocated Body.
+- **Journey Mind** on 56029 (Agility, +30 Dexterity): base maximum mana 2336 -> 2365 (the net +29 is +30 minus the
+  replaced Agility stat).
+- **Journey Soul** on 50197 (Ancestral Knowledge, +30 Intelligence): base maximum energy shield 34 -> 74 (+40).
+- **Ancestral Bloodlines** on 3644: life/mana/ES recovery 18% for 9 distinct tribes; the Ancestral and Journey
+  tattoos use tribe 11 and are excluded. ES recovery is consumed; the life/mana recovery stats are currently
+  unread, so the row is `partial`.
+- The test tattoos were removed and the three bonus notables refunded; the tree is back to 530 passives, 12 user
+  tattoos and baseline pools (life 5490, mana 2306, ES 34, recovery 0).
 
 Not yet verified through the client: replace, reallocating a tattooed node, the 50 cap, Journey Makanui and the
 seven Forbidden tattoos.

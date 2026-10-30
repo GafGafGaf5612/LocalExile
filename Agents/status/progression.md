@@ -225,9 +225,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Tattoos: the 100-item 3.29.3b catalogue, protocol and implementation groups are documented in
   [tattoos](../docs/game/tattoos.md). The client flow is implemented: C->S `0x77` names the inventory, item and
   passive; `0x33`'s fifth list carries `node | PassiveSkillOverrides.HASH16 << 16`; the item is consumed and the
-  map is saved independently of allocation. **41 rows are client-verified** (the ten pilot, 22 plain stats and
-  nine Makanga gates); Hinekora and Kitava Makanga are `inert` (no curse/leech-cap consumer). Firewalker also
-  survived relog and was removed with an Orb of Scouring. The Makanga gate is dynamic
-  (`RequiresAdjacent`/`MaxAdjacent`). The character currently has 530 passives and 12 tattoos from the test
-  session. 57 rows remain not implemented; next are counting, Loyalty and random specials. The seven
-  Forbidden ascendancy tattoos use a separate event-only flow.
+  map is saved independently of allocation. **44 rows are client-verified**: the ten pilot, 22 plain stats,
+  nine Makanga gates and three Journey tattoos; Ancestral Bloodlines is partial (life/mana recovery unread)
+  and Hinekora/Kitava Makanga are inert. Firewalker also survived relog and was removed with an Orb of
+  Scouring. The Makanga gate and Journey counting are dynamic. The character currently has 530 passives and
+  12 tattoos from the test session. 53 rows remain not implemented; next are the condition/skill rows,
+  Loyalty and random specials. The seven Forbidden ascendancy tattoos use a separate event-only flow.

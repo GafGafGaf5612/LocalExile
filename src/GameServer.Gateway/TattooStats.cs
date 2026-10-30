@@ -54,6 +54,12 @@ static class TattooStats
         ["Tattoo of the Rongokurai Makanga"] = [("chance_to_double_armour_effect_on_hit_%", 8)],
         ["Tattoo of the Tasalio Makanga"] = [("base_cooldown_speed_+%", 8)],
         ["Tattoo of the Tawhoa Makanga"] = [("flask_effect_+%", 8)],
+        // Counting tattoos: the marker stats are converted to the real pool/recovery stats by TattooCountingStats.
+        ["Journey Tattoo of the Body"] = [("maximum_life_per_honoured_heart_tattoo_allocated", 25)],
+        ["Journey Tattoo of the Mind"] = [("maximum_mana_per_honoured_mind_tattoo_allocated", 30)],
+        ["Journey Tattoo of the Soul"] = [("maximum_es_per_honoured_soul_tattoo_allocated", 40)],
+        ["Ancestral Tattoo of Bloodlines"] =
+            [("life_mana_es_recovery_rate_+%_per_different_tribe_tattoos_allocated", 2)],
     };
 
     public static IReadOnlyCollection<string> Names => Entries.Keys;

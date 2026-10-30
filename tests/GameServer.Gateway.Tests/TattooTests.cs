@@ -136,6 +136,48 @@ public class TattooTests
     }
 
     [Fact]
+    public void Counting_tattoos_aggregate_per_allocated_copy_and_tribe()
+    {
+        var tattoos = new Dictionary<ushort, string>
+        {
+            [1] = "Journey Tattoo of the Body",
+            [2] = "Journey Tattoo of the Body",
+            [3] = "Journey Tattoo of the Mind",
+            [4] = "Ancestral Tattoo of Bloodlines",
+            [5] = "Tattoo of the Ngamahu Firewalker",
+            [6] = "Tattoo of the Arohongui Moonwarden",
+        };
+        var stats = Program.TattooCountingStats(tattoos, tattoos.Keys.ToHashSet());
+        int Get(string name) => stats.GetValueOrDefault(Program.Stats.Key(name)!.Value);
+        Assert.Equal(50, Get("base_maximum_life"));
+        Assert.Equal(30, Get("base_maximum_mana"));
+        Assert.Equal(0, Get("base_maximum_energy_shield"));
+        Assert.Equal(4, Get("life_recovery_rate_+%"));
+        Assert.Equal(4, Get("mana_recovery_rate_+%"));
+        Assert.Equal(4, Get("energy_shield_recovery_rate_+%"));
+    }
+
+    [Fact]
+    public void Tribe_recovery_requires_the_ancestral_tattoo()
+    {
+        var tattoos = new Dictionary<ushort, string>
+        {
+            [1] = "Tattoo of the Ngamahu Firewalker",
+            [2] = "Tattoo of the Arohongui Moonwarden",
+        };
+        var stats = Program.TattooCountingStats(tattoos, tattoos.Keys.ToHashSet());
+        Assert.DoesNotContain(Program.Stats.Key("life_recovery_rate_+%")!.Value, stats.Keys);
+    }
+
+    [Fact]
+    public void Counting_tattoo_markers_are_mapped()
+    {
+        foreach (string name in new[] { "Journey Tattoo of the Body", "Journey Tattoo of the Mind",
+            "Journey Tattoo of the Soul", "Ancestral Tattoo of Bloodlines" })
+            Assert.NotNull(TattooStats.For(name));
+    }
+
+    [Fact]
     public void Life_regeneration_rate_increases_the_panel_rate()
     {
         int Get(string name) => name switch

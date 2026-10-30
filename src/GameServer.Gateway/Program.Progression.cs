@@ -329,6 +329,8 @@ partial class Program
                 foreach (var (key, value) in mastery.Stats)
                     passives[key] = ActorScale.Add(key, passives.GetValueOrDefault(key), value);
         }
+        foreach (var (key, value) in TattooCountingStats(tattoos, allocated))
+            passives[key] = ActorScale.Add(key, passives.GetValueOrDefault(key), value);
         foreach (var (key, value) in scalingStats)
             passives[key] = ActorScale.Add(key, passives.GetValueOrDefault(key), value);
         foreach (var (key, value) in copiedSmallStats)
