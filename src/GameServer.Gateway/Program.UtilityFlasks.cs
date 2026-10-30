@@ -95,10 +95,11 @@ partial class Program
         try
         {
             bool stop = false;
-            while (!conn.Closed && !stop)
+            while (!conn.Closed && !conn.RageRetired && !stop)
             {
                 await Task.Delay(RecoveryStepMs);
-                if (conn.Closed) break;
+                if (conn.Closed || conn.RageRetired) break;
+                if (conn.LeavingArea) continue;
                 try
                 {
                     bool dead = conn.PlayerLife == 0;

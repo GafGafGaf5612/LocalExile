@@ -210,6 +210,7 @@ partial class Program
             // Publish the current resource and its predictor together, from the same locked state.
             lock (conn.Monsters)
             {
+                if (conn.Closed || conn.LeavingArea || conn.RageRetired) return null;
                 var stats = CharacterPlayerStats(conn);
                 int Get(string name) => Stats.Key(name) is uint key ? stats.GetValueOrDefault(key) : 0;
                 if (conn.PlayerLife == 0) conn.EnergyShield.Empty();
@@ -397,19 +398,20 @@ partial class Program
     // Continuous player pool changes are handled by RunResourceRecovery instead.
     static async Task RunPlayerTick(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        if (conn.Closed || conn.RageRetired) return;
         double last = conn.Clock.Elapsed.TotalSeconds;
         int suppression = Suppression(conn).Chance;
         var criticalContext = CriticalContext(conn);
         var leechContext = LeechContext(conn);
         var ailments = conn.ElementalAilments.Snapshot(last);
-        while (!conn.Closed)
+        while (!conn.Closed && !conn.RageRetired)
         {
             await Task.Delay(PlayerTickMs);
-            if (conn.Closed) break;
+            if (conn.Closed || conn.RageRetired) break;
             double tickNow = conn.Clock.Elapsed.TotalSeconds;
             double seconds = tickNow - last;
             last = tickNow;
-            if (conn.Paused || seconds <= 0) continue;
+            if (conn.LeavingArea || conn.Paused || seconds <= 0) continue;
             if (LeechContext(conn) is var currentLeech && currentLeech != leechContext)
             {
                 leechContext = currentLeech;
@@ -494,10 +496,10 @@ partial class Program
         Dictionary<uint, int> recoveryStats = [];
         int RecoveryStat(string name) => Stats.Key(name) is uint key ? recoveryStats.GetValueOrDefault(key) : 0;
         var cachedRf = conn.RighteousFire;
-        while (!conn.Closed)
+        while (!conn.Closed && !conn.RageRetired)
         {
             await Task.Delay(RecoveryStepMs);
-            if (conn.Closed) break;
+            if (conn.Closed || conn.RageRetired) break;
             await EndGracePeriod(remote, stream, ciphers, conn);
             var rf = conn.RighteousFire;
             uint lifeBefore, lifeAfter, manaBefore, manaAfter, manaCap;
@@ -509,6 +511,14 @@ partial class Program
             {
                 // Commit earlier projectile hits before advancing leech/recovery to this resource boundary.
                 now = ProjectileWorldTime(conn);
+                if (conn.Closed || conn.RageRetired) break;
+                if (conn.LeavingArea)
+                {
+                    // A failed transfer can resume this connection. Do not catch up old cached rates through loading.
+                    last = now;
+                    ratesAt = double.NegativeInfinity;
+                    continue;
+                }
                 if (conn.Ruthless && now >= nextVitalsSave)
                 {
                     PersistRuthlessVitals(conn, bestEffort: true);

@@ -122,10 +122,10 @@ partial class Program
     static async Task RunFortification(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
         RestoreFortification(conn);
-        while (!conn.Closed)
+        while (!conn.Closed && !conn.RageRetired)
         {
             await Task.Delay(32);
-            if (conn.Closed) break;
+            if (conn.Closed || conn.RageRetired) break;
             try
             {
                 await SendFortification(remote, stream, ciphers, conn);
@@ -148,7 +148,7 @@ partial class Program
         {
             using (conn.Performance.Lock(conn.Monsters, "fortification"))
             {
-                if (conn.Closed || conn.LeavingArea || conn.Paused) return null;
+                if (conn.Closed || conn.LeavingArea || conn.RageRetired || conn.Paused) return null;
                 var session = FortificationOf(conn);
                 double now = conn.Clock.Elapsed.TotalSeconds;
                 using var snapshot = session.Capture(now);

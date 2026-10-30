@@ -5,9 +5,13 @@ partial class Program
 
     static (bool LowLife, bool Focused, int ExtraRolls) CriticalContext(ClientState conn)
     {
-        var player = CharacterPlayerStats(conn);
-        bool focused = Stats.Key("has_focus") is uint key && player.GetValueOrDefault(key) != 0;
-        return (CriticalOnLowLife(conn, player), focused, CriticalExtraRollsFor(conn, player));
+        lock (conn.Monsters)
+        {
+            if (conn.Closed || conn.LeavingArea || conn.RageRetired) return default;
+            var player = CharacterPlayerStats(conn);
+            bool focused = Stats.Key("has_focus") is uint key && player.GetValueOrDefault(key) != 0;
+            return (CriticalOnLowLife(conn, player), focused, CriticalExtraRollsFor(conn, player));
+        }
     }
 
     // Compute the native virtual_on_low_life input from current pools. Actions capture its luck contribution at use;

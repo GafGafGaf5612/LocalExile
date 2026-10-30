@@ -155,6 +155,7 @@ partial class Program
     // fall back to a current build rather than publishing the prepared list under the wrong owner state.
     internal static Task SendRage(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
+        if (conn.Closed || conn.LeavingArea || conn.RageRetired) return Task.CompletedTask;
         RagePrepared? prepared = null;
         // Neither the stats nor the skill list hold the combat lock for their whole calculation; only the read does.
         var stats = CharacterPlayerStats(conn);

@@ -80,11 +80,16 @@ partial class Program
     {
         var before = InactiveItems.GetValueOrDefault(CharacterName(conn));
         var (sources, attributes, inactive, worn) = EquipmentStatSources(conn, ItemsOf(conn).EquipmentSnapshot(), nodes, level);
-        InactiveItems[CharacterName(conn)] = inactive;
-        if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
-            Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
-                string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
-                    $"{w.Id} {ItemsFor(conn).ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+        lock (conn.Monsters)
+            if (!conn.Closed && !conn.LeavingArea && !conn.RageRetired)
+            {
+                // A queued old-area calculation must not replace the new connection's qualification snapshot.
+                InactiveItems[CharacterName(conn)] = inactive;
+                if (inactive.Count > 0 && (before is null || !before.SetEquals(inactive)))
+                    Console.WriteLine($"[gateway] {CharacterName(conn)}: inactive items (requirements not met): " +
+                        string.Join(", ", worn.Where(w => inactive.Contains(w.Id)).Select(w =>
+                            $"{w.Id} {ItemsFor(conn).ByHash(w.Item.TypeHash)?.Name} (str {w.Strength}, dex {w.Dexterity}, int {w.Intelligence}, level {w.Level})")));
+            }
         return (WithAntiquarian(conn, WithFortification(conn, WithCharges(conn, sources))), attributes);
     }
 
