@@ -158,7 +158,6 @@ sealed partial class Program
     internal const double PickupReach = 20 + 2;
     // How close (cells, centre to centre) gold on the ground is picked up by itself (RunPlayerTick): our own number, a
     // little inside a click's PickupReach.
-    internal const double GoldAutoLootRange = 15;
     // A monster's second skill, after its attack (SkillCatalog.FirstSkillId): a boss's stage skill (BossFights). 0x0103
     // is free in 3.29.3b (SkillCatalog.SkillIds).
     internal const ushort StageSkillId = 0x0103;
