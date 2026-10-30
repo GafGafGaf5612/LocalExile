@@ -16,10 +16,10 @@ Items keep the Roadmap's priority groups, and are in rough priority order within
   save/load, global mods, refund guard); unique jewels use the same path but have no item source yet.
   See [unique-jewels.md](unique-jewels.md) for the 185-entry catalogue and the phased unique-jewel plan.
 - **Next:** tattoos: all 100 items, protocol, target/limit rules and interactions are documented in
-  [tattoos.md](../docs/game/tattoos.md). The client flow and 19/33 plain stats are client-verified: C->S `0x77`,
-  `0x33`'s fifth list, item consumption, relog and Orb of Scouring removal. Next: client-check the 13 server-mapped
-  plain stats and the four plain Makanga; the Makanga adjacency gate is implemented. Then the 35 condition/skill
-  rows, counting, Loyalty and random specials. The seven Forbidden ascendancy tattoos use a separate client flow.
+  [tattoos.md](../docs/game/tattoos.md). The client flow and 32/33 plain stats are client-verified: C->S `0x77`,
+  `0x33`'s fifth list, item consumption, relog and Orb of Scouring removal. Next: live-check the Honoured Makanga
+  and four plain Makanga adjacency gates, then the 35 condition/skill rows, counting, Loyalty and random specials.
+  The seven Forbidden ascendancy tattoos use a separate client flow.
 - **Accuracy Mastery:** all five effects currently offered by the target client's Accuracy group are modelled
   for the existing default-attack accuracy roll ([Status](../status/skills-and-combat.md),
   [11](../docs/protocol/11-skills.md) §4–5): Accuracy = Intelligence, +3 per Dexterity instead of +2, +500 / -2 per
