@@ -65,7 +65,7 @@ partial class Program
                     _ = ConfirmAndLaunchOrdinaryRanged(remote, stream, ciphers, conn,
                         InstanceProtocol.ActionStarted(PlayerId, shot.X, shot.Y, use.X, use.Y, use.SkillId, use.Slot, use.Flags),
                         $"0x01ab ranged attack ({ordinaryProjectile}) at ({use.X}, {use.Y}) from ({shot.X}, {shot.Y}) (t={at:0.000})",
-                        (use.X, use.Y), duration, shot.Action, projectileEpoch, ordinaryProjectile, use.Slot);
+                        (use.X, use.Y), duration, shot.Action, projectileEpoch, ordinaryProjectile, use.Slot, shot.CriticalRoll);
                     continue;
                 }
                 // An attack gem (Holy Strike, Ground Slam …) used on the ground with "Always Attack Without Moving" off: a

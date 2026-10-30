@@ -87,6 +87,15 @@ static class CurrencyEffects
     public const string ArmourersScrap = "Metadata/Items/Currency/CurrencyArmourQuality";
     public const int MaximumQuality = 20;
 
+    public const string SacredOrb = "Metadata/Items/Currency/CurrencyRerollDefences";
+
+    /// <summary>Reroll only the shared base-defence roll of uncorrupted, unmirrored armour with a variable native range.
+    /// A successful roll can repeat the old value; all other item state stays intact.</summary>
+    public static Item? Sacred(Item item, ItemCatalog.BaseDefences? defences, Random random) =>
+        !item.Components.Contains("Armour") || !item.Components.Contains("Mods") || item.Corrupted || item.Mirrored
+            || defences is not { HasVariableRange: true } ? null
+            : item with { DefenceBaseRoll = (byte)random.Next(Item.MaximumDefenceBaseRoll + 1) };
+
     /// <summary>Armourer's Scrap: +1% quality on an armour piece (any rarity), up to 20%; the client derives the higher
     /// armour / evasion / energy shield from the quality. Refused for other items or at 20%.</summary>
     public static Item? ArmourerScrap(Item item) =>

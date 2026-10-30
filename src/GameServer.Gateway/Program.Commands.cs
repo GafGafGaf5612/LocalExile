@@ -72,8 +72,14 @@ partial class Program
             bool off = args[1].Equals("off", StringComparison.OrdinalIgnoreCase);
             int value = off ? 0 : int.Parse(args[1]);
             bool rawAttribute = AttributeModifiers.IsInput(Stats.Name(stat));
-            bool rebuildMana = stat == Stats.Key(StrengthMana.PerFourStrength)
-                || stat == Stats.Key(PowerOfPurpose.RawFlag);
+            string sourceName = Stats.Name(stat) ?? args[0];
+            bool rebuildLife = LifeManaPoolSources.IsLifeInput(sourceName) || InherentAttributeBonuses.IsLifeInput(sourceName);
+            bool rebuildMana = LifeManaPoolSources.IsManaInput(sourceName) || stat == Stats.Key(StrengthMana.PerFourStrength)
+                || InherentAttributeBonuses.IsManaInput(sourceName) || stat == Stats.Key(PowerOfPurpose.RawFlag);
+            bool rebuildDefences = AttributeDefenceSources.IsInput(sourceName) || InherentAttributeBonuses.IsInput(sourceName);
+            bool rebuildEnergyShield = sourceName == AttributeDefenceSources.EnergyShieldPerTenStrength
+                || InherentAttributeBonuses.IsEnergyShieldInput(sourceName);
+            bool lifeClamped = false, manaClamped = false;
             lock (conn.Monsters)
             {
                 if (off) conn.PlayerStats.Remove(stat);
@@ -81,8 +87,9 @@ partial class Program
             }
             // Keep each supported raw consumer and source restoration when another mechanic changes this gate.
             if (AttackBaseCriticalStrike.IsInput(Stats.Name(stat) ?? args[0])
+                || AccuracyRating.IsInput(Stats.Name(stat) ?? args[0])
                 || ResistanceOvercap.IsInput(Stats.Name(stat) ?? args[0])
-                || rebuildMana || rawAttribute
+                || rebuildLife || rebuildMana || rebuildDefences || rawAttribute
                 || Stats.Name(stat) == PlayerHitMitigation.ArmourAppliesToChaos)
             {
                 while (true)
@@ -95,12 +102,14 @@ partial class Program
                         // A concurrent level/aura rebuild wins; retry against its current inputs and level.
                         if (!ReferenceEquals(conn.Pools, before)) continue;
                         conn.Pools = pools;
-                        if (rawAttribute)
+                        if (rawAttribute || rebuildLife || rebuildMana)
                         {
+                            uint lifeBefore = conn.PlayerLife, manaBefore = conn.PlayerMana;
                             conn.PlayerLife = Math.Min(conn.PlayerLife, conn.PlayerMaxLife);
                             conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
+                            lifeClamped = conn.PlayerLife != lifeBefore;
+                            manaClamped = conn.PlayerMana != manaBefore;
                         }
-                        else if (rebuildMana) conn.PlayerMana = Math.Min(conn.PlayerMana, (uint)UnreservedMana(conn));
                         break;
                     }
                 }
@@ -132,8 +141,16 @@ partial class Program
                     () => InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife), "raw attribute current life");
                 await SendPlayerMana(remote, stream, ciphers, conn, "raw attribute mana reservation");
             }
-            else if (rebuildMana)
+            if (!rawAttribute && (rebuildLife || lifeClamped))
+                await Send(remote, stream, ciphers, [], "0x01b1 life after raw source rebuild", atGate: () =>
+                {
+                    lock (conn.Monsters) return InstanceProtocol.LifeUpdate(PlayerId, conn.PlayerLife);
+                });
+            // Reservation can change with maximum mana even when recovery leaves current mana unchanged.
+            if (!rawAttribute && (rebuildMana || manaClamped))
                 await SendPlayerMana(remote, stream, ciphers, conn, "0x01b1 mana after raw source rebuild");
+            if (rebuildEnergyShield)
+                await SendPlayerEnergyShield(remote, stream, ciphers, conn);
         })
         .Add("stat", "/stat <stat name or client key> (dev: current character stat value)", async args =>
         {
@@ -780,6 +797,19 @@ partial class Program
                 $"{ItemsFor(conn).ByHash(held.Item.TypeHash)?.Name} ilvl {held.Item.ItemLevel}, {held.Item.Rarity}" +
                 $"{(held.Item.Identified ? "" : ", unidentified")}: " +
                 (held.Item.Mods.Count == 0 ? "no mods" : string.Join("; ", held.Item.Mods.Select(ItemsFor(conn).Mods.Describe))));
+        })
+        .Add("base_defence", "/base_defence [0 to 31] (show or set the held armour's shared defence base roll)", async args =>
+        {
+            if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..])
+            { await conn.Commands!.Reply("Hold an armour item first"); return; }
+            if (!held.Item.Components.Contains("Armour"))
+            { await conn.Commands!.Reply("The held item has no Armour component"); return; }
+            if (args.Length == 0)
+            { await conn.Commands!.Reply($"Defence base roll: {held.Item.DefenceBaseRoll} (ordinary range 0 to 31)"); return; }
+            if (args.Length != 1 || !byte.TryParse(args[0], out byte roll) || roll > Item.MaximumDefenceBaseRoll)
+                throw new ArgumentException("defence base roll 0 to 31");
+            await ChangeHeldItem(remote, stream, ciphers, conn, i => i with { DefenceBaseRoll = roll },
+                $"defence base roll {roll} / {Item.MaximumDefenceBaseRoll}", "Armour");
         })
         .Add("rarity", "/rarity <normal|magic|rare|unique> [unid] (the held item)", async args =>
         {
