@@ -623,7 +623,16 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   `projectile_uses_contact_position`, `use_scaled_contact_offset`, the 3-cell spread and 50-cell minimum range;
   not the effect's cast-time or mana entries), because the client derives none and without the face-away flag the
   Spitter faced the player like a melee swing instead of turning its back to spit, as it does on the live game. The
-  hit lands at the later of the shot's simulated contact and the connection clock: the fortification and recent-hit
+  object itself plays nothing: the client's Projectile component is inert for a server object, and unlike the wand
+  bolt's .ao (`default_animation = projectile_01`) the mortar's declares no default, so it was invisible until the
+  Gateway started its rig's flight clip (live 2026-10-29). `data/projectile-clips.json`
+  (`scripts/re/projectile_clips.py`, every Projectiles row's first .ao → its rig's animation list) gives each
+  projectile type its flight clip (LoopAnimationIds: the mortar's `proj`, index 1, 1 s once, played at spawn by 0x1b2
+  at the speed that stretches it over the flight, as `mortar_projectile_scale_animation_speed_instead_of_projectile_speed`
+  says) and its impact clip (ImpactAnimationIds: `end`, index 0, 666 ms, played where it lands, the object staying
+  that long), and the .ao's default animation when it has one, in which case no flight clip is sent
+  (`MonsterProjectilePresentation`). The wand entry agrees with the constants the ordinary wand attack already used.
+  The hit lands at the later of the shot's simulated contact and the connection clock: the fortification and recent-hit
   trackers refuse an earlier time than their last read, and the pump once closed a connection over it (live
   2026-10-29). Weapon projectile skills (`monster_projectile_weapon`, SkillID 0) take their projectile from the
   monster's weapon art, not resolved yet.

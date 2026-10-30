@@ -647,7 +647,10 @@ and can require explicit recipes.
   Monster projectiles: a mortar skill's shot (Sand Spitter, `monster_mortar_attack` via GrantedEffects SkillID →
   MonsterMortar → Projectiles) is a server object on the same runtime, lobbed at the player's cell at the attack's
   halfway point, team 2, and its landing splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells) runs the monster
-  contact pipeline (`HostileProjectileOffense`, `Program.ProjectileHostile.cs`). Weapon-projectile monsters
+  contact pipeline (`HostileProjectileOffense`, `Program.ProjectileHostile.cs`). The object plays its rig's flight
+  clip from spawn and its impact clip where it lands (`data/projectile-clips.json`, `scripts/re/projectile_clips.py`:
+  every Projectiles row's clip indexes and lengths, and its .ao default animation), without which a mortar is
+  invisible (its .ao declares no default animation, the wand bolt's does). Weapon-projectile monsters
   (`monster_projectile_weapon`, SkillID 0) still hit instantly with no shot; see the roadmap.
   Wand main-hand variation follows each class ACT pool and the native input-seeded selector; sixteen actual ground
   inputs covered all four Witch clips with matching selection and an object input also matched (historical LocalExile

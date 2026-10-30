@@ -133,9 +133,10 @@ public class OrdinaryWandAttackTests
         try
         {
             // Dispatch only schedules the release and echoes the action; its deadline covers a cold catalog load when this
-            // test runs first. Each later stage has its own deadline, and completion is witnessed by writes, not polling.
+            // test runs first, which the full parallel suite has stretched past ten seconds. Each later stage has its own
+            // deadline, and completion is witnessed by writes, not polling.
             await Program.OnClientMessages("wand-test", wire.Stream, wire.Ciphers,
-                [(InstanceProtocol.UseSkillAtLocationId, packet)], [], conn).WaitAsync(TimeSpan.FromSeconds(10));
+                [(InstanceProtocol.UseSkillAtLocationId, packet)], [], conn).WaitAsync(TimeSpan.FromSeconds(20));
             Assert.Equal((10, 10), conn.Walk.Destination);
             var launch = await created.Task.WaitAsync(TimeSpan.FromSeconds(5));
             uint finalLife = await damaged.Task.WaitAsync(TimeSpan.FromSeconds(5));

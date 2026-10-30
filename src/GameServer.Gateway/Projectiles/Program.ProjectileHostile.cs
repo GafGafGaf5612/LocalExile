@@ -5,7 +5,11 @@ using GameServer.Core.Protocol.Login;
 /// <summary>A monster's projectile attack in flight: the monster that released it, its attack and the AI action it belongs
 /// to. The player is its only target (<c>Program.HostileHit</c>); the monster's own damage pipeline commits the hit when
 /// the flight reaches the player, or, for a mortar, when it lands on them.</summary>
-sealed record HostileProjectileOffense(uint MonsterId, SpawnedMonster Monster, MonsterAttack Attack, int Action, string Label);
+sealed record HostileProjectileOffense(uint MonsterId, SpawnedMonster Monster, MonsterAttack Attack, int Action, string Label)
+{
+    /// <summary>The rig clips the object needs to be seen (Program.MonsterProjectilePresentation).</summary>
+    public Program.ProjectilePresentation? Presentation { get; init; }
+}
 
 partial class Program
 {
@@ -44,8 +48,33 @@ partial class Program
         var owner = session.ActorKey(id, m);
         // A target closer than the muzzle must not end up behind the released projectile.
         var origin = from + (aim - from).Unit * Math.Min(1.5, distance / 2);
+        var presentation = MonsterProjectilePresentation(SkillsFor(conn).Clips(projectile.Metadata), (aim - origin).Length / speed);
         return new ProjectileUse(profile, owner, owner, 2, origin, aim)
-            { Payload = new HostileProjectileOffense(id, m, a, action, $"{m.Label} {projectile.Metadata}") };
+            { Payload = new HostileProjectileOffense(id, m, a, action, $"{m.Label} {projectile.Metadata}") { Presentation = presentation } };
+    }
+
+    /// <summary>A server-created projectile object plays nothing by itself. Start the rig's flight clip at spawn unless the
+    /// .ao plays it as its default anyway (the wand bolt), stretching a once-only clip over the flight (the mortar's 1 s
+    /// <c>proj</c> over its arc: <c>mortar_projectile_scale_animation_speed_instead_of_projectile_speed</c>), and play
+    /// the impact clip where it stops, keeping the object for the clip's length. Null without clip data: the object
+    /// then flies as its .ao presents it by itself.</summary>
+    internal static ProjectilePresentation? MonsterProjectilePresentation(SkillCatalog.ProjectileClips? clips, double flightSeconds)
+    {
+        if (clips is null || clips is { Flight: null, Impact: null }) return null;
+        var presentation = new ProjectilePresentation();
+        if (clips.Flight is { } flight && clips.DefaultAnimation != flight.Name)
+            presentation = presentation with
+            {
+                FlightClip = flight.Index,
+                FlightClipSpeed = flight.Once && flightSeconds > 0 ? (float)Math.Clamp(flight.Ms / 1000.0 / flightSeconds, 0.1, 10) : 1,
+            };
+        if (clips.Impact is { } impact)
+            presentation = presentation with
+            {
+                ImpactClip = impact.Index,
+                ImpactLifetime = ProjectileRuntime.Time(Math.Max(0.1, impact.Ms / 1000.0)),
+            };
+        return presentation;
     }
 
     // The release at the attack's contact: the shot leaves toward where the player stands now and the flight then owns

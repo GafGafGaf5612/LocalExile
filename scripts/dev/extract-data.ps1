@@ -41,6 +41,11 @@ $manifest = @(
     @{ Name = 'monster-takehit'; Outputs = @('data\monster-takehit.json'); Runner = 'python'
        Args = @('scripts/re/monster_takehit.py'); Version = 3; Needs = @('tables')
        UsedBy = 'monster hit reaction: each variety''s TakeHit clip indexes in its rig and their lengths (11-skills.md, 0x1b2)' }
+    # projectile-clips: a server-created projectile object plays nothing by itself; the Gateway starts its rig's flight
+    # clip at spawn and its impact clip where it stops (the Sand Spitter mortar is invisible otherwise).
+    @{ Name = 'projectile-clips'; Outputs = @('data\projectile-clips.json'); Runner = 'python'
+       Args = @('scripts/re/projectile_clips.py'); Version = 1; Needs = @('tables')
+       UsedBy = 'server-created projectile objects (monster mortars): each Projectiles row''s flight and impact clip indexes and lengths in its rig, and its .ao default animation (11-skills.md)' }
     @{ Name = 'passive-graphs'; Outputs = @('data\passive-skill-graphs.json', 'data\phrecia-passive-skillgraph.psg'); Runner = 'dotnet'
        Args = @('run', '--project', 'scripts/re/passive-graphs', '--', 'Client/Content.ggpk', 'data/passive-skill-graphs.json'); Version = 4; Needs = @('tables')
        UsedBy = 'ordinary/ascendancy server membership and connectivity; derived Phrecia client artifact remains uninstalled' }

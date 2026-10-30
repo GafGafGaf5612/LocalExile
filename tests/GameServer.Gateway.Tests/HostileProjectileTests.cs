@@ -1,3 +1,4 @@
+using GameServer.Core.Projectiles;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
 using GameServer.Core.World;
@@ -56,6 +57,44 @@ public class HostileProjectileTests
         Assert.True(IndexOf(arrival, ObjectHeader(InstanceProtocol.ActionHitId, MonsterId)) >= 0, "the monster's 0x1af");
         Assert.True(IndexOf(arrival, InstanceProtocol.LifeUpdate(Program.PlayerId, f.Conn.PlayerLife)) >= 0);
         Assert.Equal(100u, m.Life);
+        // The object plays nothing by itself: its rig's flight clip started at spawn and its impact clip plays where it
+        // stopped (the mortar's "end" is clip 0, the Sand Spitter bolt's "impact" clip 1), then the object goes.
+        Assert.True(IndexOf(flight, ObjectHeader(InstanceProtocol.AnimationUpdateId, objectId)) >= 0, "a flight clip at spawn");
+        Assert.True(IndexOf(arrival, InstanceProtocol.AnimationUpdate(objectId, 0, mortar ? 0u : 1u, 1)) >= 0, "the impact clip");
+        Assert.Equal(-1, IndexOf(arrival, InstanceProtocol.RemoveObject(objectId)));
+        f.Advance(2.5);
+        Assert.True(IndexOf(await f.Read(), InstanceProtocol.RemoveObject(objectId)) >= 0, "removed after the impact clip");
+    }
+
+    // The clips come from the rig lists scripts/re/projectile_clips.py extracted (data/projectile-clips.json). The wand's
+    // entry must agree with the constants the ordinary wand attack has used all along.
+    [Fact]
+    public void The_mortar_and_wand_clips_come_from_the_extracted_rig_lists()
+    {
+        TestSaves.Ensure();
+        var catalog = Program.SkillsFor(new ClientState(new AreaLayout(1, "test", 300, 300, 10, 10, null, []), 1, 1));
+        var mortar = catalog.Clips(Mortar.Metadata);
+        Assert.NotNull(mortar);
+        Assert.Null(mortar!.DefaultAnimation);
+        Assert.Equal(("proj", 1u, 1000, true), (mortar.Flight!.Name, mortar.Flight.Index, mortar.Flight.Ms, mortar.Flight.Once));
+        Assert.Equal(("end", 0u, 666), (mortar.Impact!.Name, mortar.Impact.Index, mortar.Impact.Ms));
+        var wand = catalog.Clips(OrdinaryRangedAttack.Wand);
+        Assert.NotNull(wand);
+        Assert.Equal("projectile_01", wand!.DefaultAnimation);
+        Assert.Equal((OrdinaryRangedAttack.WandImpactAnimation, (int)(OrdinaryRangedAttack.WandImpactSeconds * 1000)), (wand.Impact!.Index, wand.Impact.Ms));
+
+        // A once-only flight clip is stretched over the flight; a default-animation flight needs no clip of its own.
+        var presentation = Program.MonsterProjectilePresentation(mortar, flightSeconds: 0.25);
+        Assert.NotNull(presentation);
+        Assert.Equal(1u, presentation!.FlightClip);
+        Assert.Equal(4.0, presentation.FlightClipSpeed, 3);
+        Assert.Equal(0u, presentation.ImpactClip);
+        Assert.Equal(ProjectileRuntime.Time(0.666), presentation.ImpactLifetime);
+        var bolt = Program.MonsterProjectilePresentation(wand, 0.5);
+        Assert.NotNull(bolt);
+        Assert.Null(bolt!.FlightClip);
+        Assert.Equal(0u, bolt.ImpactClip);
+        Assert.Null(Program.MonsterProjectilePresentation(null, 0.5));
     }
 
     [Fact]

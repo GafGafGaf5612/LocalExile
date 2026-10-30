@@ -496,6 +496,38 @@ sealed class SkillCatalog(string folder = "data", bool ruthless = false)
         return result;
     });
 
+    /// <summary>One clip of a projectile type's rig: its name, index in the rig's animation list (what 0x1b2 plays), length
+    /// and whether it plays once (data/projectile-clips.json, scripts/re/projectile_clips.py).</summary>
+    public sealed record ProjectileClip(string Name, uint Index, int Ms, bool Once);
+
+    /// <summary>What the client needs to show a server-created object of a projectile type: the .ao's default animation,
+    /// if it declares one (the wand bolt's <c>projectile_01</c>: it flies by itself), the flight clip (Projectiles.dat
+    /// LoopAnimationIds, the Sand Spitter mortar's <c>proj</c>: the object is invisible until it plays) and the impact
+    /// clip (ImpactAnimationIds, <c>end</c>).</summary>
+    public sealed record ProjectileClips(string? DefaultAnimation, ProjectileClip? Flight, ProjectileClip? Impact);
+
+    public ProjectileClips? Clips(string projectileId) =>
+        _projectileClips.Value.TryGetValue(projectileId, out var clips) ? clips : null;
+
+    private readonly Lazy<Dictionary<string, ProjectileClips>> _projectileClips = new(() =>
+    {
+        string path = Path.Combine(folder, "projectile-clips.json");
+        var result = new Dictionary<string, ProjectileClips>();
+        if (!File.Exists(path)) return result;
+        using var d = JsonDocument.Parse(File.ReadAllBytes(path));
+        foreach (var entry in d.RootElement.EnumerateObject())
+        {
+            ProjectileClip? Clip(string key) =>
+                entry.Value.TryGetProperty(key, out var c) && c.ValueKind == JsonValueKind.Object
+                    && c.TryGetProperty("name", out var n) && c.TryGetProperty("index", out var i) && c.TryGetProperty("ms", out var ms)
+                    ? new(n.GetString() ?? "", i.GetUInt32(), ms.GetInt32(), c.TryGetProperty("once", out var once) && once.ValueKind == JsonValueKind.True)
+                    : null;
+            string? fallback = entry.Value.TryGetProperty("default", out var def) && def.ValueKind == JsonValueKind.String ? def.GetString() : null;
+            result[entry.Name] = new(fallback, Clip("flight"), Clip("impact"));
+        }
+        return result;
+    });
+
     /// <summary>A monster skill's projectile (Projectiles.dat Id, speed in world units per second, whether it is lobbed at
     /// the aim, collision radius in cells). Speed is the row's ProjectileSpeed; <c>Lobbed</c> flights land where they were
     /// aimed and damage an area there.</summary>

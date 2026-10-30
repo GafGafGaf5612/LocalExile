@@ -298,7 +298,7 @@ partial class Program
                 });
                 Packet(() => visual.Created ? InstanceProtocol.EnterWakeZone(id) : null);
                 if (presentation.FlightClip is { } clip)
-                    Packet(() => visual.Created && !visual.Ended ? InstanceProtocol.AnimationUpdate(id, 0, clip, 1) : null);
+                    Packet(() => visual.Created && !visual.Ended ? InstanceProtocol.AnimationUpdate(id, 0, clip, presentation.FlightClipSpeed) : null);
                 UpdateForm(p, visual);
                 Glide(p, visual);
             }
@@ -311,8 +311,9 @@ partial class Program
             else if (value.Kind == ProjectileEventKind.End && visuals.TryGetValue(p.Id, out var end) && !end.Ended)
             {
                 end.Ended = true;
+                // A lobbed shot's landing is its impact too (the mortar's "end" clip plays where it comes down).
                 end.StaysAfterEnd = (presentation.ImpactClip is not null || presentation.StayOnImpact)
-                    && value.Reason is ProjectileEndReason.Enemy or ProjectileEndReason.Terrain;
+                    && value.Reason is ProjectileEndReason.Enemy or ProjectileEndReason.Terrain or ProjectileEndReason.Landing;
                 var height = end.Arc is { } arc ? arc.Height(arc.Fraction(p.Distance)) : end.Height;
                 if (end.StaysAfterEnd)
                 {

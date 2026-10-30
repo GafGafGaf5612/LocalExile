@@ -27,6 +27,9 @@ partial class Program
     {
         public string? FlightVisual { get; init; }
         public uint? FlightClip { get; init; }
+        /// <summary>The flight clip's playback speed: a once-only flight clip is stretched over the flight
+        /// (the mortar's 1 s <c>proj</c> over its 0.3 s arc, as the client scales its own mortars).</summary>
+        public float FlightClipSpeed { get; init; } = 1;
         public uint? SecondFormClip { get; init; }
         public Func<ProjectileEvent, string?>? EventEffect { get; init; }
         public long EffectLifetime { get; init; } = 60000;
@@ -91,6 +94,7 @@ partial class Program
 
     static ProjectilePresentation PresentationFor(ProjectileEntity p) =>
         (p.Use.Payload as ProjectileOffense)?.Presentation
+        ?? (p.Use.Payload as HostileProjectileOffense)?.Presentation
         ?? (p.Use.Payload is ProjectileOffense shot && Skills.EffectId(shot.Effect) is { } effect
             ? ProjectileDefinition(effect)?.Presentation?.Invoke(p) : null)
         ?? new();

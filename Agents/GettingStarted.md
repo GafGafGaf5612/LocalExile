@@ -195,6 +195,7 @@ A second run prints `game data up to date`.
 | `data\room-points.json` | unique bosses |
 | `data\hideouts.json` | hideouts |
 | `data\animation-contacts.json` | each class's spell timing (the Witch's is used) |
+| `data\projectile-clips.json` | the flight and impact clips of projectile objects (monster mortars are invisible without them) |
 
 How it decides: the manifest at the top of `scripts\dev\extract-data.ps1` gives each file its command and a version
 number. The script runs every entry whose file is missing or whose stamp (`data\extract-stamps.json`) has another
