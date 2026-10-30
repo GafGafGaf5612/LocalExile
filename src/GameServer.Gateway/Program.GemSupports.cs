@@ -33,11 +33,15 @@ partial class Program
         if (requirements is null && SkillsFor(conn).VaalBudget(selected.Effect, ItemsFor(conn).GemLevel(selected.Place.Gem)) is not null)
             requirements = CurrentGemRequirements(conn, equipment);
         var host = equipment.Single(e => e.Item.Id == selected.Place.ItemId).Item.Item;
+        var local = ItemModStats.Local(host, ItemsFor(conn).Mods);
+        (int Level, int Quality) LocalBonus(int socket, Item gem) =>
+            SocketedGemBonuses.For(host, socket, gem, ItemsFor(conn), SkillsFor(conn), local, conn.Pools.Level);
         int group = GemSupports.LinkGroup(host, selected.Place.Socket);
         int Quality(int socket, Item gem)
         {
             int colour = ItemsFor(conn).ByHash(gem.TypeHash) is { } b ? ItemsFor(conn).Gem(b)?.Colour ?? 0 : 0;
-            return gem.Quality + (colour is >= 1 and <= 3 && (int)host.Sockets[socket].Colour == colour ? 10 : 0);
+            return gem.Quality + LocalBonus(socket, gem).Quality
+                + (colour is >= 1 and <= 3 && (int)host.Sockets[socket].Colour == colour ? 10 : 0);
         }
         var candidates = new List<GemSupports.Candidate>();
         foreach (var p in places.Where(p => p.ItemId == selected.Place.ItemId
@@ -46,13 +50,16 @@ partial class Program
             {
                 var variant = gem.Variant(p.Gem.GemVariant);
                 foreach (int effect in new[] { variant.Effect, variant.Effect2 }.Where(e => e >= 0))
-                    candidates.Add(new(effect, EffectiveGemLevel(conn, p.Gem, 0), Quality(p.Socket, p.Gem), p.Socket));
+                    candidates.Add(new(effect, EffectiveGemLevel(conn, p.Gem, LocalBonus(p.Socket, p.Gem).Level),
+                        Quality(p.Socket, p.Gem), p.Socket));
             }
+        candidates.AddRange(Supports.ItemCandidates(host, ItemsFor(conn).Mods));
         var weapon = equipment.Where(e => e.Row == PlayerInventories.Weapon1).Select(e => e.Item).FirstOrDefault();
         int? weaponClass = weapon is null ? null : ItemsFor(conn).ByHash(weapon.Item.TypeHash)?.ClassRow;
         var supports = Supports.Resolve(selected.Effect, candidates, SkillsFor(conn), weaponClass);
         int Value(string stat) => Stats.Key(stat) is uint k ? supports.Sum(s => s.Stats.Where(v => v.Key == k).Sum(v => v.Value)) : 0;
-        int level = EffectiveGemLevel(conn, selected.Place.Gem, Value("supported_active_skill_gem_level_+"));
+        int level = EffectiveGemLevel(conn, selected.Place.Gem, Value("supported_active_skill_gem_level_+")
+            + LocalBonus(selected.Place.Socket, selected.Place.Gem).Level);
         int quality = Quality(selected.Place.Socket, selected.Place.Gem) + Value("supported_active_skill_gem_quality_%")
             + GemQualityBonus(conn, selected.Place.Gem);
         var own = SkillsFor(conn).EffectStats(selected.Effect, level, quality).ToDictionary(kv => kv.Item1, kv => kv.Item2);
