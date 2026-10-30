@@ -83,6 +83,7 @@ public static class InstanceProtocol
         InstanceSocial.PartyAcceptId => InstanceSocial.PartyAcceptLength,
         InstanceSocial.PartyLeaveId => InstanceSocial.PartyLeaveLength,
         InstanceChat.JoinChannelId => InstanceChat.JoinChannelLength,
+        InstanceWaypoints.VisitDelveHubId => InstanceWaypoints.VisitDelveHubLength,
         InstanceTransfer.UseSkillOnObjectId => 12, InstanceTransfer.ChooseInstanceId => 3, ResurrectId => 3, InstanceItems.DropItemId => 2,
         InstanceItems.PickUpItemId => 13, InstanceItems.PlaceItemId => 18,
         InstanceItems.InventoryRequestId => InstanceItems.InventoryRequestLength, InstanceItems.UseItemId => InstanceItems.UseItemLength, InstanceItems.UseItemOnId => InstanceItems.UseItemOnLength, InstanceItems.UseFlaskId => InstanceItems.UseFlaskLength, InstanceItems.UseItemTypeOnId => InstanceItems.UseItemTypeOnLength,
