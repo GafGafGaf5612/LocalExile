@@ -2,6 +2,7 @@ using GameServer.Storage;
 
 namespace GameServer.Gateway.Tests;
 
+[Collection(TestSaves.FailWriteCollection)]
 public class DelveEquipmentTests
 {
     [Fact]
