@@ -534,8 +534,8 @@ This applies to login, waypoint travel and returns from other areas; moving the 
     Without it, the client read the next bytes as the index and crashed at `0x1415d7671` (live);
   - MinimapIcon, then StateMachine with the shared states `sector` and `mtx_variation`, each sent with flag 0x02.
 
-  A click (C→S 0x24) opens the chart, S→C 0x7b kind 0x1c with 1. The Crawler shows live; its native cell and facing in
-  Delve_Hub are not known yet.
+  A click (C→S 0x24) opens the chart, S→C 0x7b kind 0x1c with 1. The Crawler is created on every Delve_Hub entry at
+  (408, 310), facing 90°, on the rails by the mine entrance (placed live, 2026-10-30).
 - **Placing stationary objects (dev).** `/stash_place`, `/guild_stash_place` and `/delve_crawler` `<x> <y> <degrees>`
   move an object with S→C 0x1b7 (terrain height 0x7fffffff) and turn it with the Positioned rotation update, as the
   hideout editor does. The path blocker moves too.

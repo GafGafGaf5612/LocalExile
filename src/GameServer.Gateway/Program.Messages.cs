@@ -595,6 +595,7 @@ partial class Program
                     await PlaceStartWeapon(remote, stream, ciphers, conn);
                     await SpawnTownNpcs(remote, stream, ciphers, conn);
                     await SpawnTownStash(remote, stream, ciphers, conn);
+                    await SpawnDelveCrawler(remote, stream, ciphers, conn);
                     await SpawnQuestRoomObjects(remote, stream, ciphers, conn);
                     await SpawnOpeningTutorial(remote, stream, ciphers, conn);
                     await SpawnGlyphQuest(remote, stream, ciphers, conn);

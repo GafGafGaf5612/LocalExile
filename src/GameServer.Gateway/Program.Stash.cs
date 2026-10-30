@@ -38,8 +38,9 @@ partial class Program
         // Hideouts, Lioneye's Watch and the Mine Encampment also get a guild stash.
         if (HideoutCatalog.ByArea(conn.Layout.Hash) is null
             && conn.Layout.Hash is not (StashCatalog.DelveHub or AreaLayouts.LioneyesWatch)) return;
-        var (gx, gy) = scene?.Guild ?? conn.Layout.Near((at.X, at.Y));
-        float guildRotation = SavedHideoutPlacements(conn)?.GetValueOrDefault("guild-stash")?.Rotation ?? at.Rotation;
+        var townGuild = scene is null ? StashCatalog.GuildIn(conn.Layout.Hash) : null;
+        var (gx, gy) = scene?.Guild ?? (townGuild is { } tg ? (tg.X, tg.Y) : conn.Layout.Near((at.X, at.Y)));
+        float guildRotation = SavedHideoutPlacements(conn)?.GetValueOrDefault("guild-stash")?.Rotation ?? townGuild?.Rotation ?? at.Rotation;
         if (!conn.Ssf)
         {
             uint guild = conn.NextObjectId++;

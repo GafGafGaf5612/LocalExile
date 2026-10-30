@@ -4,8 +4,10 @@ using GameServer.Core.Protocol.Login;
 
 partial class Program
 {
-    /// <summary>Where the Crawler stands in the Azurite Mine Encampment: by the mine entrance (426, 311), our own cell.</summary>
-    static readonly (int X, int Y) DelveCrawlerAt = (416, 324);
+    /// <summary>Where the Crawler stands in the Azurite Mine Encampment, on the rails by the mine entrance, and its facing
+    /// (placed live with /delve_crawler 408 310 90, 2026-10-30).</summary>
+    static readonly (int X, int Y) DelveCrawlerAt = (408, 310);
+    const float DelveCrawlerRotation = MathF.PI / 2;
 
     // The Delve Crawler in the Azurite Mine Encampment. A click on it opens the Subterranean Chart, as Niko's option does.
     static async Task SpawnDelveCrawler(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
@@ -16,7 +18,7 @@ partial class Program
         conn.DelveCrawlerObject = id;
         conn.DelveCrawlerAt = (x, y);
         await Send(remote, stream, ciphers, InstanceEntities.CreateObject(id, InstanceEntities.ObjectTypeHash(DelveRobotObject.MetadataPath),
-            new DelveRobotObject(x, y, 0).Blob()), $"0x02b9 create the Delve Crawler 0x{id:x} at ({x}, {y})");
+            new DelveRobotObject(x, y, DelveCrawlerRotation).Blob()), $"0x02b9 create the Delve Crawler 0x{id:x} at ({x}, {y})");
         await Send(remote, stream, ciphers, InstanceProtocol.EnterWakeZone(id), $"0x01a9 Delve Crawler 0x{id:x} enters wake zone");
     }
 

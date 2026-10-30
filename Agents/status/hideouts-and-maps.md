@@ -114,7 +114,9 @@ Part of [Status](../Status.md); what to build next in this area is in
     there the gauge is the chart's.
   - `/delve_crawler [x y degrees]` creates the Crawler (DelveRobot) in the encampment, or moves and turns it. A click on
     it opens the chart (the Crawler showed live; the click is not checked yet).
-  - The Crawler is not yet created by itself: its native cell and facing are being placed.
+  - The Crawler stands on the rails by the mine entrance at (408, 310), facing 90°, on every entry; the stash and the
+    guild stash are at (355, 295) and (344, 295), facing 180°. Lioneye's Watch has them at (327, 270) and (317, 270).
+    The user placed all of these live (2026-10-30).
   - `/stash_place` and `/guild_stash_place <x> <y> <degrees>` move the stash and the guild stash of any area until the
     player leaves it, to find their places.
   - See [21](../docs/protocol/21-hideouts.md) "Delve".
