@@ -16,6 +16,17 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Dev account service: register, log in, create characters (JSON-lines over TCP).
   Code: `GameServer.Host`, `GameServer.DevClient`.
   Docs: [dev-server.md](../docs/dev-server.md).
+- Gateway hot reload, on by default (`live.ps1 -NoHotReload` turns it off): the Gateway runs under `dotnet watch`,
+  which applies saved code edits to the running server; `HotReload.cs` logs each applied edit and tells players in
+  chat when a save starts a reload, when it is applied, when it fails to compile (first three errors, from
+  `dotnet watch`'s output), when it changes nothing, and when the edit needs a restart.
+  Live, with the client in game and no disconnect: Gateway edits applied in 9-18 s (the Burning Arrow fix among
+  them), a Core edit in 0.08 s, two files saved together as one reload, a broken save kept the old code and listed its
+  errors (5 shown as 3 + "2 more"), and the fix applied.
+  A removed member restarted the Gateway as expected; switching to and from `-NoHotReload` stops a Gateway that is
+  still loading. Parsing of the error lines is unit-tested (`HotReloadTests`).
+  Code: `scripts/dev/live.ps1`, `HotReload.cs`.
+  Docs: [GettingStarted](../GettingStarted.md) step 10 (hot reload), [live testing](../docs/dev/live-testing.md).
 
 ## Partly working
 
