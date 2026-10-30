@@ -21,6 +21,23 @@ partial class Program
         return typed.Count == 1 ? typed[0] : null;
     }
 
+    // /stash_place and the like: <x> <y> <degrees>.
+    static (int X, int Y, float Degrees) PlaceArgs(string[] args, string usage) =>
+        args.Length == 3 && int.TryParse(args[0], out int x) && int.TryParse(args[1], out int y) && float.TryParse(args[2],
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float degrees)
+            ? (x, y, degrees) : throw new ArgumentException($"{usage} <x> <y> <degrees>");
+
+    // A stationary object moved and turned in place (S→C 0x1b7 and the Positioned rotation update, as the hideout editor
+    // does), with its path blocker; until the player leaves the area.
+    static async Task MoveStationary(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
+        int x, int y, float degrees, int blockerSize, string what)
+    {
+        conn.SetBlocker(id, x, y, blockerSize);
+        await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y, 0x7fffffff), $"{what} 0x{id:x} to ({x}, {y})");
+        await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(id, degrees * MathF.PI / 180), $"{what} turned {degrees}°");
+        await conn.Commands!.Reply($"{what} at ({x}, {y}), {degrees}°");
+    }
+
     // The chat commands of one connection (ChatCommands.cs).
     static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
@@ -216,6 +233,44 @@ partial class Program
             if (added.Count == 0) { await conn.Commands!.Reply("No room in the inventory"); return; }
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
                 items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
+        })
+        .Add("stash_place", "/stash_place <x> <y> <degrees> (dev: move and turn the stash of this area until you leave it; it opens from its new cell)", async args =>
+        {
+            if (conn.StashObject == 0) { await conn.Commands!.Reply("No stash in this area"); return; }
+            var (x, y, degrees) = PlaceArgs(args, "/stash_place");
+            conn.StashAt = (x, y);
+            await MoveStationary(remote, stream, ciphers, conn, conn.StashObject, x, y, degrees, ClientState.StashBlockerSize, "stash");
+        })
+        .Add("guild_stash_place", "/guild_stash_place <x> <y> <degrees> (dev: move and turn the guild stash of this area until you leave it)", async args =>
+        {
+            if (conn.GuildStashObject == 0) { await conn.Commands!.Reply("No guild stash in this area"); return; }
+            var (x, y, degrees) = PlaceArgs(args, "/guild_stash_place");
+            conn.GuildStashAt = (x, y);
+            await MoveStationary(remote, stream, ciphers, conn, conn.GuildStashObject, x, y, degrees, ClientState.StashBlockerSize, "guild stash");
+        })
+        .Add("delve_crawler", "/delve_crawler [x y degrees] (dev: create the Delve Crawler in the Azurite Mine Encampment, or move and turn the one there; a click on it opens the Subterranean Chart)", async args =>
+        {
+            if (conn.Layout.Hash != StashCatalog.DelveHub) { await conn.Commands!.Reply("Only in the Azurite Mine Encampment"); return; }
+            if (args.Length == 3 && int.TryParse(args[0], out int x) && int.TryParse(args[1], out int y) && float.TryParse(args[2],
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float degrees))
+            {
+                if (conn.DelveCrawlerObject == 0) await SpawnDelveCrawler(remote, stream, ciphers, conn);
+                float radians = degrees * MathF.PI / 180;
+                conn.DelveCrawlerAt = (x, y);
+                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(conn.DelveCrawlerObject, x, y, 0x7fffffff), $"Delve Crawler to ({x}, {y})");
+                await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(conn.DelveCrawlerObject, radians), $"Delve Crawler turned {degrees}°");
+                await conn.Commands!.Reply($"Delve Crawler at ({x}, {y}), {degrees}°");
+                return;
+            }
+            await SpawnDelveCrawler(remote, stream, ciphers, conn);
+            await conn.Commands!.Reply($"Delve Crawler 0x{conn.DelveCrawlerObject:x} at {conn.DelveCrawlerAt}");
+        })
+        .Add("sulphite", "/sulphite <amount 0-65535> (dev: the character's Voltaxic Sulphite, saved and sent as the Delve data 0x228)", async args =>
+        {
+            if (args.Length != 1 || !ushort.TryParse(args[0], out ushort amount)) throw new ArgumentException("/sulphite <amount 0-65535>");
+            CharacterSaves.SetSulphite(CharacterName(conn), amount);
+            await Send(remote, stream, ciphers, InstanceDelve.DelveData(amount), $"0x0228 Delve data: {amount} sulphite (/sulphite)");
+            await conn.Commands!.Reply($"Sulphite: {amount}");
         })
         .Add("item_tab", $"/item_tab <stash tab name> <count> (dev: up to count, at most {ItemTabMax}, more of every item type that has its own slot on that tab, as far as each slot holds, e.g. /item_tab Currency 1000)", async args =>
         {
