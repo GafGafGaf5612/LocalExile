@@ -275,7 +275,9 @@ partial class Program
     {
         var entries = WaypointCatalog.Areas.Entries;
         List<int> bits;
-        lock (conn.Waypoints) bits = [.. Enumerable.Range(0, entries.Count).Where(i => conn.Waypoints.Contains(entries[i].Id))];
+        // The World panel's Labyrinth pin (SpecialMapPins Labyrinth) shows only with its area's waypoint bit: always set.
+        lock (conn.Waypoints) bits = [.. Enumerable.Range(0, entries.Count)
+            .Where(i => conn.Waypoints.Contains(entries[i].Id) || entries[i].Id == WaypointCatalog.LabyrinthPlaza)];
         // The pins need their areas' access quest flags first (the player object carried the ones known at creation).
         if (conn.PlayerSent)
         {
@@ -323,7 +325,7 @@ partial class Program
     {
         var entry = WaypointCatalog.Areas.Find(travel.AreaHash16);
         bool activated;
-        lock (conn.Waypoints) activated = entry is not null && conn.Waypoints.Contains(entry.Id);
+        lock (conn.Waypoints) activated = entry is not null && (conn.Waypoints.Contains(entry.Id) || entry.Id == WaypointCatalog.LabyrinthPlaza);
         Console.WriteLine($"[gateway] {remote} <= 0x004d waypoint travel to 0x{travel.AreaHash16:x4} ({entry?.Name ?? "no waypoint"}), " +
             $"u32 0x{travel.U32:x}{(travel.Ctrl ? ", Ctrl" : "")}{(activated ? "" : ": not activated, ignored")}");
         if (!activated) return;

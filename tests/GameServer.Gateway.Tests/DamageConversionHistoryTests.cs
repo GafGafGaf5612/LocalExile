@@ -257,7 +257,7 @@ public sealed class DamageConversionHistoryTests
         var wanted = Packet((DamageType.Fire, expected, expected));
         EqualPacket(wanted, Program.AttackHitConverted(weapon, stats, melee: true, conversion));
         EqualPacket(wanted, AttackSkillHit.Resolve(weapon, stats, [], Program.Stats, 10000, melee: false, projectile: true));
-        EqualPacket(wanted, OrdinaryBowShot.Capture(weapon, stats, [], Program.Stats, 100, 0, 150).Hit);
+        EqualPacket(wanted, OrdinaryRangedShot.Capture(weapon, stats, [], Program.Stats, 100, 0, 150).Hit);
         EqualPacket(wanted, SpellHit.Resolve(new(SkillHitKind.Spell, Packet((DamageType.Physical, 100, 100))),
             Program.Stats, stats, new Dictionary<uint, int>(), conversion));
     }
@@ -267,11 +267,11 @@ public sealed class DamageConversionHistoryTests
     {
         var source = NativeSources(Sources(("physical_damage_%_to_convert_to_fire", 100), ("fire_damage_+%", 100),
             ("object_inherent_damage_+%_final_per_frenzy_charge", 4), ("current_frenzy_charges", 3)));
-        var shot = OrdinaryBowShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
+        var shot = OrdinaryRangedShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
         source[Program.Stats.Key("current_frenzy_charges")!.Value] = 0;
         source[Program.Stats.Key("fire_damage_+%")!.Value] = 0;
         EqualPacket(Packet((DamageType.Fire, 224, 224)), shot.Hit);
-        var fresh = OrdinaryBowShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
+        var fresh = OrdinaryRangedShot.Capture(new(1000, 100, 100, 8), source, [], Program.Stats, 100, 0, 150);
         EqualPacket(Packet((DamageType.Fire, 100, 100)), fresh.Hit);
     }
 

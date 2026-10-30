@@ -457,6 +457,22 @@ public static class InstanceItems
         return new(r.U32(), r.U32(), r.U32(), r.U32());
     }
 
+    public const ushort UseItemOnPassiveId = 0x77;
+    public const int UseItemOnPassiveLength = 12;
+
+    /// <summary>
+    /// C→S 0x77 (12 bytes, live 2026-10-29): a tattoo used on a passive. Captured after right-clicking
+    /// Tattoo of the Ngamahu Firewalker and clicking an allocated small Strength node:
+    /// <c>0077 00000001 0000049C 5335</c> — u32 inventory id, u32 item id, u16 PassiveSkillGraphId, all big-endian.
+    /// </summary>
+    public sealed record UseItemOnPassive(uint InventoryId, uint ItemId, ushort Node);
+
+    public static UseItemOnPassive ReadUseItemOnPassive(ReadOnlySpan<byte> m)
+    {
+        var r = new LoginReader(m[2..]);
+        return new(r.U32(), r.U32(), r.U16());
+    }
+
     public const int ItemActionLength = 14;
 
     /// <summary>

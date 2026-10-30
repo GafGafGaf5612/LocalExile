@@ -1019,6 +1019,18 @@ critical roll. Main's effectiveness decode moves two of the branch's controls: B
 (`scripts/dev/extract-data.ps1 -Only passive-graphs`); they fail on a checkout whose `data/passive-skill-graphs.json`
 predates the geometry. On the merged tree: build clean; Core 394, Data 34, Gateway 3172 pass.
 
+Fourth merge (2026-10-30): `main` `4602dd8f` (PR #375 block: the ranged monster actions port, which replaces the
+ordinary bow executors with `Program.RangedAttacks.cs`/`Projectiles/Program.ProjectileRanged.cs` and renames
+`OrdinaryBowShot` to `OrdinaryRangedShot`; tattoos; the world panel pins) into `58edf093`. Conflicts: the two deleted
+bow files (the branch's per-use critical roll and the captured `ImpaleSettings`/`AccuracyProfile`/`CriticalRoll`/`Leech`
+now travel through `TryBeginRangedAttack`, `ConfirmAndLaunchOrdinaryRanged`, `LaunchOrdinaryRanged` and
+`ScheduleOrdinaryRanged` into the ordinary bow or wand `ProjectileOffense`), `OrdinaryRangedShot.cs` (upstream's name
+and summary, the branch's capture fields), `Program.Combat.cs` and `Program.Messages.cs` (upstream's calls with the
+roll), `Program.Monsters.cs` (upstream's monster action flow; the branch's `TrimLeechLocked` after the hit's pool update
+in the new hit resolution), `PanelStats.cs` (the branch's `LifeRegenerationMultiplier` already applies main's
+`life_regeneration_rate_+%`), the shot tests (renamed) and the combat status (upstream's local combat package entry
+beside the branch's Impale entry). Main's ranged monster work reads two new extracts (`monster-contacts`, `projectile-clips`) and bumped two (`animation-contacts` v3, `area-transitions` v3); `scripts/dev/extract-data.ps1` regenerates them, and nine of its projectile tests fail on a checkout that has not. On the merged tree: build clean; Core 396, Data 34, Gateway 3317 pass.
+
 Deferred and open at the close of the PR (each with its home): Spirit and Siphoning Charges (unique definitions #60,
 abyss-jewel socketing and Shaper/Elder influence: the combat roadmap); Blitz and Challenger Charges (no 3.29 player
 source); the Affliction non-damaging ailment effect and the Absorption recoup (no server consumer); executing the

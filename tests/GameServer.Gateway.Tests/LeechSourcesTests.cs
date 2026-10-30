@@ -61,7 +61,7 @@ public class LeechSourcesTests
     [Fact]
     public void Bow_direct_callback_excludes_reflected_impales()
     {
-        var shot = new OrdinaryBowShot(DamagePacket.Of(DamageType.Physical, 100, 100), 100, 0, 150, 0);
+        var shot = new OrdinaryRangedShot(DamagePacket.Of(DamageType.Physical, 100, 100), 100, 0, 150, 0);
         var impale = new ImpaleState(); impale.Apply(500);
         int direct = 0;
         var hit = shot.Roll(impale, new Random(1), directHit: amount => direct = amount);

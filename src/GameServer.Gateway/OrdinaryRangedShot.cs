@@ -1,8 +1,8 @@
 using GameServer.Core.World;
 
-/// <summary>An ordinary bow's offensive inputs frozen at release. The actual target supplies evasion and impales
+/// <summary>An ordinary bow or wand's offensive inputs frozen at release. The target supplies evasion and impales
 /// at contact. Direct hit and reflected impale damage are resolved separately.</summary>
-sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance, int CriticalMultiplier, int ImpaleChance)
+sealed record OrdinaryRangedShot(DamagePacket Hit, int Accuracy, int CriticalChance, int CriticalMultiplier, int ImpaleChance)
 {
     public Penetration.PerType Penetration { get; init; }
     public HitResistances.Mods ResistanceMods { get; init; }
@@ -10,7 +10,7 @@ sealed record OrdinaryBowShot(DamagePacket Hit, int Accuracy, int CriticalChance
     public AttackAccuracyProfile? AccuracyProfile { get; init; }
     public SkillCriticalRoll? CriticalRoll { get; init; }
     public LeechSources Leech { get; init; } = new(DamagePacket.Empty, DamagePacket.Empty, DamagePacket.Empty);
-    public static OrdinaryBowShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
+    public static OrdinaryRangedShot Capture(SkillCatalog.Unarmed weapon, IReadOnlyDictionary<uint, int> character,
         IEnumerable<(uint, int)> skillConversion, StatCatalog catalog, int accuracy, int criticalChance, int criticalMultiplier)
     {
         int Get(string name) => catalog.Key(name) is uint key ? character.GetValueOrDefault(key) : 0;

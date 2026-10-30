@@ -341,7 +341,7 @@ Sent, in order: **0x20** (once per variety and level on a connection), **0x2b9**
   animation, along the client's own path around walls, on the terrain height**. Alternatives: **0x1ba** (Positioned
   move) only slides it in a straight line through walls, at `duration = cell distance / value` (value ≈ cells per
   second; `0x141e30c90` → `0x141e34120`), keeping the old height; **0x1b7** teleports it.
-- **AI** (Gateway, `RunMonsterAi`; live 2026-10-17). Every 100 ms (`MonsterAiTickMs`) per connection: a monster within
+- **AI** (Gateway, `RunMonsterAi`; live 2026-10-17). Every 50 ms of game time (`MonsterAiCadence`) per connection: a monster within
   its MonsterVarieties `MaxAgroRange` (taken as grid cells: 60 for Hungry Corpse, 105 for most) of the server's estimate
   of the player starts chasing: a Move action (0x1ab, 0x2909) to its own cell around the player, re-sent when that cell
   moves by 3+ cells; beyond twice the range it gives up (a Move to where it stands). The cells come from

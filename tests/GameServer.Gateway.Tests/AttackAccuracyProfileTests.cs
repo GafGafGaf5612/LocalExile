@@ -43,9 +43,9 @@ public class AttackAccuracyProfileTests
         };
         var weaponSources = new Dictionary<string, int> { ["local_always_hit"] = local ? -1 : 0 };
         var weapon = new SkillCatalog.Unarmed(1000, 10, 10, 120) { LocalSources = weaponSources };
-        var before = OrdinaryBowShot.Capture(weapon, sources, [], Program.Stats, 12, 0, 150);
+        var before = OrdinaryRangedShot.Capture(weapon, sources, [], Program.Stats, 12, 0, 150);
         sources.Clear(); weaponSources.Clear();
-        var after = OrdinaryBowShot.Capture(weapon, sources, [], Program.Stats, 25, 0, 150);
+        var after = OrdinaryRangedShot.Capture(weapon, sources, [], Program.Stats, 25, 0, 150);
         Assert.Equal(new AttackAccuracyProfile(12, 40, 50, true), before.AccuracyProfile);
         Assert.Equal(new AttackAccuracyProfile(25), after.AccuracyProfile);
         Assert.Equal(100, before.AccuracyProfile!.Value.Chance(100000, true, true));

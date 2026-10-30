@@ -88,9 +88,9 @@ public sealed class WeaponLocalGatewayTests : IDisposable
             Mod(("local_minimum_added_lightning_damage", 4), ("local_maximum_added_lightning_damage", 8)));
         Recompute();
         var stats = new Dictionary<uint, int>();
-        var shot = OrdinaryBowShot.Capture(Weapon(), stats, [], Program.Stats, 100, 0, 150);
+        var shot = OrdinaryRangedShot.Capture(Weapon(), stats, [], Program.Stats, 100, 0, 150);
         Inventory.Change(PlayerInventories.Weapon1, equipped.Id, item => item with { Mods = [] });
-        var next = OrdinaryBowShot.Capture(Weapon(), stats, [], Program.Stats, 100, 0, 150);
+        var next = OrdinaryRangedShot.Capture(Weapon(), stats, [], Program.Stats, 100, 0, 150);
 
         Assert.Equal(new DamageRange(4, 8), shot.Hit[DamageType.Lightning]);
         Assert.Equal(DamageRange.Zero, next.Hit[DamageType.Lightning]);
@@ -115,7 +115,7 @@ public sealed class WeaponLocalGatewayTests : IDisposable
             [Key("attack_minimum_added_fire_damage")] = 3,
             [Key("attack_maximum_added_fire_damage")] = 5,
         };
-        var shot = OrdinaryBowShot.Capture(Weapon(), stats, [], Program.Stats, 100, 0, 150);
+        var shot = OrdinaryRangedShot.Capture(Weapon(), stats, [], Program.Stats, 100, 0, 150);
 
         Assert.Equal(new DamageRange(11.25, maximumPhysical), shot.Hit[DamageType.Physical]);
         Assert.Equal(new DamageRange(6.25, 11.25), shot.Hit[DamageType.Fire]);
