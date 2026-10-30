@@ -1028,12 +1028,17 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   per-type integer-roll expectation, cooldown/downtime and special skill mechanics are excluded.
   Hitless spells do not borrow weapon hits or turn flat added spell damage into a hit; their hit ranges and
   inherited weapon DPS/per-use fields are explicitly zeroed. This does not implement a beam or DoT damage panel.
-- **Damage effectiveness** (2026-10-24). An attack gem's hit is the weapon's damage × its `DamageEffectiveness` (the
-  GESSPL row, permyriad: Flicker Strike 7730 at level 1, 30890 at 20, 69600 at 40 — the gem's "Deals 77.3% of base
-  Attack Damage"), through `SkillCatalog.DamageEffectiveness` and `SpellDamage.WithEffectiveness`. A row of 0 (the
-  default attack's) or a negative one (a few skills have them) scales nothing. A **spell**'s own base damage is already
-  final: its effectiveness is the added-damage one (Fireball 200%), and the GESSPL `BaseMultiplier` is 0 for every spell,
-  so that multiplier does not scale a spell's own base hit; its added damage is scaled separately.
+- **Damage effectiveness.** `GrantedEffectStatSetsPerLevel.DamageEffectiveness` is an offset from 100%,
+  normalized by `SkillCatalog` to `10000 + raw` permyriad before attack or added-spell consumers use it.
+  KB level 1 raw 4000 means 140%, Clustering raw 0 means 100%, and Cyclone raw -1840 means 81.6%.
+  Flicker Strike raw 7730/30890/69600 means 177.3%/408.9%/796% at levels 1/20/40.
+  This follows pinned PoB `16de4b82`, `src/Export/Scripts/skills.lua` lines 311–321.
+  The previous absolute-value interpretation under-scaled positive offsets and ignored negative offsets.
+  Missing data retains the identity fallback; a known zero offset resolves to an explicit 100%.
+  A spell's own base damage is already final; its added damage alone uses effectiveness (Fireball level 1: 300%).
+  Current attacks retain the shared effectiveness scalar for their whole packet; separate weapon-base
+  `BaseMultiplier` versus added-damage coefficients are not distinguished by this existing constructor.
+  Normal KB's 40% less area damage is applied by the secondary-explosion profile, not the main-hit panel.
 - **Per-level stats** add to a ConstantStats value of the same stat instead of replacing it (Righteous Fire's radius:
   18 + 0 at level 1).
 
@@ -1917,7 +1922,10 @@ buffs), `Program.Charges.cs` (the Gateway glue) and `ChargePanelStats.cs` (the m
   with claws or daggers. When hit: endurance, frenzy. On block: endurance, frenzy, attack-only frenzy, power,
   spell-only power, a random one. Over time (`ChargeGains.Periodics`): per second, every x ms (the body armour
   implicits), random every 6 seconds, each second if hit in the last 4 seconds, while stationary or moving (the walk
-  estimate); not in towns. Skills: the Frenzy gem's hit gives a Frenzy Charge once per use (ActiveSkills `frenzy`;
+  estimate); not in towns. `gain_X_..._charges_per_second` carries the count, so a negative value
+  takes charges away: Replica Fragility, Replica Pacifism and Replica Powerlessness store `-1` ("Lose an
+  Endurance Charge each second") and lose one each second, never below the minimum; every other use of
+  the stat is positive. Skills: the Frenzy gem's hit gives a Frenzy Charge once per use (ActiveSkills `frenzy`;
   without a Frenzy projectile row it hits as an area, and only its first target counts), Power Siphon's
   killing hit a Power Charge, Flicker Strike's and Power Siphon's own on-hit chances count, and Enduring Cry grants an
   Endurance Charge per 5 power (`endurance_charge_granted_per_X_monster_power_during_endurance_warcry`) of the hostile

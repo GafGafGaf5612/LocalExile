@@ -21,6 +21,23 @@ partial class Program
         return typed.Count == 1 ? typed[0] : null;
     }
 
+    // /stash_place and the like: <x> <y> <degrees>.
+    static (int X, int Y, float Degrees) PlaceArgs(string[] args, string usage) =>
+        args.Length == 3 && int.TryParse(args[0], out int x) && int.TryParse(args[1], out int y) && float.TryParse(args[2],
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float degrees)
+            ? (x, y, degrees) : throw new ArgumentException($"{usage} <x> <y> <degrees>");
+
+    // A stationary object moved and turned in place (S→C 0x1b7 and the Positioned rotation update, as the hideout editor
+    // does), with its path blocker; until the player leaves the area.
+    static async Task MoveStationary(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, uint id,
+        int x, int y, float degrees, int blockerSize, string what)
+    {
+        conn.SetBlocker(id, x, y, blockerSize);
+        await Send(remote, stream, ciphers, InstanceProtocol.Teleport(id, x, y, 0x7fffffff), $"{what} 0x{id:x} to ({x}, {y})");
+        await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(id, degrees * MathF.PI / 180), $"{what} turned {degrees}°");
+        await conn.Commands!.Reply($"{what} at ({x}, {y}), {degrees}°");
+    }
+
     // The chat commands of one connection (ChatCommands.cs).
     static ChatCommands Commands(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn)
     {
@@ -217,6 +234,44 @@ partial class Program
             await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
                 items.NextRevision(PlayerInventories.MainInventory), [], added), $"0x00bf inventory 1: /item {type} × {added.Count}");
         })
+        .Add("stash_place", "/stash_place <x> <y> <degrees> (dev: move and turn the stash of this area until you leave it; it opens from its new cell)", async args =>
+        {
+            if (conn.StashObject == 0) { await conn.Commands!.Reply("No stash in this area"); return; }
+            var (x, y, degrees) = PlaceArgs(args, "/stash_place");
+            conn.StashAt = (x, y);
+            await MoveStationary(remote, stream, ciphers, conn, conn.StashObject, x, y, degrees, ClientState.StashBlockerSize, "stash");
+        })
+        .Add("guild_stash_place", "/guild_stash_place <x> <y> <degrees> (dev: move and turn the guild stash of this area until you leave it)", async args =>
+        {
+            if (conn.GuildStashObject == 0) { await conn.Commands!.Reply("No guild stash in this area"); return; }
+            var (x, y, degrees) = PlaceArgs(args, "/guild_stash_place");
+            conn.GuildStashAt = (x, y);
+            await MoveStationary(remote, stream, ciphers, conn, conn.GuildStashObject, x, y, degrees, ClientState.StashBlockerSize, "guild stash");
+        })
+        .Add("delve_crawler", "/delve_crawler [x y degrees] (dev: create the Delve Crawler in the Azurite Mine Encampment, or move and turn the one there; a click on it opens the Subterranean Chart)", async args =>
+        {
+            if (conn.Layout.Hash != StashCatalog.DelveHub) { await conn.Commands!.Reply("Only in the Azurite Mine Encampment"); return; }
+            if (args.Length == 3 && int.TryParse(args[0], out int x) && int.TryParse(args[1], out int y) && float.TryParse(args[2],
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float degrees))
+            {
+                if (conn.DelveCrawlerObject == 0) await SpawnDelveCrawler(remote, stream, ciphers, conn);
+                float radians = degrees * MathF.PI / 180;
+                conn.DelveCrawlerAt = (x, y);
+                await Send(remote, stream, ciphers, InstanceProtocol.Teleport(conn.DelveCrawlerObject, x, y, 0x7fffffff), $"Delve Crawler to ({x}, {y})");
+                await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(conn.DelveCrawlerObject, radians), $"Delve Crawler turned {degrees}°");
+                await conn.Commands!.Reply($"Delve Crawler at ({x}, {y}), {degrees}°");
+                return;
+            }
+            await SpawnDelveCrawler(remote, stream, ciphers, conn);
+            await conn.Commands!.Reply($"Delve Crawler 0x{conn.DelveCrawlerObject:x} at {conn.DelveCrawlerAt}");
+        })
+        .Add("sulphite", "/sulphite <amount 0-65535> (dev: the character's Voltaxic Sulphite, saved and sent as the Delve data 0x228)", async args =>
+        {
+            if (args.Length != 1 || !ushort.TryParse(args[0], out ushort amount)) throw new ArgumentException("/sulphite <amount 0-65535>");
+            CharacterSaves.SetSulphite(CharacterName(conn), amount);
+            await Send(remote, stream, ciphers, InstanceDelve.DelveData(amount), $"0x0228 Delve data: {amount} sulphite (/sulphite)");
+            await conn.Commands!.Reply($"Sulphite: {amount}");
+        })
         .Add("item_tab", $"/item_tab <stash tab name> <count> (dev: up to count, at most {ItemTabMax}, more of every item type that has its own slot on that tab, as far as each slot holds, e.g. /item_tab Currency 1000)", async args =>
         {
             if (args.Length < 2 || !int.TryParse(args[^1], out int requested) || requested < 1)
@@ -260,8 +315,226 @@ partial class Program
                 (fill.Full > 0 ? $"; {fill.Full} slot(s) already full" : "") +
                 (fill.Skipped > 0 ? $"; {fill.Skipped} type(s) skipped (the server can't create them or has no cell for their slot)" : ""));
         })
-        .Add("gem", "/gem <name> [level] [quality] (a gem into the inventory at that level and quality, e.g. /gem Fireball 20 20, /gem Ice Nova of Frostbolts, /gem Vaal Fireball 5)", async args =>
+        .Add("adorned", "/adorned [0-1000] (dev: The Adorned unique jewel into the inventory, corrupted, for passive-jewel testing; the normal item range is 0-100)", async args =>
         {
+            int percent = args.Length > 0 && int.TryParse(args[0], out int value) ? Math.Clamp(value, 0, 1000) : 100;
+            if (Items.Find("Crimson Jewel") is not { } baseType) { await conn.Commands!.Reply("The Crimson Jewel base type is missing"); return; }
+            if (UniqueJewelVisuals.Of("The Adorned") is not ushort visual) { await conn.Commands!.Reply("The Adorned visual identity is missing"); return; }
+            if (Items.Mods.ById("CorruptedMagicJewelModEffectUnique__1") is not { } mod) { await conn.Commands!.Reply("The Adorned modifier is missing"); return; }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell) { await conn.Commands!.Reply("No room in the inventory"); return; }
+            var jewel = ItemCatalog.Create(baseType) with
+            {
+                Rarity = ItemRarity.Unique, Corrupted = true, ItemLevel = 20, VisualIdentity = visual,
+                Mods = [new ItemMod(ModSection.Explicit, mod.Hash, [percent])],
+            };
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /adorned {percent}%");
+            await conn.Commands!.Reply($"The Adorned ({percent}%) added to the inventory");
+        })
+        .Add("unique_jewel", "/unique_jewel <name> | list (dev: a global unique jewel, max-rolled, into the inventory)", async args =>
+        {
+            if (args.Length == 0 || args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            {
+                await conn.Commands!.Reply(string.Join(", ", UniqueJewelCatalogue.Names));
+                return;
+            }
+            if (CreateUniqueJewel(string.Join(' ', args)) is not { } jewel)
+            {
+                await conn.Commands!.Reply($"No global unique jewel \"{string.Join(' ', args)}\"");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /unique_jewel {string.Join(' ', args)}");
+            await conn.Commands!.Reply($"{string.Join(' ', args)} added to the inventory");
+        })
+        .Add("radius_jewel", "/radius_jewel <name> | list (dev: a radius unique jewel, max-rolled, into the inventory; pilot: the six attribute-conversion jewels)", async args =>
+        {
+            if (args.Length == 0 || args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            {
+                await conn.Commands!.Reply(string.Join(", ", RadiusJewelCatalogue.Names));
+                return;
+            }
+            if (RadiusJewelCatalogue.FindWithVariant(string.Join(' ', args)) is not { } found
+                || RadiusJewelCatalogue.Create(ItemsFor(conn), found.Entry, found.Variant) is not { } jewel)
+            {
+                await conn.Commands!.Reply($"No radius unique jewel \"{string.Join(' ', args)}\"");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /radius_jewel {string.Join(' ', args)}");
+            await conn.Commands!.Reply($"{string.Join(' ', args)} added to the inventory");
+        })
+        .Add("impossible_escape", "/impossible_escape <keystone> | list (dev: Impossible Escape for that keystone, into the inventory)", async args =>
+        {
+            if (args.Length == 0 || args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            {
+                await conn.Commands!.Reply(string.Join(", ", ImpossibleEscapeCatalogue.Names));
+                return;
+            }
+            string query = string.Join(' ', args);
+            if (ImpossibleEscapeCatalogue.Create(ItemsFor(conn), query) is not { } jewel)
+            {
+                await conn.Commands!.Reply($"No Impossible Escape keystone \"{query}\"");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /impossible_escape {query}");
+            bool keystoneAllocated = ImpossibleEscapeCatalogue.Find(query) is { } keystone
+                && conn.Passives.Contains(keystone.GraphId);
+            await conn.Commands!.Reply($"Impossible Escape ({query}) added to the inventory" +
+                (keystoneAllocated ? "" : ". Allocate the chosen keystone first; the ring and bypass only apply around an allocated keystone."));
+        })
+        .Add("timeless", "/timeless <name> [seed] [conqueror] | list (dev: a Legion timeless jewel into the inventory; Elegant Hubris seeds are the displayed x20 values 2000-160000)", async args =>
+        {
+            if (args.Length == 0 || args[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+            {
+                await conn.Commands!.Reply(string.Join("; ", TimelessJewelCatalog.All.Select(e =>
+                    $"{e.Name} {e.DisplayedMinSeed}-{e.DisplayedMaxSeed}: " +
+                    string.Join(", ", e.Conquerors.Select(c => c.Name)))));
+                return;
+            }
+            var tokens = args.ToList();
+            string? conquerorText = null;
+            if (tokens.Count > 1)
+            {
+                string last = tokens[^1];
+                if ((int.TryParse(last, out int index) && index is >= 1 and <= 3)
+                    || TimelessJewelCatalog.All.Any(e => e.Conquerors.Any(c => c.Name.Equals(last, StringComparison.OrdinalIgnoreCase))))
+                {
+                    conquerorText = last;
+                    tokens.RemoveAt(tokens.Count - 1);
+                }
+            }
+            int? seed = null;
+            if (tokens.Count > 1 && int.TryParse(tokens[^1], out int parsedSeed))
+            {
+                seed = parsedSeed;
+                tokens.RemoveAt(tokens.Count - 1);
+            }
+            if (TimelessJewelCatalog.Find(string.Join(' ', tokens)) is not { } entry)
+            {
+                await conn.Commands!.Reply($"No timeless jewel \"{string.Join(' ', tokens)}\"");
+                return;
+            }
+            if (seed is int asked && (asked < entry.DisplayedMinSeed || asked > entry.DisplayedMaxSeed
+                || entry.DisplayMultiplier > 1 && asked % entry.DisplayMultiplier != 0))
+            {
+                await conn.Commands!.Reply($"{entry.Name} seed is {entry.DisplayedMinSeed}-{entry.DisplayedMaxSeed}" +
+                    (entry.DisplayMultiplier > 1 ? $" in steps of {entry.DisplayMultiplier}" : ""));
+                return;
+            }
+            int? conqueror = null;
+            if (conquerorText is not null)
+            {
+                if (TimelessJewelCatalog.FindConqueror(entry, conquerorText) is not { } chosen)
+                {
+                    await conn.Commands!.Reply($"{entry.Name} conqueror is one of " +
+                        string.Join(", ", entry.Conquerors.Select(c => c.Name)));
+                    return;
+                }
+                conqueror = chosen.Index;
+            }
+            if (TimelessJewelCatalog.Create(ItemsFor(conn), entry.Name, seed, conqueror) is not { } jewel)
+            {
+                await conn.Commands!.Reply("The timeless jewel data is missing");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /timeless {entry.Name}");
+            var spec = TimelessJewelCatalog.Read(jewel, ItemsFor(conn).Mods);
+            await conn.Commands!.Reply($"{entry.Name} (seed {spec?.DisplayedSeed}, {spec?.ConquerorName}) added to the inventory");
+        })
+        .Add("voices", "/voices [1|3|5|7] (dev: the Voices unique Large Cluster Jewel with that many empty passives, into the inventory)", async args =>
+        {
+            int empty = args.Length > 0 && int.TryParse(args[0], out int value) ? value : 7;
+            if (CreateVoices(empty) is not { } jewel)
+            {
+                await conn.Commands!.Reply("Voices needs 1, 3, 5 or 7 empty passives");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /voices {empty}");
+            await conn.Commands!.Reply($"Voices ({empty} empty passive(s)) added to the inventory");
+        })
+        .Add("cluster_jewel", "/cluster_jewel <small|medium|large> [passives] [sockets] [theme mod] [notable mod ...] (dev: a non-unique cluster jewel with its enchantments, into the inventory; defaults 3/4/8 passives and 0/1/2 sockets)", async args =>
+        {
+            int size = args.Length > 0 ? args[0].ToLowerInvariant() switch
+            {
+                "small" => 0,
+                "medium" => 1,
+                "large" => 2,
+                _ => -1,
+            } : -1;
+            if (size < 0)
+            {
+                await conn.Commands!.Reply("small, medium or large");
+                return;
+            }
+            int passives = args.Length > 1 && int.TryParse(args[1], out int p) ? p : size switch { 2 => 8, 1 => 4, _ => 3 };
+            int sockets = args.Length > 2 && int.TryParse(args[2], out int s) ? s : size switch { 2 => 2, 1 => 1, _ => 0 };
+            if (CreateClusterJewel(size, passives, sockets, args.Length > 3 ? args[3] : null, args.Skip(4)) is not { } jewel)
+            {
+                await conn.Commands!.Reply("The cluster jewel data is missing");
+                return;
+            }
+            var items = ItemsOf(conn);
+            if (items.FreeCell(PlayerInventories.MainInventory, 1, 1, ShapeOf) is not { } cell)
+            {
+                await conn.Commands!.Reply("No room in the inventory");
+                return;
+            }
+            var added = items.Put(PlayerInventories.MainInventory, new InventoryItem(items.NewItemId(), cell.X, cell.Y, jewel));
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.MainInventory),
+                items.NextRevision(PlayerInventories.MainInventory), [], [added]), $"0x00bf inventory 1: /cluster_jewel {size} {passives} {sockets}");
+            await conn.Commands!.Reply($"Cluster jewel ({args[0]}, {passives} passive(s), {sockets} socket(s)) added to the inventory");
+        })
+        .Add("corrupt", "/corrupt (dev: marks the held item corrupted, e.g. to make a corrupted magic jewel)", async _ =>
+        {
+            var items = ItemsOf(conn);
+            if (items.Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
+            if (items.Change(PlayerInventories.Cursor, held.Id, it => it with { Corrupted = true }) is not { } changed) return;
+            await Send(remote, stream, ciphers, InstanceItems.InventoryChange(PlayerInventories.InventoryId(PlayerInventories.Cursor),
+                items.NextRevision(PlayerInventories.Cursor), [held.Id], [changed]), "0x00bf cursor: corrupted");
+            await conn.Commands!.Reply("Corrupted");
+        })
+        .Add("gem", "/gem <name> [level] [quality] (a gem into the inventory at that level and quality, e.g. /gem Fireball 20 20, /gem Ice Nova of Frostbolts, /gem Vaal Fireball 5)", async args =>        {
             // The trailing numbers: the level, then the quality.
             var numbers = new List<int>();
             while (args.Length > 1 && numbers.Count < 2 && int.TryParse(args[^1], out int n)) { numbers.Insert(0, n); args = args[..^1]; }
@@ -742,8 +1015,8 @@ partial class Program
         .Add("block", "/block (attack and spell block chance and caps)", async _ =>
         {
             var p = conn.Pools;
-            await conn.Commands!.Reply($"Block {p.BlockChance}% (max {p.BlockChanceMax}%, effective {DamageModel.EffectiveBlockChance(p.BlockChance, p.AttackBlockLucky, p.AttackBlockUnlucky):0.#}%), " +
-                $"spell block {p.SpellBlockChance}% (max {p.SpellBlockChanceMax}%, effective {DamageModel.EffectiveBlockChance(p.SpellBlockChance, p.SpellBlockLucky, p.SpellBlockUnlucky):0.#}%)" +
+            await conn.Commands!.Reply($"Block {p.BlockChance}% (max {p.BlockChanceMax}%, uncapped {p.BlockChanceUncapped}%, effective {DamageModel.EffectiveBlockChance(p.BlockChance, p.AttackBlockLucky, p.AttackBlockUnlucky):0.#}%), " +
+                $"spell block {p.SpellBlockChance}% (max {p.SpellBlockChanceMax}%, uncapped {p.SpellBlockChanceUncapped}%, effective {DamageModel.EffectiveBlockChance(p.SpellBlockChance, p.SpellBlockLucky, p.SpellBlockUnlucky):0.#}%)" +
                 $"{(p.AttackBlockLucky ? "; attack lucky" : "")}{(p.SpellBlockLucky ? "; spell lucky" : "")}{(p.AttackBlockUnlucky ? "; attack unlucky" : "")}{(p.SpellBlockUnlucky ? "; spell unlucky" : "")}.");
         })
         .Add("block_luck", "/block_luck <attack|spell|both|off> (dev: force lucky block)", async args =>
@@ -1008,6 +1281,12 @@ partial class Program
             var (x, y) = conn.Walk.Position(conn.Clock.Elapsed.TotalSeconds);
             Console.WriteLine($"[gateway] {remote} /pos ({x}, {y}) in {conn.Layout.Id}");
             await conn.Commands!.Reply($"({x}, {y}) in {conn.Layout.Id}");
+        })
+        .Add("lastpackets", "/lastpackets [n] (dev: the connection's last n messages, both directions, to the Gateway log; default 64)", async args =>
+        {
+            int n = args.Length > 0 ? Math.Clamp(int.Parse(args[0]), 1, PacketHistory.Capacity) : 64;
+            conn.Packets.Print(remote, "/lastpackets", n);
+            await conn.Commands!.Reply($"The last {Math.Min(n, conn.Packets.Count)} of {conn.Packets.Count} packet(s) are in logs\\live-gateway.log.");
         })
         .Add("tp", "/tp <x> <y> | <+dx> <+dy> | <id> | <name> [n] | list [filter] (dev: teleport to a cell, a monster, NPC, transition, waypoint or captured object, e.g. /tp RhoaChest 2)",
             args => DevTeleport(remote, stream, ciphers, conn, args))
