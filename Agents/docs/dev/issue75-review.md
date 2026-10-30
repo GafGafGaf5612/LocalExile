@@ -1001,6 +1001,15 @@ secondary hits of Bear Trap and Herald of Ice, Reap's damage over time debuff an
 damaging-ailment application behind the ailment rows (Protocol 20 §3); the ledger's 169 `pending` audit states, which
 are audit coverage, not missing rows.
 
+## Transfer-safe character stat publication
+
+The owner independently merged current main at `b001bfa3`; the earlier admission candidate is superseded.
+The follow-up proposal extracts the shared stale-connection publication fix from the dependent Inquisitor work.
+It leaves class gameplay out of #318 and keeps the owner branch under its existing writer.
+See [character stat lifecycle](character-stat-lifecycle.md) for the contract, failing-before regressions,
+exact base/code revisions and current native-validation scope.
+Historical row-batch evidence is not a fresh acceptance run of this lifecycle change or every panel row.
+
 ## Remaining review and implementation
 
 Continue from the exact inventory, tracing each stat through raw collection, derivation, publication and gameplay.
