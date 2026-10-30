@@ -94,8 +94,9 @@ def main():
                 entry[key] = {"name": name, **anims[name]}
         if len(entry) > 1:
             out[row["Id"]] = entry
-    with open(dest, "w", encoding="utf-8") as f:
+    with open(dest + ".tmp", "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1, sort_keys=True)
+    os.replace(dest + ".tmp", dest)   # never leave a truncated file for the Gateway
     flights = sum(1 for e in out.values() if "flight" in e)
     impacts = sum(1 for e in out.values() if "impact" in e)
     defaults = sum(1 for e in out.values() if "default" in e)

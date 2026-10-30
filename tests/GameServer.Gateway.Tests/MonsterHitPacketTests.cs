@@ -40,6 +40,37 @@ public class MonsterHitPacketTests
         public void Dispose() { Writer.Dispose(); Reader.Dispose(); listener.Stop(); }
     }
 
+    static int IndexOf(byte[] haystack, byte[] needle)
+    {
+        for (int i = 0; i + needle.Length <= haystack.Length; i++)
+            if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle)) return i;
+        return -1;
+    }
+
+    static byte[] ObjectHeader(ushort id, uint objectId) => new LoginWriter().U16(id).U32(objectId).U32(0).U16(0).ToArray();
+
+    // Review 2026-10-30: with a projectile session active, the melee contact read the runtime's time at the send gate
+    // without advancing it, behind a clock read the life tick or a mortar landing had already made; the fortification
+    // tracker refused the earlier time and the swing's task faulted unobserved. The contact commits at the later time.
+    [Fact]
+    public async Task A_melee_contact_behind_a_later_clock_read_still_commits_its_hit()
+    {
+        await using var f = new ProjectileRuntimeFixture();
+        var m = new SpawnedMonster("test monster", new WalkEstimator(12, 10, 30, null, 300, 300), 60, 3, 100)
+        {
+            Attack = new MonsterAttack(0x102, 0.4, 10, DamagePacket.Of(DamageType.Physical, 10, 10)),
+        };
+        f.Conn.Monsters.Add(MonsterId, m);
+        await Task.Delay(TimeSpan.FromMilliseconds(300));
+        Program.FortificationOf(f.Conn).Read(f.Conn.Clock.Elapsed.TotalSeconds);   // the runtime's time is still zero
+        await Program.MonsterContact("hit-packet-test", f.Stream, f.Ciphers, f.Conn, MonsterId, m, m.ActionGeneration)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(f.Conn.PlayerLife < 100, "the hit landed");
+        byte[] wire = await f.ReadWire();
+        Assert.True(IndexOf(wire, ObjectHeader(InstanceProtocol.ActionHitId, MonsterId)) >= 0, "its 0x1af went out");
+        Assert.False(f.Conn.Closed);
+    }
+
     static (ClientState Connection, SpawnedMonster Monster) State(DamageType type)
     {
         TestSaves.Ensure();   // the hit reads the character's final stats, which load its save

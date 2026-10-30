@@ -40,7 +40,7 @@ $manifest = @(
     # monster-contacts: the clips a variety plays for its projectile attacks, with their contact keyframe's time and position:
     # when and from where a Sand Spitter mortar leaves (the skill's own animation key, the native clip selector).
     @{ Name = 'monster-contacts'; Outputs = @('data\monster-contacts.json'); Runner = 'python'
-       Args = @('scripts/re/monster_contacts.py'); Version = 1; Needs = @('tables')
+       Args = @('scripts/re/monster_contacts.py'); Version = 2; Needs = @('tables')
        UsedBy = 'monster projectile release timing and points (Program.ProjectileHostile.cs, 11-skills.md section 6)' }
     # monster-takehit also gives each variety's Emerge clip and its length: how long an emerge monster takes to rise.
     @{ Name = 'monster-takehit'; Outputs = @('data\monster-takehit.json'); Runner = 'python'

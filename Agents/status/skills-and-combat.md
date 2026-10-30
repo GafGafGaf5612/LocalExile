@@ -642,14 +642,16 @@ and can require explicit recipes.
   it; a cancelled action, death, freeze or hit recovery releases nothing. The wand bolt plays its rig's impact clip where
   it stops and is removed after that clip on the same game clock, so pause holds it and a transfer drops the removal.
   The arrow stays a second where it hit (`ArrowStuckSeconds`) before removal. Both send `0x1af` (kind 3, the shot's
-  action sequence, flags 0x4001 plus the critical bit, code by damage type) on contact for the target's blood and
-  particles. Projectile objects are created at their release point and their first move runs from there: the lazy
+  action sequence, flags 0x4201 plus the critical bit, code by damage type) on contact for the target's blood and
+  particles; the main-hand bit follows the live capture, the skill index and header words it also fills stay zero. Projectile objects are created at their release point and their first move runs from there: the lazy
   snapshot used to create them where the simulation already had them, one to ten cells past the bow in a live log
   (2026-10-29). A Frida trace the same day saw the client create no projectile of its own for the default attack
   (40 arrows) nor for a monster's action, so these server objects are the only visible shots on our server.
   On GGG's server the same shots have no objects and the client draws them; what in our answer stops it is open
   (skill ids `0x102`/`0x103` against live `0x4000`/`0x8002`, and the `0x1af` fields, are the candidates).
-  Our arrows fly about 20% faster than live (367 against 308 cells/s). They leave from the
+  The live hit-timing fit put our arrows at 367 cells/s against live's 308, but the Gateway releases DefaultArrow at
+  the table's 3260 units/s = 299.9 cells/s (logged on every release), so the fit's slope measures something else
+  (the roadmap). They leave from the
   releasing clip's contact keyframe (`data/animation-contacts.json` positions, `anim_contacts.py` v3): the Ranger's
   bow 5.5 cells ahead along the aim at 16 steps up, a wand's tip 7.5 cells ahead at 12 (the 5-step default, tuned on a
   fireball, had the arrow trail start at the hip, live 2026-10-29); the keyframe's lateral part is not applied.
@@ -664,7 +666,9 @@ and can require explicit recipes.
   live yet: that the client seeds a monster's clip choice from the sequence, and the dead zone. The object plays its rig's flight
   clip from spawn and its impact clip where it lands (`data/projectile-clips.json`, `scripts/re/projectile_clips.py`:
   every Projectiles row's clip indexes and lengths, and its .ao default animation), without which a mortar is
-  invisible (its .ao declares no default animation, the wand bolt's does). Weapon-projectile monsters
+  invisible (its .ao declares no default animation, the wand bolt's does). The data loaders turn their feature off
+  with one warning on an unreadable file instead of faulting the pump, and monster ACT pools come from the root block
+  only (a nested stance's entries had replaced them for 191 varieties; review 2026-10-30). Weapon-projectile monsters
   (`monster_projectile_weapon`, SkillID 0) still hit instantly with no shot; see the roadmap.
   Wand main-hand variation follows each class ACT pool and the native input-seeded selector; sixteen actual ground
   inputs covered all four Witch clips with matching selection and an object input also matched (historical LocalExile

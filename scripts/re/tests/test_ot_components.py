@@ -132,6 +132,10 @@ class AnimationEventTests(unittest.TestCase):
         self.assertEqual('\n\tanimations = \'[{"a": {}}]\'\n', ot._block(text, "AnimationController"))
         self.assertIsNone(ot._block(text, "Missing"))
 
+    def test_block_skips_comments_and_escaped_quotes(self):
+        text = "AnimationController\n{\n\t// it's a comment\n\tmetadata = \"a\\\"b\"\n}\nclient\n{\n}\n"
+        self.assertEqual("\n\t// it's a comment\n\tmetadata = \"a\\\"b\"\n", ot._block(text, "AnimationController"))
+
     def test_exclude_metadata_events_replaces_the_rig_events(self):
         files = {"m.ao": 'version 3\nextends "Metadata/Parent"\n\nAnimationController\n{\n\texclude_metadata_events = true\n\tmetadata = "rig.amd"\n\tanimations = \'[{"name": "attack1", "events": [{"type": "StandardEventType", "time": 0.3745180070400238, "name": "contact", "position": [1.33, 45.89, -71.56]}]}]\'\n}\n', "Metadata/Parent.ao": 'version 2\nextends "nothing"\n', "rig.amd": self.AMD}
         clips = self.with_files(files, lambda: ot.rig_clips("rig.amd", "m.ao", fetch_missing=False))

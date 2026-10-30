@@ -174,8 +174,14 @@ def _block(text, name):
     while i < len(text) and depth:
         c = text[i]
         if quote:
-            if c == quote:
+            if c == "\\":
+                i += 1          # an escaped character cannot close the string
+            elif c == quote:
                 quote = None
+        elif text.startswith("//", i):
+            i = text.find("\n", i)   # a comment runs to its line's end (PaleWalker01.ao has a quote in one)
+            if i < 0:
+                break
         elif c in "'\"":
             quote = c
         elif c == "{":

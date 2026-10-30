@@ -335,6 +335,9 @@ partial class Program
     {
         try { await MonsterSwing(remote, stream, ciphers, conn, id, m, action); }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { }
+        // Anything else is a server bug: the swing was already shown, so name the lost hit instead of faulting the task
+        // unobserved (review 2026-10-30).
+        catch (Exception ex) { Console.WriteLine($"[gateway] {remote} monster 0x{id:x} swing {action} failed: {ex.GetType().Name}: {ex.Message}"); }
         finally { lock (conn.Monsters) cadence.CompleteSwing(m, action); }
     }
 
@@ -515,8 +518,11 @@ partial class Program
         {
             // Entry protection: the player standing protected on the arrival cell takes no hit.
             if (InGracePeriod(conn)) return null;
-            // Contacts share the projectile runtime's committed time: a buffered input cannot rewrite that history.
-            double now = ProjectileWorldTime(conn);
+            // The contact time is the later of the projectile runtime's committed time (a buffered input cannot rewrite
+            // that history) and the connection clock: the runtime is not advanced at this gate, so its time can lag a
+            // clock read the life tick or a mortar landing already made, and the fortification and recent-hit trackers
+            // refuse to go backwards (review 2026-10-30: the refusal faulted the swing's task and the hit was lost).
+            double now = Math.Max(ProjectileWorldTime(conn), conn.Clock.Elapsed.TotalSeconds);
             outcome = CommitMonsterHitLocked(remote, conn, id, m, a, now, conn.Walk.Position(now), m.Walk.Position(now), checkRange: true);
             return outcome?.HitPacket;
         }, $"0x01af monster 0x{id:x} hit on the player (kind 3, sequence 0xffff)")) return;

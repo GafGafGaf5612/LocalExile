@@ -19,6 +19,7 @@ import json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ot_components import REPO, amd_map, animation_controller, extends_of, fetch, first_contact, read_text, rig_clips  # noqa: E402
+from anim_contacts import act_tokens, closing_brace  # noqa: E402
 
 TABLES = os.path.join(REPO, "data", "tables")
 NAME = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
@@ -63,10 +64,35 @@ def fetch_ao_chain(paths):
     return known
 
 
+def root_assignments(text):
+    """`Key = "value";` entries of the .act's root block only, first one wins. A nested stance's entries (a weapon or
+    phase stance) apply in that stance, not to the type: taking the last entry at any depth had given 191 varieties
+    another stance's pool (review 2026-10-30). Entries with anything between the string and the `;` (an Emerge's
+    effect) are left out."""
+    tokens = act_tokens(text)
+    if "{" not in tokens:
+        return {}
+    try:
+        start = tokens.index("{")
+        body = tokens[start + 1:closing_brace(tokens, start)]
+        out, i = {}, 0
+        while i < len(body):
+            if body[i] == "{":
+                i = closing_brace(body, i) + 1
+            elif i + 3 < len(body) and body[i + 1] == "=" and body[i + 2].startswith('"') and body[i + 3] == ";":
+                out.setdefault(body[i], body[i + 2][1:-1].strip())
+                i += 4
+            else:
+                i += 1
+        return out
+    except ValueError:
+        return {}
+
+
 def act_pools(text, keys):
-    """{key: [clip, ...]} for the .act's top-level `Key = "a,b";` entries among `keys` that are plain clip lists, and
+    """{key: [clip, ...]} for the .act's root-block `Key = "a,b";` entries among `keys` that are plain clip lists, and
     the .ao the act animates."""
-    entries = {m.group(1): m.group(2).strip() for m in re.finditer(r'^\s*([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;', text, re.M)}
+    entries = root_assignments(text)
     pools = {}
     for key in keys:
         value = entries.get(key)
@@ -143,8 +169,9 @@ def main():
             pools_written += len(cache[key]["pools"])
         if n % 2000 == 0:
             print(f"  {n}/{len(variants)}", file=sys.stderr, flush=True)
-    with open(dest, "w", encoding="utf-8") as f:
+    with open(dest + ".tmp", "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1, sort_keys=True)
+    os.replace(dest + ".tmp", dest)   # never leave a truncated file for the Gateway
     print(f"wrote {dest}: {len(out)} of {len(variants)} monster varieties have a pool ({pools_written} pools)",
           file=sys.stderr, flush=True)
 

@@ -156,8 +156,9 @@ def main():
         result[ao] = {"amd": amd, "act": act, "animations": contacts(animations), "positions": positions(animations),
                       "defaultWand": ordinary_wand_pools(text, animations)}
         print(f"{c['Name']}: {ao} -> {amd}, {len(result[ao]['animations'])} animations with a contact", file=sys.stderr)
-    with open(dest, "w", encoding="utf-8") as f:
+    with open(dest + ".tmp", "w", encoding="utf-8") as f:
         json.dump(result, f, indent=1)
+    os.replace(dest + ".tmp", dest)   # never leave a truncated file for the Gateway
     print(f"wrote {dest}", file=sys.stderr)
 
 

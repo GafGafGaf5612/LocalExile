@@ -654,7 +654,9 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   (`MonsterProjectilePresentation`). The wand entry agrees with the constants the ordinary wand attack already used.
   The hit lands at the later of the shot's simulated contact and the connection clock: the fortification and recent-hit
   trackers refuse an earlier time than their last read, and the pump once closed a connection over it (live
-  2026-10-29). Weapon projectile skills (`monster_projectile_weapon`, SkillID 0) take their projectile from the
+  2026-10-29). A melee contact commits at the same rule: the runtime's time, read at the send gate without advancing
+  it, lagged the life tick's clock read, and the tracker's refusal faulted the swing's task unobserved (review
+  2026-10-30; such faults are logged now). Weapon projectile skills (`monster_projectile_weapon`, SkillID 0) take their projectile from the
   monster's weapon art, not resolved yet.
   A pending swing reserves its generation through contact, so a blocked send gate cannot reserve duplicate attacks.
   Contact checks the original monster, action generation, life, range, pause and area lifetime at the send gate.
@@ -961,9 +963,9 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   life. The server sends it before 0x1b1 on the default attack and on attack-gem hits (flags 0x4201, kind 3) and on a
   monster's hit on the player (kind 3, sequence 0xffff, flags 0x4201 plus 0x0040 when blocked and 0x0020 when critical,
   code = the largest damage component: 0 Physical, 1 Cold, 2 Fire, 3 Lightning, 4 Chaos; `HitCode`) and on an
-  ordinary arrow's or wand bolt's contact (kind 3 with the shot's own action sequence, flags 0x4001 plus 0x0020 on a
-  critical strike, code by type, the angle from the flight direction: blood and particles without the main-hand bit,
-  whose weapon effect is the melee impact sound); spells and gem projectiles skip it. The monster hit used to go out as 0x4601 with a 450 ms duration and kind 2. The static decode
+  ordinary arrow's or wand bolt's contact (kind 3 with the shot's own action sequence, flags 0x4201 plus 0x0020 on a
+  critical strike, code by type, the angle from the flight direction: blood, particles and the main-hand weapon
+  effect, as GGG's server sends them on a bow hit); spells and gem projectiles skip it. The monster hit used to go out as 0x4601 with a 450 ms duration and kind 2. The static decode
   (`research/poe-rea-reference`, `Agents/docs/re/action-hit-packet-3.29.3b.md` §§1–4) shows that kind bit 0 clear
   only queues the package until an action with that sequence consumes it, which the fabricated 0xffff never
   guarantees, and that 0x0400 asks the client to stun the target itself, with its own avoidance roll, through the
@@ -971,7 +973,9 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   GGG's server does it differently (live capture 2026-10-29,
   [ranged-monster-actions-port.md](../dev/ranged-monster-actions-port.md) "Live reference").
   A bow's arrow hits, both the default attack's and the attack gem's, carry the main-hand bit `0x0200` and skill
-  index 2, and the header after the attacker's id is a per-hit u32 and u16 1, not zeros.
+  index 2, and the header after the attacker's id is a per-hit u32 and u16 1, not zeros. The arrow's packet carries
+  the main-hand bit since 2026-10-30; index 2 and the header stay zero until their meaning is known (the decode says
+  index 0 searches the current action).
   A Sand Spitter's hit on the player (live 2026-10-30) is kind 3, flags 0x4201 (0x4221 on a crit), code 0, skill
   index 2, with the sequence of the monster's own action (0x80c0…, from its 0x1ab), not 0xffff.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
@@ -1425,8 +1429,8 @@ nothing by itself: its slot 17 reads nothing and almost every other slot is a ba
   [Projectile](https://www.poewiki.net/wiki/Projectile) and [Avoidance](https://www.poewiki.net/wiki/Avoidance) pages;
   older mirrored descriptions disagree, and no primary GGG statement or official-server trace was found.
   Official evasion-continuation parity remains unverified. Null contact predicates preserve existing gem behavior.
-  Ordinary arrows send ranged life/flinch/death notifications and, since 2026-10-29, a `0x1af` with flags 0x4001 (no
-  main-hand bit, so not the melee `0x4201` weapon sound) for the target's blood and particles; no Fireball
+  Ordinary arrows send ranged life/flinch/death notifications and, since 2026-10-29, a `0x1af` with flags 0x4201 (the
+  main-hand bit included, as GGG's server sends it on bow hits) for the target's blood and particles; no Fireball
   explosion. The arrow object is created at the release point and its first move runs from there: the late lazy
   snapshot used to create it where the simulation already had it, one to ten cells past the bow (live 2026-10-29,
   "arrows do not come out of my body"). After an enemy or wall contact the stopped arrow stays one second

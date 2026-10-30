@@ -18,7 +18,7 @@ public class AnimationContactsTests : IDisposable
                 "attack1_claw_claw": [833, 299],
                 "attack1_staff": [1000, 719],
                 "attack1_dagger_alternate": [1000, 250]
-            }, "positions": { "attack1_sword": [1.0, -70.0, -100.0] } } }
+            }, "positions": { "attack1_sword": [1.0, -70.0, -100.0], "attack1_staff": [0.0, -0.0, 0.0] } } }
             """);
     }
 
@@ -39,6 +39,8 @@ public class AnimationContactsTests : IDisposable
         Assert.Equal(70 / (250.0 / 23), sword.Value.ForwardCells, 6);
         Assert.Null(contacts.AttackContactPoint(Ao, new WeaponProfile(false, false, false, false, false, Unarmed: true)));
         Assert.Null(contacts.AttackContactPoint("absent.ao", new WeaponProfile(false, false, false, false, false, Sword: true)));
+        // The rig's "0 -0 -0" placeholder for an event without a position is no release point (it would be the feet).
+        Assert.Null(contacts.AttackContactPoint(Ao, new WeaponProfile(false, false, true, false, false, TwoHandMelee: true)));
     }
 
     [Fact]

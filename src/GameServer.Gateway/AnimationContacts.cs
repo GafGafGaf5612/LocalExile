@@ -135,12 +135,20 @@ sealed class AnimationContacts(string folder = "data")
         return result;
     }
 
-    /// <summary>A three-number JSON array as a point; anything else is no position.</summary>
-    internal static ContactPoint? Point(JsonElement value) =>
-        value.ValueKind == JsonValueKind.Array && value.GetArrayLength() == 3
-            && value[0].ValueKind == JsonValueKind.Number && value[1].ValueKind == JsonValueKind.Number && value[2].ValueKind == JsonValueKind.Number
-            ? new((float)value[0].GetDouble(), (float)value[1].GetDouble(), (float)value[2].GetDouble())
-            : null;
+    /// <summary>A three-number JSON array as a point; anything else is no position, and so is the rig's placeholder for
+    /// an event without one ("0 -0 -0" in the .amd), which would otherwise read as a release at the feet.</summary>
+    internal static ContactPoint? Point(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 3) return null;
+        Span<float> parts = stackalloc float[3];
+        for (int i = 0; i < 3; i++)
+        {
+            if (value[i].ValueKind != JsonValueKind.Number) return null;
+            parts[i] = (float)value[i].GetDouble();
+            if (!float.IsFinite(parts[i])) return null;
+        }
+        return parts[0] == 0 && parts[1] == 0 && parts[2] == 0 ? null : new(parts[0], parts[1], parts[2]);
+    }
 }
 
 /// <summary>A rig clip chosen from the ordinary wand ACT pool, including its contact keyframe.</summary>

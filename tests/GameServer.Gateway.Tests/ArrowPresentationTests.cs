@@ -70,8 +70,9 @@ public class ArrowPresentationTests
         f.Advance(4.5);       // contact at x = 50 after 4 s
         byte[] contact = await f.Read();
 
-        // Blood and particles of a physical hit (code 0) for the shot's action, from the arrow's direction (east = 64).
-        byte[] expectedHit = InstanceProtocol.ActionHit(Program.PlayerId, 0x1234, TargetId, flags: 0x4001, kind: 0x03, code: 0, angle: 64);
+        // Blood, particles and the main-hand bit of a physical hit (code 0) for the shot's action, from the arrow's
+        // direction (east = 64): the flags GGG's server sends on a bow hit (0x4201).
+        byte[] expectedHit = InstanceProtocol.ActionHit(Program.PlayerId, 0x1234, TargetId, flags: 0x4201, kind: 0x03, code: 0, angle: 64);
         int header = IndexOf(contact, ObjectHeader(InstanceProtocol.ActionHitId, Program.PlayerId));
         Assert.True(IndexOf(contact, expectedHit) >= 0, header < 0 ? "no 0x1af at all"
             : $"0x1af differs: {Convert.ToHexString(contact.AsSpan(header, Math.Min(expectedHit.Length, contact.Length - header)))} vs {Convert.ToHexString(expectedHit)}");

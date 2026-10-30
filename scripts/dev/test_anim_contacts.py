@@ -7,7 +7,8 @@ from anim_contacts import ordinary_wand_pools
 
 
 def clip(name, contact):
-    return {"name": name, "length": 600, "events": [("contact", str(contact), "0 0 0")]}
+    # ot_components.rig_clips events: (name, ms, position or None)
+    return {"name": name, "length": 600, "events": [("contact", contact, None)]}
 
 
 class OrdinaryWandContactExtractionTests(unittest.TestCase):

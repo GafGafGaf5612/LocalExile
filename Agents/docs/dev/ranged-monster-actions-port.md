@@ -58,14 +58,16 @@ they hold account data and are not committed. The analysis used `sniff.py` on bo
   |---|---|---|
   | object header | the attacker's id, then a u32 that differs on every hit and u16 `0x0001` | zeros |
   | skill index byte | 2 on all 43 | 0 |
-  | flags | `0x0200` (main hand) on all 43. The default attack: `0x4201`/`0x4601` with `0x0001` (blood); the gem: `0x4204`/`0x4604` with `0x0004` in its place. `0x0400` with a 300 ms stun on 22 hits, `0x0020` on 6 crits, `0x8000` once (meaning unknown) | `0x4001` (+ `0x0020`) |
+  | flags | `0x0200` (main hand) on all 43. The default attack: `0x4201`/`0x4601` with `0x0001` (blood); the gem: `0x4204`/`0x4604` with `0x0004` in its place. `0x0400` with a 300 ms stun on 22 hits, `0x0020` on 6 crits, `0x8000` once (meaning unknown) | `0x4001` (+ `0x0020`) at the capture; `0x4201` (+ `0x0020`) since 2026-10-30, index and header still zero |
   | damage code | 0 or 8 (Physical, variation 0 or 1) for the default attack; 2, 10 or 18 (Fire, variations 0–2) for the gem | by damage type, variation 0 |
   | kind | 3 | 3 |
 
 - **Hit timing.** Live, the hit arrives 258 ms + 3.25 ms per cell of shooter-to-target distance after the echo, so the
   arrow flies about 308 cells/s (30 hits, 8–72 cells). Live delays also fall on about 33 ms steps. The gem's hits fit
-  267 ms + 3.90 ms per cell. This branch fits 249 ms + 2.72 ms per cell (about 367 cells/s): the release is close and
-  the arrow is about 20% fast.
+  267 ms + 3.90 ms per cell. This branch fits 249 ms + 2.72 ms per cell (about 367 cells/s): the release is close.
+  The slope is not the simulation speed, though: the Gateway releases DefaultArrow at the table's 3260 units/s,
+  299.9 cells/s (logged on every release), close to live's 308; what makes our hits arrive early per cell is open
+  (candidates: the contact at the target's collision radius, the echo's gate delay).
 - **Undecoded:** S→C `0x1b4` went 27 times to the player only. It carries the attack's skill id (`0x4000`/`0x8002`)
   and a list of compact-int points, and may be the shot's path.
 

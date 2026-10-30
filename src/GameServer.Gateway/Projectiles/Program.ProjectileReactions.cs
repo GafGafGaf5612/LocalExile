@@ -29,10 +29,12 @@ partial class Program
         if (shot.HitPacket)
         {
             // S→C 0x1af before the life update, as the melee default attack sends it: an immediate package (kind 3) for the
-            // shot's action with blood (0x0001) and the generic particles (0x4000) of its largest damage type, the critical
-            // bit when it crit, and no main-hand bit, which would play the melee weapon's impact sound (11-skills.md).
+            // shot's action with blood (0x0001), the generic particles (0x4000) of its largest damage type, the critical
+            // bit when it crit, and the main-hand bit (0x0200: the weapon's own effect and stat selection), which GGG's
+            // server sets on every bow hit (live capture 2026-10-29, ranged-monster-actions-port.md "Live reference").
+            // Live also sends skill index 2 and a filled object header; their meanings are unknown, so they stay zero.
             var direction = contact.Projectile.Direction;
-            ushort flags = (ushort)(0x4001 | (critical ? 0x0020 : 0));
+            ushort flags = (ushort)(0x4201 | (critical ? 0x0020 : 0));
             session.Packet(InstanceProtocol.ActionHit(PlayerId, shot.ActionSequence ?? 0xffff, id, flags: flags, kind: 0x03,
                 code: HitCode(shot.Hit), angle: HitAngle((int)Math.Round(direction.X * 1000), (int)Math.Round(direction.Y * 1000))));
         }
