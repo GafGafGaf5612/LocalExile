@@ -46,7 +46,8 @@ public sealed class GameModeAilmentIntegrationTests : IDisposable
         int beforeCast = (int)Call("CastMs", conn, spell, (ushort)0)!;
         Assert.True(beforeCast > 0);
         var cold = DamagePacket.Of(DamageType.Cold, conn.PlayerMaxLife, conn.PlayerMaxLife);
-        conn.ElementalAilments.Apply(cold, cold, false, conn.PlayerMaxLife, 0, _ => 0, new Random(1));
+        double now = conn.Clock.Elapsed.TotalSeconds;
+        conn.ElementalAilments.Apply(cold, cold, false, conn.PlayerMaxLife, now, _ => 0, new Random(1));
 
         Assert.Equal(.7, Program.PlayerActionFactor(conn), 6);
         Assert.Equal(beforeAttack / .7, (double)Call("SkillAttackSeconds", conn, attack, 1)!, 6);

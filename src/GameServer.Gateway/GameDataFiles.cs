@@ -8,6 +8,7 @@ static class GameDataFiles
     public static readonly (string File, string Feature)[] All =
     [
         ("data/tables/WorldAreas.json", "the game tables (stats, areas, waypoints, items, monsters, NPCs)"),
+        ("data/tables/PassiveJewelSlots.json", "ordinary passive tree jewel sockets"),
         ("data/tables/ModType.json", "vendor affix sale-price categories"),
         ("data/tables/Essences.json", "essence crafting and class-specific guaranteed modifiers"),
         ("data/tables/CraftingBenchOptions.json", "crafting bench recipes, unlocks and costs"),
@@ -25,7 +26,7 @@ static class GameDataFiles
         ("data/monster-takehit.json", "monster hit reactions (the TakeHit flinch and its sound)"),
         ("data/monster-contacts.json", "monster projectile release timing and points (a Sand Spitter mortar leaves at half the attack from the default height without it)"),
         ("data/projectile-clips.json", "monster projectile flight and impact clips (a mortar is invisible without its flight clip)"),
-        ("data/passive-skill-graphs.json", "ordinary and Phrecia passive graph membership/connections (passive-graphs v4)"),
+        ("data/passive-skill-graphs.json", "ordinary and Phrecia passive graph membership/connections/geometry (passive-graphs v5)"),
         ("data/phrecia-passive-skillgraph.psg", "merged passive graph analysis artifact (not installed)"),
     ];
 

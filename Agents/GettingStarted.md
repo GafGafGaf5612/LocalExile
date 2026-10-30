@@ -334,7 +334,9 @@ In game:
 - **Commands:** type in chat with Enter, for example `/commands` (or `/com`), `/set_speed 200`.
 
 Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and `walkmaps.log`), plus the client's own
-`Client\logs\Client.txt`.
+`Client\logs\Client.txt`. Every line starts with the time; the previous run's logs are in `logs\archive\`, and each
+connection's last packets in `logs\packets\`. `Game_TRACE` adds dev traces, and `.\scripts\dev\bugreport.ps1` zips it
+all for an issue ([debugging](docs/dev/debugging.md)).
 
 `live.ps1` options:
 - `-NoClient` restarts the servers but keeps the running client.
@@ -366,6 +368,7 @@ Logs are in `logs\` (`live-auth.log`, `live-gateway.log`, `live-patch.log`, and 
 | Spawn in the sea or off the map | an area the server does not generate, with no walk map yet | use `-Walkmaps` (step 9) and enter the area again |
 | `walkmaps: permission denied` | client and Python run at different privilege levels | run both as the same user, not one as administrator |
 | Esc → "Exit to character selection" hangs | not implemented yet | run `.\scripts\dev\live.ps1 -NoClient` (the client drops to the login screen) |
+| The client closes or crashes by itself | usually a message the server sent wrong or left out | read the `DISCONNECT` line and the `last … packet(s)` block above it in `live-gateway.log`; attach `scripts/re/frida/trace-crash.js` and reproduce; report it with `scripts\dev\bugreport.ps1` ([debugging](docs/dev/debugging.md)) |
 | Windows Firewall prompt | should not happen (servers bind to 127.0.0.1) | if it does, deny: nothing needs outside access |
 
 ## Configuration
@@ -397,6 +400,9 @@ Environment variables, read when each server starts:
 | `Game_SAVES_DB` | `data/saves.db` | character saves and stashes (Gateway, Auth) |
 | `Game_INSTANCE_SECRET` | `data/instance-secret.bin` | instance key secret (created on first start) |
 | `Game_PATCH_URL` | `http://127.0.0.1:8080/` | patch web server address |
+| `Game_TRACE` | unset | dev traces, a comma list: `move`, `latency`, `ticks`, `ai`, `packets`, or `all` ([debugging](docs/dev/debugging.md)) |
+| `Game_PACKET_DUMPS` | `logs\packets` (given by `live.ps1` to the servers it starts) | folder for each connection's last packets, written when it closes; `0` = none |
+| `Game_LOG_TIMESTAMPS` | unset | `0` = no time at the start of each log line |
 
 ## Files you will have afterwards
 

@@ -99,7 +99,8 @@ partial class Program
             bool replace = stat is "mana_cost" or "base_mana_cost" or "casting_spell" or "virtual_base_spell_cast_time_ms"
                 or "base_spell_cast_time_ms" or "hundred_times_casts_per_second" || stat.Contains("_base_", StringComparison.Ordinal)
                 && (stat.StartsWith("spell_minimum", StringComparison.Ordinal) || stat.StartsWith("spell_maximum", StringComparison.Ordinal));
-            result[key] = replace ? value : result.GetValueOrDefault(key) + value;
+            result[key] = replace ? value : ArcaneMight.IsGrant(key)
+                ? ArcaneMight.Combine(key, result.GetValueOrDefault(key), value) : result.GetValueOrDefault(key) + value;
         }
         return result;
     }

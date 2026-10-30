@@ -492,6 +492,16 @@ public class InstanceEntitiesTests
     }
 
     [Fact]
+    public void Character_passives_carry_the_cluster_jewel_nodes_in_their_own_list()
+    {
+        // The second u16 list holds the cluster jewel expansion ids (the client's own small ids, sent with the
+        // expansion flag), apart from the PassiveSkillGraphIds.
+        Assert.Equal("0033" + "0000" + "0000" + "0000" + "05" + "03" + "00" + "00" + "0001" + "3412"
+                + "0000" + "0002" + "CA00" + "CE00" + "0000" + "0000",
+            Convert.ToHexString(InstanceEntities.CharacterPassives(5, 3, [0x1234], clusterNodes: [202, 206])));
+    }
+
+    [Fact]
     public void Area_transition_blob_layout_and_type()
     {
         // Traced live 2026-10-16: the client consumed all 41 bytes (Positioned 16, Animated 1, AreaTransition 5, Stats 10,

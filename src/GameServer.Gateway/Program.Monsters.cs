@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using GameServer.Core.Protocol.Instance;
 using GameServer.Core.Protocol.Login;
+using GameServer.Core.Diagnostics;
 using DamageModel = GameServer.Core.World.DamageModel;
 using DamageType = GameServer.Core.World.DamageType;
 using DamagePacket = GameServer.Core.World.DamagePacket;
@@ -316,10 +317,11 @@ partial class Program
         // Advance the projectile runtime first: decisions and committed projectile contacts share one game time and pose.
         using (ProjectileMutation(conn, phase: "ai")) plan = PlanMonsterAi(conn, cadence, ProjectileWorldTime(conn));
         const ushort Move = 0x2909;
+        // A chase is re-ordered every few ticks: its lines only with Game_TRACE=ai (the packet history keeps them).
         foreach (var (id, m, action, from, to, why) in plan.Moves)
             await SendMonsterAction(remote, stream, ciphers, conn, id, m, action,
                 () => InstanceProtocol.ActionStarted(id, from.X, from.Y, to.X, to.Y, Move, 0xffff, 0x0408),
-                $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}");
+                ServerTrace.Ai || why == "gives up" ? $"0x01ab monster 0x{id:x} {why}: move from {from} to {to}" : null);
         foreach (var (id, m) in plan.BossBars)
         {
             lock (conn.Monsters) if (!MonsterPresent(conn, id, m)) continue;
@@ -337,7 +339,7 @@ partial class Program
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException) { }
         // Anything else is a server bug: the swing was already shown, so name the lost hit instead of faulting the task
         // unobserved (review 2026-10-30).
-        catch (Exception ex) { Console.WriteLine($"[gateway] {remote} monster 0x{id:x} swing {action} failed: {ex.GetType().Name}: {ex.Message}"); }
+        catch (Exception ex) { Console.WriteLine($"[gateway] {remote} monster 0x{id:x} swing {action} failed: {ServerLog.Describe(ex)}"); }
         finally { lock (conn.Monsters) cadence.CompleteSwing(m, action); }
     }
 

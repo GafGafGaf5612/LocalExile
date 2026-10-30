@@ -136,8 +136,12 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Added damage has its first stat: the attack's added lightning gets
   `attack_skills_have_added_lightning_damage_equal_to_%_of_maximum_mana` percent of the maximum mana pool
   (Whisperer "we know all", [20](../docs/protocol/20-damage.md) §2b).
-  Whisperer's 150% spell-increase transfer has shared attack regression coverage and native hit/panel checks.
-  Remaining conditional modifier sources are separate; see [20](../docs/protocol/20-damage.md) §2c.
+  Arcane Might's six modern contracts share attack/panel consumers, maximum independent grants and skill quality.
+  Normal Crown and mastery lifecycle have automated coverage; their native acceptance remains pending.
+  Earlier Whisperer raw-stat native checks do not establish this expanded composition's native behavior.
+  Iron Will/Strength provenance and missing upstream conditional spell producers require separate work.
+  Unsupported skill/variant execution and unrelated Crown leech remain separate; see
+  [Arcane Might boundaries](../docs/game/arcane-might.md) and [20](../docs/protocol/20-damage.md) §2c.
   Steel Willed's attack increase from complete groups of final armour has shared regression and native coverage.
   Boolean chaos-hit armour has native raw-source Life-loss controls and shared incoming-hit regressions.
   Mixed monster packets and ES/block/suppression/Fortification have automated coverage; recheck them natively.

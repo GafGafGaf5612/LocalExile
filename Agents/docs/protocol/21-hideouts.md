@@ -508,3 +508,34 @@ Tests cover raw-row hashes/costs, a guaranteed-tag reforge, augment removal+addi
 Before serializing the player, PrepareHideoutWaypoint restores the character's saved waypoint position.
 It sets the hideout spawn and movement origin to that exact cell, rather than a nearby cell or old template spawn.
 This applies to login, waypoint travel and returns from other areas; moving the waypoint changes later arrivals.
+
+## Delve: sulphite and the Crawler (live 2026-10-29)
+
+- **S→C 0x228** (class `0x1435dc940`, read `0x1421ad670`, dispatcher case 0xa9 at `0x142152f98`): u8, 20 raw bytes, 14
+  raw bytes. The handler builds a 34-byte record at instance `+0xd874`: the 14 bytes first, then the 20. It sets
+  `+0xd896` = 0x101 and raises the event at `+0x2878`.
+  - Record `+0x1e` (bytes 16..18 of the 20, little-endian) is the current Voltaxic Sulphite.
+  - Its capacity comes from bytes 0..16 (`0x14246e390`, the upgrade levels).
+  - S→C 0x226 (u16 old, u16 new) changes the current value. 0x227 (u32) changes the record's `+0xe`.
+  - `InstanceDelve.DelveData` writes it.
+- **The gauge** (`delve_energy_bar`, `0x14042e790`, built with the HUD by `0x140db0150`). It is updated on area entry
+  (S→C 0x21, `0x14042fff0`) and shown when both of these hold:
+  - the area is not of kind 0x25 (`(+0xc278)+0xd0`);
+  - the area's WorldAreas type (`(+0xc278)+0xb0` → `+0x1e4`, column `__col51`) is 27 (every `Delve_*` mine area), or
+    the gauge's own flag `+0x2f1` is set. Only the Subterranean Chart's windows (`0x14044fd80`, `0x1404586f0`) set it.
+
+  Delve_Hub is type 15, so in the encampment the sulphite shows in the chart (live: 300 after `/sulphite 300`).
+- **The Crawler**, `Metadata/Terrain/Leagues/Delve/Objects/DelveRobot`, deserializes 11 components (`read` 11; Render and
+  Wheels are client-only). `DelveRobotObject` writes them:
+  - Positioned, Animated (`DelveRobot.ao`) and Transitionable (state 1);
+  - Stats, Buffs and Life as a monster's, with 1 life;
+  - **DelveLight** (`0x1415d88d0`): u32, u32 n, u8, u8; then, for a type whose `+0xa7` is set (the Crawler), a u32
+    variation; then n × u32. The variation indexes `DelveRobotVariations.dat` (0 Default, 1 DelveBear) in `0x1415d75d0`.
+    Without it, the client read the next bytes as the index and crashed at `0x1415d7671` (live);
+  - MinimapIcon, then StateMachine with the shared states `sector` and `mtx_variation`, each sent with flag 0x02.
+
+  A click (C→S 0x24) opens the chart, S→C 0x7b kind 0x1c with 1. The Crawler is created on every Delve_Hub entry at
+  (408, 310), facing 90°, on the rails by the mine entrance (placed live, 2026-10-30).
+- **Placing stationary objects (dev).** `/stash_place`, `/guild_stash_place` and `/delve_crawler` `<x> <y> <degrees>`
+  move an object with S→C 0x1b7 (terrain height 0x7fffffff) and turn it with the Positioned rotation update, as the
+  hideout editor does. The path blocker moves too.

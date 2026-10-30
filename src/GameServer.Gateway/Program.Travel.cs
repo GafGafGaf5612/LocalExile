@@ -131,6 +131,11 @@ partial class Program
             await UseMapDevice(remote, stream, ciphers, conn, use, doodad, requestedAt);
             return;
         }
+        if (conn.DelveCrawlerObject != 0 && use.TargetId == conn.DelveCrawlerObject)
+        {
+            await OpenDelveChart(remote, stream, ciphers, conn, use, requestedAt);
+            return;
+        }
         if (conn.StashObject != 0 && use.TargetId == conn.StashObject)
         {
             await OpenStash(remote, stream, ciphers, conn, use, requestedAt);

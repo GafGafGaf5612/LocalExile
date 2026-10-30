@@ -54,8 +54,9 @@ The `LocalExile.Gateway` meter exports duration histograms in milliseconds, surr
 input batches; tags contain operation names, never character or account identifiers.
 Closed connections discard their abandoned backlog so its depth does not remain in the process total.
 At most one `[latency]` log summary is emitted per connection every ten seconds when an interval sample reaches 50 ms.
-Set `$env:Game_LATENCY_METRICS = '1'` in the PowerShell session before starting `scripts/dev/live.ps1` to log every
-interval instead; read `logs/live-gateway.log` for `pending-batches` and each phase's `interval-max-ms`.
+Set `$env:Game_TRACE = 'latency'` (or the older `$env:Game_LATENCY_METRICS = '1'`) in the PowerShell session before
+starting `scripts/dev/live.ps1` to log every interval instead ([debugging](../dev/debugging.md)); read
+`logs/live-gateway.log` for `pending-batches` and each phase's `interval-max-ms`.
 The logging flag does not change gameplay or the client's latency display.
 
 The full player stat and Actor refreshes (aura, charge, Fortification and Rage changes) build the whole skill list

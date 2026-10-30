@@ -16,7 +16,7 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 # Name, outputs (the first is checked for presence and freshness), runner (dotnet | python), arguments, version, needs,
 # and what reads it. Keep in step with the Gateway's GameDataFiles.cs.
 $manifest = @(
-    @{ Name = 'tables'; Outputs = @('data\tables\WorldAreas.json', 'data\tables\UniqueMaps.json', 'data\tables\Words.json', 'data\tables\ItemVisualIdentity.json', 'data\extract-report.json', 'data\tables\Essences.json', 'data\tables\CraftingBenchOptions.json', 'data\tables\CraftingItemClassCategories.json', 'data\tables\ModType.json'); Runner = 'dotnet'
+    @{ Name = 'tables'; Outputs = @('data\tables\WorldAreas.json', 'data\tables\UniqueMaps.json', 'data\tables\Words.json', 'data\tables\ItemVisualIdentity.json', 'data\extract-report.json', 'data\tables\Essences.json', 'data\tables\CraftingBenchOptions.json', 'data\tables\CraftingItemClassCategories.json', 'data\tables\ModType.json', 'data\tables\PassiveJewelSlots.json'); Runner = 'dotnet'
        Args = @('run', '--project', 'Tools/PoEDataExtractor', '--', 'decode', 'Client/Content.ggpk'); Version = 1; Needs = @()
        UsedBy = 'every game table: stats, levels, areas, waypoints, items, mods, monsters, NPCs; all other entries' }
     @{ Name = 'object-types'; Outputs = @('data\object-types.json'); Runner = 'python'
@@ -52,7 +52,7 @@ $manifest = @(
        Args = @('scripts/re/projectile_clips.py'); Version = 1; Needs = @('tables')
        UsedBy = 'server-created projectile objects (monster mortars): each Projectiles row''s flight and impact clip indexes and lengths in its rig, and its .ao default animation (11-skills.md)' }
     @{ Name = 'passive-graphs'; Outputs = @('data\passive-skill-graphs.json', 'data\phrecia-passive-skillgraph.psg'); Runner = 'dotnet'
-       Args = @('run', '--project', 'scripts/re/passive-graphs', '--', 'Client/Content.ggpk', 'data/passive-skill-graphs.json'); Version = 4; Needs = @('tables')
+       Args = @('run', '--project', 'scripts/re/passive-graphs', '--', 'Client/Content.ggpk', 'data/passive-skill-graphs.json'); Version = 5; Needs = @('tables')
        UsedBy = 'ordinary/ascendancy server membership and connectivity; derived Phrecia client artifact remains uninstalled' }
 )
 

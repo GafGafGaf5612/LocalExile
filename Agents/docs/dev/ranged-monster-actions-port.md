@@ -95,10 +95,14 @@ The solution builds with zero warnings/errors.
 Before the merge onto main, the standalone port passed Core 525, Data 18 and Gateway 3,368 (429 focused bow/wand,
 monster lifecycle, recent-hit and Rage cases; 38 chaos-armour cases after adapting the last reflection-based helper).
 After the merge (main's trimmed suites, projectile framework and surround AI): Core 353, Data 34 and Gateway 1,335
-pass with serialized collections. Under the repository's unlimited test parallelism two wall-clock-bound tests can
-flake and pass again in isolation: `Chill_slows_attack_and_spell_timers_once_in_both_modes` (main's, its chill expires
-while a slow connection setup consumes the clock) and
-`A_running_enemy_worker_sends_its_first_chase_promptly_after_the_player_enters_aggro_range` (300 ms bound under load).
+pass with serialized collections. Under the repository's unlimited test parallelism
+`A_running_enemy_worker_sends_its_first_chase_promptly_after_the_player_enters_aggro_range` (300 ms bound) can flake
+under load and pass again in isolation; `Chill_slows_attack_and_spell_timers_once_in_both_modes` could too until main
+moved it to the connection clock.
+Merging main at c1b112e4 (jewels, currency validation, Delve, the debugging aids) onto 8d2c99d5: Core 358, Data 34 and
+Gateway 1,994 pass at the default parallelism, with `passive-graphs` v5 and `projectile-clips` regenerated. Every line
+main added since 5d5b5150 is in the merged tree. Main's `Game_TRACE=ai` gate on chase log lines moved with the AI loop
+into `StepMonsterAi`; bow and wand shots take main's `Melee`/`WieldingWand` damage rules through `WeaponFor`.
 Four Python animation-extraction tests pass.
 The first focused/full attempts are retained in local artifacts alongside their corrections.
 The final Gateway runs serialize test collections through a local build-output runner file.
