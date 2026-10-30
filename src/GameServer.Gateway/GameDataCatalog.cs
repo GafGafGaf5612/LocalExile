@@ -90,17 +90,36 @@ static class GameDataCatalog
                 ?? throw new InvalidOperationException($"catalog {kind} row {row.Key} is empty"))];
     }
 
-    static void Seed<T>(GameDataStore store, string kind, T[] seed, Func<T, string> key)
+    /// <summary>
+    /// Seeds a kind once, then adds only keys that are new to the seed since the last run. The applied seed key set is
+    /// recorded, so a key that was in the previous seed and is missing from the catalogue was deleted by an admin and
+    /// stays deleted; only a genuinely new default is inserted. On the first run with this tracking, an existing
+    /// catalogue (or the old seeded flag) is kept as it is and the current seed becomes the baseline, which preserves
+    /// deletions made before the table existed.
+    /// </summary>
+    internal static void Seed<T>(GameDataStore store, string kind, T[] seed, Func<T, string> key)
     {
-        // Add rows introduced by a newer build, but keep a row an admin has edited. The old per-kind flag is
-        // informational; the missing-key check is what makes an upgrade add the full unique catalogue.
+        var seedKeys = seed.Select(key).ToHashSet(StringComparer.Ordinal);
+        var applied = store.LoadSeededKeys(kind);
+        if (applied.Count == 0)
+        {
+            bool hasCatalog = store.CatalogSeeded(kind) || store.LoadCatalog(kind).Count > 0;
+            if (!hasCatalog)
+                foreach (var entry in seed)
+                    store.PutCatalogRow(kind, key(entry), JsonSerializer.Serialize(entry, Json));
+            store.ReplaceSeededKeys(kind, seedKeys);
+            if (!store.CatalogSeeded(kind)) store.MarkCatalogSeeded(kind);
+            return;
+        }
+
         var existing = store.LoadCatalog(kind).Select(row => row.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var entry in seed)
         {
             string rowKey = key(entry);
-            if (!existing.Contains(rowKey))
+            if (!applied.Contains(rowKey) && !existing.Contains(rowKey))
                 store.PutCatalogRow(kind, rowKey, JsonSerializer.Serialize(entry, Json));
         }
+        if (!seedKeys.SetEquals(applied)) store.ReplaceSeededKeys(kind, seedKeys);
         if (!store.CatalogSeeded(kind)) store.MarkCatalogSeeded(kind);
     }
 

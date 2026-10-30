@@ -288,6 +288,12 @@ CREATE TABLE IF NOT EXISTS catalog_entries (
     PRIMARY KEY (kind, key)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS catalog_seed_keys (
+    kind TEXT NOT NULL,                   -- the catalogue kind
+    key TEXT NOT NULL,                    -- a default key already applied by the seed
+    PRIMARY KEY (kind, key)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS item_templates (
     id TEXT PRIMARY KEY,                  -- admin id, e.g. fire_wand
     label TEXT NOT NULL,                  -- admin label, not sent to the client
@@ -325,9 +331,11 @@ At Gateway startup, before the first item is created:
    revision.
 
 The item/jewel catalogues are one more snapshot: `catalog_entries` rows are seeded from the current code arrays on the
-first run of each kind (`catalog_seeded:<kind>` in `game_data_meta`), then loaded as typed rows. The code arrays remain
-the fresh-database seed; after that the database is the runtime source. A kind with all rows deleted stays empty instead
-of being re-seeded silently.
+first run of each kind, then loaded as typed rows. The code arrays remain the fresh-database seed; after that the
+database is the runtime source. `catalog_seed_keys` records the defaults the seed has applied: a reload inserts only
+keys new to the current seed, so a row deleted by an admin (or a whole kind emptied) stays deleted. On the first run
+with this tracking, an existing catalogue is kept and the current seed becomes the baseline, preserving deletions made
+before the table existed. `catalog_seeded:<kind>` in `game_data_meta` remains as an informational first-run flag.
 
 `Mod` keeps its base `ModStat` values. The effective range is resolved through a `ModRangeProvider` held by the
 `ModCatalog`:

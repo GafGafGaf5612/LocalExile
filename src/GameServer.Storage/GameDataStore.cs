@@ -98,6 +98,11 @@ public sealed class GameDataStore : IDisposable
                     updated_utc TEXT NOT NULL,
                     PRIMARY KEY (kind, key)
                 ) STRICT;
+                CREATE TABLE IF NOT EXISTS catalog_seed_keys (
+                    kind TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    PRIMARY KEY (kind, key)
+                ) STRICT;
                 CREATE VIEW IF NOT EXISTS effective_mod_stats AS
                     SELECT m.mod_id, m.stat_index, m.stat_id,
                            COALESCE(o.minimum, m.minimum) AS minimum,
@@ -121,7 +126,8 @@ public sealed class GameDataStore : IDisposable
                     updated_utc TEXT NOT NULL
                 ) STRICT;
                 """);
-            Execute("INSERT OR IGNORE INTO game_data_meta (key, value) VALUES ('schema_version', '1')");
+            Execute("INSERT OR IGNORE INTO game_data_meta (key, value) VALUES ('schema_version', '2')");
+            Execute("UPDATE game_data_meta SET value = '2' WHERE key = 'schema_version' AND value = '1'");
         }
         catch
         {
@@ -380,6 +386,38 @@ public sealed class GameDataStore : IDisposable
             using var command = Command("DELETE FROM catalog_entries WHERE kind = $kind AND key = $key",
                 ("$kind", kind), ("$key", key));
             command.ExecuteNonQuery();
+        });
+    }
+
+    /// <summary>The seed keys last recorded for a kind. A missing key in the catalogue that is in this set was
+    /// deleted by an admin, not omitted by an older seed.</summary>
+    public IReadOnlySet<string> LoadSeededKeys(string kind)
+    {
+        lock (_gate)
+        {
+            using var command = Command("SELECT key FROM catalog_seed_keys WHERE kind = $kind", ("$kind", kind));
+            using var reader = command.ExecuteReader();
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            while (reader.Read()) keys.Add(reader.GetString(0));
+            return keys;
+        }
+    }
+
+    public void ReplaceSeededKeys(string kind, IEnumerable<string> keys)
+    {
+        if (string.IsNullOrWhiteSpace(kind)) throw new ArgumentException("catalog kind is empty", nameof(kind));
+        Atomically(() =>
+        {
+            using (var delete = Command("DELETE FROM catalog_seed_keys WHERE kind = $kind", ("$kind", kind)))
+                delete.ExecuteNonQuery();
+            using var insert = Command("INSERT INTO catalog_seed_keys (kind, key) VALUES ($kind, $key)",
+                ("$kind", kind), ("$key", ""));
+            insert.Prepare();
+            foreach (string key in keys)
+            {
+                insert.Parameters["$key"].Value = key;
+                insert.ExecuteNonQuery();
+            }
         });
     }
 
