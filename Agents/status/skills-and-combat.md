@@ -133,7 +133,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Native panel and target-life checks verify 100 to 250, additive 230, a half-percent endpoint of 203 and reductions.
   Removal and relog clear the effect; ordinary bows retain release snapshots and supported spells remain isolated.
   The native check uses development stat inputs; Phrecia node selection and the rest of Whisperer remain separate.
-  Code: `DamageStats`, `SkillCatalog.Unarmed.HitDamage`, `SupportedAttackDamage`.
+  These native results are historical raw-stat checks; expanded Arcane Might coverage is listed under Partly working.
+  Code: `ArcaneMight`, `DamageStats`, `SkillCatalog.Unarmed.HitDamage`, `SupportedAttackDamage`.
   Docs: [20](../docs/protocol/20-damage.md) §2c.
 - Behemoth Steel Willed: each complete group of 450 final armour adds 2% increased attack damage.
   The contribution joins raw attack increases once and feeds weapon physical, added damage and supported attacks.
@@ -342,6 +343,18 @@ The generic [projectile framework](../docs/game/projectile-framework.md) owns pr
 the sole 30 Hz runtime. Catalog fallback provides basic flight; registered skill definitions supply special rules
 and can require explicit recipes.
 
+- Arcane Might (#364) shares one highest-eligible-ratio consumer across current attacks and damage panels.
+  Normal Crown of Eyes, Whisperer's existing consumer and wand mastery use the six modern stat contracts.
+  Independent grants do not stack; skill base plus quality still adds before the maximum comparison.
+  Weapon-local damage now scales in ordinary and supported attacks; restricted types are cleared from skill panels.
+  Automated cases cover actual direct/area target Life loss, snapshots, mastery refund and Crown persistence/removal.
+  All 24 inventoried numeric skill constants and three quality records have calculation/data checks.
+  Those checks do not enable unsupported skills, variants, mercenaries or Phrecia allocation.
+  Iron Will/Strength provenance, missing upstream spell inputs and unrelated leech remain outside this consumer.
+  Native user checks confirm ordinary Crown ratios, KB non-stacking and Fireball isolation in the damage panels.
+  KB's absolute damage exposed an effectiveness-offset decoding error; raw 4000 now resolves to 140%, not 40%.
+  Corrected absolute damage and mastery lifecycle still need native verification.
+  See [scope and coverage](../docs/game/arcane-might.md) and [20](../docs/protocol/20-damage.md) §2c.
 - Ruthless resolves native skill/gem, passive and mod alternatives per connection, including zero-valued overrides.
   Ordinary characters in the same Gateway keep ordinary catalogs.
   Hardcore death is terminal for the old connection; a queued level-up cannot revive it.

@@ -61,6 +61,7 @@ How to regenerate them: [re/tooling.md](re/tooling.md) §7.
 | [dev-server.md](dev-server.md) | the JSON-lines dev server, `GameServer.Auth` and `GameServer.Patch` usage |
 | [saves.md](saves.md) | how player progress is saved: the SQLite save database, transactions, what a failed save does |
 | [game/fortification.md](game/fortification.md) | melee-hit protection and the explicit server model |
+| [game/arcane-might.md](game/arcane-might.md) | spell increased/reduced transfer to attacks, source inventory and implementation boundaries |
 | [game/maps.md](game/maps.md) | 3.29 maps and the Atlas: the 20 generic map bases, tiers, drops, Voidstones (rules to build to) |
 | [game/gambler.md](game/gambler.md) | Gambler node checklist, incoming elemental ailments and read-only opt-in |
 | [game/aristocrat.md](game/aristocrat.md) | Aristocrat node checklist: gem levels/quality, attribute requirements and conditional immunities |

@@ -195,9 +195,9 @@ sealed class PassiveTree(string folder = "data", bool ruthless = false)
         foreach (var n in nodes)
         {
             if (Find(n) is { } node)
-                foreach (var (k, v) in node.Stats) sum[k] = ActorScale.Add(k, sum.GetValueOrDefault(k), v);
+                foreach (var (k, v) in node.Stats) sum[k] = ArcaneMight.Combine(k, sum.GetValueOrDefault(k), v);
             if (masteries is not null && masteries.TryGetValue(n, out var effect) && FindEffect(effect) is { } mastery)
-                foreach (var (k, v) in mastery.Stats) sum[k] = ActorScale.Add(k, sum.GetValueOrDefault(k), v);
+                foreach (var (k, v) in mastery.Stats) sum[k] = ArcaneMight.Combine(k, sum.GetValueOrDefault(k), v);
         }
         return sum;
     }
