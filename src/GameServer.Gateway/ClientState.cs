@@ -167,6 +167,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     public int ClassRow { get; init; } = SkillCatalog.WitchRow;
     public readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     public readonly ConnectionPerformance Performance = new();
+    // The connection's last messages, both directions (PacketHistory), and why the server closed it (the DISCONNECT line).
+    public readonly PacketHistory Packets = new();
+    public volatile string? CloseReason;
     // The Escape menu's pause (C→S 0x1d4) stops the Clock: walks, cooldowns and flask effects stand still meanwhile.
     public bool Paused => !Clock.IsRunning;
     // A transfer invalidates flights even during the gap after PendingTransfer is consumed by Transfer.
