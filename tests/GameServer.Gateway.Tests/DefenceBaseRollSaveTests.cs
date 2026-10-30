@@ -109,7 +109,7 @@ public sealed class DefenceBaseRollSaveTests : IDisposable
         var item = Armour(roll) with { ItemLevel = 20 };
         var withQuality = CurrencyEffects.ArmourerScrap(item)!;
         var reforged = new ItemRolls(Program.Items).Roll(withQuality, ItemRarity.Magic, new Random(75));
-        var mirrored = CurrencyEffects.Mirror(reforged)!;
+        var mirrored = CurrencyEffects.Mirror(reforged, new ItemRolls(Program.Items))!;
 
         Assert.Equal((byte)1, withQuality.Quality);
         Assert.Equal(roll, withQuality.DefenceBaseRoll);

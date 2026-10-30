@@ -205,7 +205,7 @@ public sealed class DefenceBaseRollTests : IDisposable
         Assert.NotNull(quality);
         Assert.Equal(13, quality.Quality);
         Assert.Equal(17, quality.DefenceBaseRoll);
-        var mirror = CurrencyEffects.Mirror(quality);
+        var mirror = CurrencyEffects.Mirror(quality, rolls);
         Assert.NotNull(mirror);
         Assert.Equal(17, mirror.DefenceBaseRoll);
     }
