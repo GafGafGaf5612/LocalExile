@@ -618,8 +618,15 @@ Live 2026-10-17: Hungry Corpses walk up, swing (animated) and lower the player's
   team 2 so no monster is in its way, and the same contact pipeline commits the hit when it lands on a player
   within the splash (`Game_MONSTER_MORTAR_RADIUS`, default 10 cells; the skill's stats carry no radius). The
   client creates no projectile of its own for a monster's action (Frida 2026-10-29: 27 Sand Spitter attacks, no
-  client-side object), so without the server's object there is nothing to see. Weapon projectile skills
-  (`monster_projectile_weapon`, SkillID 0) take their projectile from the monster's weapon art, not resolved yet.
+  client-side object), so without the server's object there is nothing to see. Such a skill also carries its stat
+  set's own entries beside the attack's numbers (`MonsterProjectileSkillStats`: `action_should_face_away_from_target`,
+  `projectile_uses_contact_position`, `use_scaled_contact_offset`, the 3-cell spread and 50-cell minimum range;
+  not the effect's cast-time or mana entries), because the client derives none and without the face-away flag the
+  Spitter faced the player like a melee swing instead of turning its back to spit, as it does on the live game. The
+  hit lands at the later of the shot's simulated contact and the connection clock: the fortification and recent-hit
+  trackers refuse an earlier time than their last read, and the pump once closed a connection over it (live
+  2026-10-29). Weapon projectile skills (`monster_projectile_weapon`, SkillID 0) take their projectile from the
+  monster's weapon art, not resolved yet.
   A pending swing reserves its generation through contact, so a blocked send gate cannot reserve duplicate attacks.
   Contact checks the original monster, action generation, life, range, pause and area lifetime at the send gate.
   Boss stages and emergence retain their own timing; the next ordinary action waits for stage completion's final

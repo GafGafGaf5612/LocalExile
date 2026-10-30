@@ -12,6 +12,22 @@ partial class Program
         variety.GrantedEffects is [int first, ..] && (Skills.IsRangedAttack(first)
             || variety.RangedWeapon && Skills.IsAttack(first));
 
+    // A projectile skill's own stats go to the client with the attack's numbers: the client derives none itself
+    // (11-skills.md §4), and without them a Sand Spitter's action faces its target like a melee swing instead of turning
+    // its back to spit (`action_should_face_away_from_target`, with `projectile_uses_contact_position`, the spread and
+    // minimum range from the stat set). The attack's numbers win on a shared key; the effect's cast-time and mana-cost
+    // entries, which an attack action does not use, stay out.
+    static readonly string[] MonsterSkillStatsNotSent =
+        ["base_spell_cast_time_ms", "virtual_base_spell_cast_time_ms", "hundred_times_casts_per_second", "base_mana_cost", "mana_cost"];
+
+    internal static IReadOnlyList<(uint, int)> MonsterProjectileSkillStats(ClientState conn, int effect, int level, MonsterAttack attack)
+    {
+        var own = attack.SkillStats();
+        var taken = own.Select(s => s.Item1).ToHashSet();
+        foreach (string name in MonsterSkillStatsNotSent) if (Stats.Key(name) is uint key) taken.Add(key);
+        return [.. SkillsFor(conn).EffectStats(effect, level).Where(s => !taken.Contains(s.Item1)), .. own];
+    }
+
     // Creates one monster: registers its type at this level (0x20, once per connection), creates it (0x2b9) and puts it in
     // the wake zone (0x1a9), and keeps it for the AI. /spawn_mob and the area's packs (PopulateArea) use it.
     internal static async Task SpawnMonster(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, MonsterCatalog.Variety variety,
@@ -53,7 +69,8 @@ partial class Program
             Projectile = rangedAttack && variety.GrantedEffects is [int rangedEffect, ..] ? SkillsFor(conn).MonsterProjectile(rangedEffect) : null,
         };
         var skill = variety.GrantedEffects is [int effect, ..]
-            ? SkillsFor(conn).FindByRow(attack.SkillId, effect, level, attack.SkillStats()) : null;
+            ? SkillsFor(conn).FindByRow(attack.SkillId, effect, level,
+                attack.Projectile is null ? attack.SkillStats() : MonsterProjectileSkillStats(conn, effect, level, attack)) : null;
         // A boss with stages also has the skill that changes them (Hillock's sword extract, BossFights).
         var stage = BossFights.For(variety.Id);
         // Its stats as the attack's (skill_is_non_pathing above all, and the stage's own time): without them the client sent

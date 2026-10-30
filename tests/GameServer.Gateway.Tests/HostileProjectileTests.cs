@@ -74,4 +74,55 @@ public class HostileProjectileTests
         Assert.Equal(100u, f.Conn.PlayerLife);
         Assert.Empty(f.Session.Runtime.Projectiles);
     }
+
+    // Sand Spitter's mortar effect (GrantedEffects row 617, 3.29.3b tables): the server resolves its projectile and sends
+    // the skill's own stats, above all the face-away flag the client needs to turn the Spitter around, without the
+    // effect's cast-time entries and with the attack's numbers winning.
+    [Fact]
+    public void A_mortar_skill_resolves_its_projectile_and_sends_its_own_stats_with_the_attack()
+    {
+        TestSaves.Ensure();
+        var conn = new ClientState(new AreaLayout(1, "test", 300, 300, 10, 10, null, []), 1, 1);
+        var catalog = Program.SkillsFor(conn);
+        var projectile = catalog.MonsterProjectile(617);
+        Assert.NotNull(projectile);
+        Assert.Equal(Mortar.Metadata, projectile!.Metadata);
+        Assert.True(projectile.Lobbed);
+        Assert.Equal(1170, projectile.Speed);
+
+        var attack = new MonsterAttack(0x102, 0.99, 30, DamagePacket.Of(DamageType.Physical, 10, 10)) { Ranged = true, Projectile = projectile };
+        var stats = Program.MonsterProjectileSkillStats(conn, 617, 1, attack).ToDictionary(s => s.Item1, s => s.Item2);
+        uint Key(string name) => Program.Stats.Key(name) ?? throw new Xunit.Sdk.XunitException(name);
+        Assert.Equal(1, stats[Key("action_should_face_away_from_target")]);
+        Assert.Equal(1, stats[Key("projectile_uses_contact_position")]);
+        Assert.Equal(3, stats[Key("projectile_spread_radius")]);
+        Assert.Equal(1, stats[Key("skill_is_non_pathing")]);
+        Assert.Equal(30, stats[StatKeys.MainHandMaxAttackDistance]);
+        Assert.False(stats.ContainsKey(Key("base_spell_cast_time_ms")));
+        Assert.False(stats.ContainsKey(Key("mana_cost")));
+        Assert.Equal(stats.Count, Program.MonsterProjectileSkillStats(conn, 617, 1, attack).Count);   // no duplicate keys
+    }
+
+    // Live 2026-10-29: a mortar landed a few milliseconds of simulation behind the connection clock, after a stats
+    // refresh had already read the fortification tracker at the clock's time; the tracker refused the earlier time and
+    // the projectile pump closed the connection. The hit lands at the later of the two times.
+    [Fact]
+    public async Task A_landing_behind_a_later_clock_read_still_commits_its_hit()
+    {
+        await using var f = new ProjectileRuntimeFixture();
+        var m = Shooter(40, 10, Mortar);
+        f.Conn.Monsters.Add(MonsterId, m);
+        var use = Program.MonsterProjectileUse(f.Session, MonsterId, m, m.Attack!, Mortar, m.ActionGeneration);
+        f.Session.Schedule(f.Session.Runtime.Now, () => true, () => use);
+        f.Advance(0.02);
+        // The connection clock runs on and the tracker is read at its time, as a stats refresh would, before the
+        // simulated landing (about 0.3 s of simulation) is resolved.
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+        Program.FortificationOf(f.Conn).Read(f.Conn.Clock.Elapsed.TotalSeconds);
+        f.Advance(0.6);
+        byte[] arrival = await f.Read();
+        Assert.True(f.Conn.PlayerLife < 100);
+        Assert.True(IndexOf(arrival, ObjectHeader(InstanceProtocol.ActionHitId, MonsterId)) >= 0);
+        Assert.False(f.Conn.Closed);
+    }
 }

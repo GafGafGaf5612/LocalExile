@@ -66,7 +66,11 @@ partial class Program
     {
         var conn = session.Conn;
         if (contact.Target.Id != PlayerId || conn.PlayerLife == 0 || InGracePeriod(conn)) return ProjectileHitResult.Miss;
-        double now = contact.At / (double)ProjectileRuntime.QuantaPerSecond;
+        // The hit pipeline's timers (fortification, recent hits, ailments, evasion entropy) run on the connection clock and
+        // refuse to go backwards. The contact's simulated instant lies a few milliseconds behind that clock, which other
+        // reads (a stats refresh, a melee swing) may already have advanced, so the hit lands at whichever is later. The
+        // runtime's fixtures run their simulation ahead of the clock; there the contact time wins.
+        double now = Math.Max(contact.At / (double)ProjectileRuntime.QuantaPerSecond, conn.Clock.Elapsed.TotalSeconds);
         var here = conn.Walk.Position(now);
         var from = ((int)Math.Round(contact.Position.X), (int)Math.Round(contact.Position.Y));
         var outcome = CommitMonsterHitLocked(session.remote, conn, shot.MonsterId, shot.Monster, shot.Attack, now, here, from, checkRange: false);
