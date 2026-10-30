@@ -454,6 +454,28 @@ partial class Program
             string? error = await ApplyTattoo(remote, stream, ciphers, conn, name, node);
             await conn.Commands!.Reply(error ?? $"{name} applied to passive {node}");
         })
+        .Add("journey_makanui", "/journey_makanui <node> [keystone] (dev: apply Journey Makanui, random or chosen)", async args =>
+        {
+            if (args.Length < 1 || !ushort.TryParse(args[0], out ushort node))
+            {
+                await conn.Commands!.Reply("Usage: /journey_makanui <node> [keystone name|graph id]");
+                return;
+            }
+            JourneyMakanuiCatalogue.Entry? chosen = null;
+            if (args.Length > 1)
+            {
+                chosen = JourneyMakanuiCatalogue.Find(string.Join(' ', args.Skip(1)));
+                if (chosen is null)
+                {
+                    await conn.Commands!.Reply($"No keystone \"{string.Join(' ', args.Skip(1))}\"");
+                    return;
+                }
+            }
+            string? error = await ApplyTattoo(remote, stream, ciphers, conn, "Journey Tattoo of Makanui", node,
+                chosenKeystone: chosen?.GraphId);
+            await conn.Commands!.Reply(error ?? $"Journey Tattoo of Makanui applied to passive {node}" +
+                (chosen is null ? " (random keystone)" : $" ({chosen.Name})"));
+        })
         .Add("tattoo_remove", "/tattoo_remove <node> (dev: remove the tattoo from a passive)", async args =>
         {
             if (args.Length != 1 || !ushort.TryParse(args[0], out ushort node))

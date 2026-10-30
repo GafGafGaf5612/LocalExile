@@ -69,7 +69,9 @@ yet confirmed on screen).
   all big-endian. The item type decides: `apply_passive_tattoo` applies a tattoo, `CurrencyConvertToNormal`
   (Orb of Scouring) removes it. Captured `0077000000010000049C5335` = inventory 1, item 1180, node 21301.
   The Gateway answers with 0xbf, 0x1b3 and 0x33; the tattoo is carried in 0x33's fifth list as
-  `node | PassiveSkillOverrides.dat HASH16 << 16`.
+  `node | PassiveSkillOverrides.dat HASH16 << 16`. It validates the target set, the 50-tattoo cap and the
+  `PassiveSkillOverrides.Limit` group (one per character; same-node replacement is allowed). Journey Tattoo of
+  Makanui sends the HASH16 of the keystone it saved in `TattooKeystones`, not the tattoo's own override row.
 - **C→S 0x123** (3 bytes, u8 1 / 0): a panel opened or closed (sent when the tree opens and closes).
 - **C->S 0x35** (6 bytes): u16 node (big-endian, PassiveSkillGraphId), u16 effect (big-endian,
   PassiveSkillMasteryEffects.dat HASH16). Captured `003598091194` = node 38921 (Block Mastery), effect 4500

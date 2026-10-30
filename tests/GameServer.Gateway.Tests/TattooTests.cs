@@ -27,6 +27,47 @@ public class TattooTests
     }
 
     [Fact]
+    public void Limits_use_the_client_limit_categories()
+    {
+        Assert.Equal("Loyalty Tattoo", TattooCatalogue.LimitName(0));
+        Assert.Equal("Attribute Notable Tattoo", TattooCatalogue.LimitName(4));
+        Assert.Equal("Ancestral Tattoo", TattooCatalogue.LimitName(5));
+        Assert.Equal("Keystone Tattoo", TattooCatalogue.LimitName(6));
+        Assert.Equal("Ascendancy Tattoo", TattooCatalogue.LimitName(40));
+        Assert.Null(TattooCatalogue.LimitName(7));
+        Assert.Null(TattooCatalogue.LimitName(-1));
+
+        Assert.Equal(0, TattooCatalogue.Find("Loyalty Tattoo of Kaom")?.Limit);
+        Assert.Equal(4, TattooCatalogue.Find("Honoured Tattoo of the Warlord")?.Limit);
+        Assert.Equal(5, TattooCatalogue.Find("Ancestral Tattoo of Bloodlines")?.Limit);
+        Assert.Equal(6, TattooCatalogue.Find("Journey Tattoo of Makanui")?.Limit);
+        Assert.Equal(40, TattooCatalogue.Find("Forbidden Tattoo of the Ranger")?.Limit);
+        Assert.Equal(-1, TattooCatalogue.Find("Tattoo of the Ngamahu Firewalker")?.Limit);
+    }
+
+    [Fact]
+    public void A_limit_refuses_a_second_tattoo_from_the_same_group_but_allows_replacement()
+    {
+        var warlord = TattooCatalogue.Find("Honoured Tattoo of the Warlord")!;
+        var mountain = TattooCatalogue.Find("Honoured Tattoo of the Mountain")!;
+        var makanui = TattooCatalogue.Find("Journey Tattoo of Makanui")!;
+        var plain = TattooCatalogue.Find("Tattoo of the Ngamahu Firewalker")!;
+        var tattoos = new Dictionary<ushort, string> { [100] = warlord.Name };
+
+        Assert.Equal("only one Attribute Notable Tattoo can be applied",
+            Program.TattooLimitRefusal(tattoos, 200, mountain));
+        // Replacing the same node with another tattoo of the same group is not a second tattoo.
+        Assert.Null(Program.TattooLimitRefusal(tattoos, 100, mountain));
+        // A different group and a tattoo without a group are allowed.
+        Assert.Null(Program.TattooLimitRefusal(tattoos, 200, makanui));
+        Assert.Null(Program.TattooLimitRefusal(tattoos, 200, plain));
+
+        var keystone = new Dictionary<ushort, string> { [100] = makanui.Name };
+        Assert.Equal("only one Keystone Tattoo can be applied",
+            Program.TattooLimitRefusal(keystone, 200, makanui));
+    }
+
+    [Fact]
     public void Every_pilot_tattoo_maps_to_at_least_one_client_stat()
     {
         Assert.NotEmpty(TattooStats.Names);
@@ -133,6 +174,37 @@ public class TattooTests
             stat => stat.Key == Program.Stats.Key("base_cooldown_speed_+%"));
         Assert.Contains(TattooStats.For("Tattoo of the Tawhoa Makanga")!,
             stat => stat.Key == Program.Stats.Key("flask_effect_+%"));
+    }
+
+    [Fact]
+    public void Journey_Makanui_has_the_48_base_keystones_and_never_picks_the_target()
+    {
+        Assert.Equal(48, JourneyMakanuiCatalogue.All.Count);
+        Assert.Equal("Supreme Ego", JourneyMakanuiCatalogue.FindByGraphId(49639)?.Name);
+        Assert.Equal("Versatile Combatant", JourneyMakanuiCatalogue.FindByGraphId(50679)?.Name);
+        for (int i = 0; i < 50; i++)
+            Assert.NotEqual((ushort)49639, JourneyMakanuiCatalogue.Pick(49639)?.GraphId);
+    }
+
+    [Fact]
+    public void Journey_Makanui_installs_the_chosen_keystone_stats()
+    {
+        TestSaves.Ensure();
+        string character = "TattooMakanui" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var conn = new ClientState(new(ushort.MaxValue, "Tattoo", 128, 128, 32, 32, null, []), 0, 1)
+                { Character = character, ClassRow = 1, PlayerLife = 100 };
+            // Versatile Combatant replaced by Supreme Ego.
+            conn.Passives = [50679];
+            conn.Tattoos[50679] = "Journey Tattoo of Makanui";
+            conn.TattooKeystones[50679] = 49639;
+            conn.TattooRevision++;
+            var stats = Program.CharacterPlayerStats(conn);
+            Assert.Equal(1, stats.GetValueOrDefault(Program.Stats.Key("keystone_supreme_ego")!.Value));
+            Assert.DoesNotContain(Program.Stats.Key("keystone_versatile_combatant")!.Value, stats.Keys);
+        }
+        finally { PlayerInventories.Forget(character); }
     }
 
     [Fact]

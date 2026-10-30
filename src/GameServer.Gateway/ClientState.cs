@@ -413,7 +413,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // Applied tattoos: passive node (PassiveSkillGraphId) -> tattoo name. The tattoo stays on the node when the
     // passive is unallocated, so this map is independent of Passives. Saved with the character.
     public Dictionary<ushort, string> Tattoos = [];
-    // Changes whenever Tattoos changes; part of the stat-source cache key.
+    // Journey Tattoo of Makanui's chosen replacement keystone: passive node -> keystone PassiveSkillGraphId.
+    public Dictionary<ushort, ushort> TattooKeystones = [];
+    // Changes whenever Tattoos/TattooKeystones changes; part of the stat-source cache key.
     public int TattooRevision;
     // Extra passive points from /add_passive_points (the 0x33 extra_skill_points field), saved with the character.
     public ushort ExtraPassivePoints;

@@ -9,7 +9,7 @@ using GameServer.Core.Protocol.Instance;
 static class TattooCatalogue
 {
     public sealed record Entry(int Row, string Id, string Name, int Set, string Target, int Tribe, int Override,
-        int OverrideHash, int RequiresAdjacent, int MaxAdjacent, bool Forbidden)
+        int OverrideHash, int RequiresAdjacent, int MaxAdjacent, int Limit, bool Forbidden)
     {
         public bool DropDisabled => Name.StartsWith("Honoured ", StringComparison.Ordinal)
             || Name.StartsWith("Loyalty ", StringComparison.Ordinal)
@@ -29,6 +29,19 @@ static class TattooCatalogue
     public static IReadOnlyList<Entry> All => Entries.Value;
 
     public static string[] Names => [.. All.Select(entry => entry.Name)];
+
+    /// <summary>The client's limit category for a tattoo, or null when the item has no special limit beyond the
+    /// 50-tattoo cap. The client only renders the "Limited to: 1 ..." line from its own tables; the server enforces
+    /// the same group independently.</summary>
+    public static string? LimitName(int limit) => limit switch
+    {
+        0 => "Loyalty Tattoo",
+        4 => "Attribute Notable Tattoo",
+        5 => "Ancestral Tattoo",
+        6 => "Keystone Tattoo",
+        40 => "Ascendancy Tattoo",
+        _ => null,
+    };
 
     public static Entry? Find(string query)
     {
@@ -57,6 +70,7 @@ static class TattooCatalogue
         var overrideHashes = new List<int>();
         var overrideRequires = new List<int>();
         var overrideMax = new List<int>();
+        var overrideLimits = new List<int>();
         if (File.Exists(overridePath))
             using (var document = JsonDocument.Parse(File.ReadAllBytes(overridePath)))
                 foreach (var row in document.RootElement.EnumerateArray())
@@ -64,6 +78,8 @@ static class TattooCatalogue
                     overrideHashes.Add(row.GetProperty("HASH16").GetInt32());
                     overrideRequires.Add(row.GetProperty("RequiresAdjacent").GetInt32());
                     overrideMax.Add(row.GetProperty("MaxAdjacent").GetInt32());
+                    overrideLimits.Add(row.TryGetProperty("Limit", out var limit) && limit.ValueKind == JsonValueKind.Number
+                        ? limit.GetInt32() : -1);
                 }
 
         var sets = new List<string>();
@@ -101,8 +117,10 @@ static class TattooCatalogue
                     ? overrideRequires[target.Override] : 0;
                 int maxAdjacent = target.Override >= 0 && target.Override < overrideMax.Count
                     ? overrideMax[target.Override] : 0;
+                int limit = target.Override >= 0 && target.Override < overrideLimits.Count
+                    ? overrideLimits[target.Override] : -1;
                 result.Add(new Entry(index, id, name, target.Set, targetName, target.Tribe, target.Override,
-                    overrideHash, requiresAdjacent, maxAdjacent, forbidden));
+                    overrideHash, requiresAdjacent, maxAdjacent, limit, forbidden));
             }
             index++;
         }

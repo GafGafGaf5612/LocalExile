@@ -1,13 +1,15 @@
 # Tattoos
 
-**Status: in progress (documentation complete, catalogue 100/100; 44 tattoo rows client-verified).** The
+**Status: in progress (documentation complete, catalogue 100/100; 45 tattoo rows client-verified).** The
 client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries the inventory
 id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends the tattoo in
-`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Forty-four rows are `works` (the ten pilot,
-22 plain stats, nine Makanga gates and three Journey tattoos), one is `partial` (Ancestral Bloodlines: ES recovery
-works, life/mana recovery stats are unread), two are `inert` (Hinekora and Kitava Makanga) and 53 are
-`not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the target/limit
-rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
+`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Forty-five rows are `works` (the ten pilot,
+22 plain stats, nine Makanga gates, three Journey tattoos and Journey Makanui), one is `partial` (Ancestral
+Bloodlines: ES recovery works, life/mana recovery stats are unread), two are `inert` (Hinekora and Kitava Makanga)
+and 52 are `not implemented`. The server enforces the client's per-group limits (Loyalty, Attribute Notable,
+Ancestral, Keystone and Ascendancy) independently of the client tooltip. This page records the 3.29.3b catalogue,
+the client mechanics, the protocol, the target/limit rules and the implementation groups. The `Status` column is
+per row; `Reason` names the missing layer.
 
 This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos`,
 `PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki
@@ -21,9 +23,9 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
 | Current (drop-enabled) | 53 | 29 | 0 | 0 | 24 |
-| Drop-disabled | 40 | 15 | 1 | 2 | 22 |
+| Drop-disabled | 40 | 16 | 1 | 2 | 21 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **44** | **1** | **2** | **53** |
+| **Total** | **100** | **45** | **1** | **2** | **52** |
 
 | Status | Meaning |
 |---|---|
@@ -41,8 +43,8 @@ stat already has a gameplay consumer. The first implementation pass must audit e
 |---|---|---|
 | 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 32/32 non-Makanga plain stats client-verified; the Makanga rows are in group 3. |
 | 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
-| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Makanga and Journey counting are implemented (Journey Body/Mind/Soul work; Ancestral is partial); the Honoured attribute-notable limit and Journey Makanui are still not implemented. |
-| 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
+| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the five `PassiveSkillOverrides.Limit` groups. | Makanga, Journey counting and the generic limits are implemented (Journey Body/Mind/Soul and Keystone work; Ancestral is partial). |
+| 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Journey Makanui works; the seven Forbidden tattoos are not implemented. |
 | 5. Loyalty summons | The ten Summon Spirit triggers, each limited to 1 Loyalty Tattoo. | Not implemented. |
 
 ## What a tattoo is
@@ -101,14 +103,28 @@ Special limits and conditions:
   replaced and the tattoo stays applied, but the replacement grants nothing while the allocated direct-neighbour
   count is outside `RequiresAdjacent`/`MaxAdjacent`. The client accepts the application even when the requirement is
   unmet; the server gates the stats.
-- **Loyalty**: limited to 1 Loyalty Tattoo per character.
-- **Honoured attribute notables**: the nine Honoured tattoos that replace a +30 attribute notable share a limit of
-  1 Attribute Notable Tattoo. The small-attribute Honoured tattoos are not covered by that limit.
-- **Ancestral Tattoo of Bloodlines**: limited to 1 Ancestral Tattoo.
-- **Journey Tattoo of Makanui**: replaces a keystone and is limited to 1 Keystone Tattoo; it grants a random keystone
-  on application.
-- **Forbidden**: replaces a non-multiple-choice ascendancy notable and is limited to 1 Ascendancy Tattoo; it grants a
-  random non-multiple-choice ascendancy notable from the class's base ascendancies.
+- **Generic limits**: `PassiveSkillOverrides.Limit` is a group id, not a count. Tattoos use five ids; the server
+  treats each as a one-per-character group and refuses a second tattoo from the same group on a different node
+  (the `Limit` 7-39 rows in the table are Runegrafts, not tattoos):
+
+  | `Limit` | Server group | Items |
+  |---:|---|---:|
+  | 0 | Loyalty Tattoo | 10 |
+  | 4 | Attribute Notable Tattoo | 9 |
+  | 5 | Ancestral Tattoo | 1 |
+  | 6 | Keystone Tattoo | 1 |
+  | 40 | Ascendancy Tattoo | 7 |
+
+  Replacing the tattoo on the **same node** is allowed; the limit only counts a second node. The 50-tattoo cap is
+  separate. The client draws the "Limited to: 1 ..." line from its own tables; it is not a server message, so the
+  Gateway enforces the group itself.
+- **Loyalty**: limited by the Limit 0 group; the ten Summon Spirit effects are not implemented yet.
+- **Honoured attribute notables**: the nine Honoured tattoos that replace a +30 attribute notable share the Limit 4
+  group. The small-attribute Honoured tattoos have no group limit.
+- **Ancestral Tattoo of Bloodlines**: Limit 5.
+- **Journey Tattoo of Makanui**: Limit 6; replaces a keystone and grants a random base keystone on application.
+- **Forbidden**: Limit 40; replaces a non-multiple-choice ascendancy notable and grants a random
+  non-multiple-choice ascendancy notable from the class's base ascendancies.
 
 ### Acquisition
 
@@ -217,26 +233,28 @@ icon and tooltip. The other lists are unchanged: second empty, third cluster jew
    Forbidden items still need their separate currency-use path.
 3. **Save shape (done).** The character save stores `node -> tattoo name`; the map is independent of allocation, so
    refunding and reallocating the passive preserves the tattoo. Old saves without the field load as empty.
-4. **Apply/remove (done for the pilot).** `0x77` validates the target set, the 50-tattoo cap and the special limits,
-   consumes the item, installs the replacement stats and saves. The same packet with an Orb of Scouring removes the
-   tattoo and restores the passive without refunding the point. Makanga adjacency is a dynamic stat gate: the
-   tattoo can be applied, but its stats are inactive while `RequiresAdjacent`/`MaxAdjacent` is not met. The special
-   limits are still refused, not implemented.
+4. **Apply/remove (done for the pilot).** `0x77` validates the target set, the 50-tattoo cap and the per-group
+   limits, consumes the item, installs the replacement stats and saves. The same packet with an Orb of Scouring
+   removes the tattoo and restores the passive without refunding the point. Makanga adjacency is a dynamic stat
+   gate: the tattoo can be applied, but its stats are inactive while `RequiresAdjacent`/`MaxAdjacent` is not met.
+   The five `Limit` groups are enforced server-side; same-node replacement is allowed.
 5. **Stat replacement (done for the 10 pilot stats).** The replacement stats are applied in the same pass that builds
    allocated passive stats; the node's allocation, connections and point cost stay unchanged. The client displays the
    replacement from the `0x33` fifth list; the panel stats come from the server.
 6. **Interactions (partial).** Timeless-conquered suppression and Unnatural Instinct's unallocated-small-passive rule
    are wired into the stat pass. Might of the Meek/Warrior's Tale scaling and anointment replacement still need their
    own checks. A tattooed node must not double-apply its original stats.
-7. **Random specials (not started).** Journey Makanui chooses a random keystone and saves it; the seven Forbidden
-   tattoos choose a random non-multiple-choice ascendancy notable from the class's base ascendancies and save it.
-   Use the server RNG and save the result, so relog does not reroll.
+7. **Random specials (Makanui done).** Journey Makanui picks one of the 48 base passive-tree keystones in
+   `PassiveSkillOverrides` Type 15, excludes the target node's keystone and saves the choice in `TattooKeystones`,
+   so relog does not reroll; `0x33` sends the chosen keystone's HASH16. The seven Forbidden tattoos still need to
+   choose a random non-multiple-choice ascendancy notable from the class's base ascendancies and save it.
 8. **Vendor recipe (not started).** Three same-tribe tattoo items -> one random same-tribe tattoo, using the existing
    vendor recipe path. Event-only and drop-disabled items need an explicit availability rule.
 9. **Tests (pilot coverage).** Unit tests cover the 100-item catalogue, the target map, the pilot stat mapping, the
-   Firewalker pool change and the `0x33` fifth-list layout. Live client checks cover apply, display, relog and Orb of
-   Scouring removal for the Firewalker. Still needed: replace, unallocate/reallocate, the 50 cap, live Makanga
-   activation/deactivation, Journey Makanui and one Forbidden tattoo.
+   Firewalker pool change, the `0x33` fifth-list layout, the 48-keystone Makanui pool/choice and the five limit
+   groups. Live client checks cover apply, display, relog and Orb of Scouring removal for the Firewalker, plus the
+   Makanui random replacement and live Keystone/Ancestral limit refusals. Still needed: replace, unallocate/reallocate,
+   the 50 cap and one Forbidden tattoo.
 
 ## Full catalogue
 
@@ -391,11 +409,13 @@ tattoos do not. All are drop-disabled in 3.29.
 
 ### Journey Makanui (1)
 
-Replaces a keystone, is limited to 1 Keystone Tattoo, and grants a random keystone on application.
+Replaces a keystone, is limited to 1 Keystone Tattoo, and grants a random keystone on application. The pool is the
+48 ordinary base passive-tree keystones from `PassiveSkillOverrides` Type 15; the target node's own keystone is
+excluded so the node always changes.
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Journey Tattoo of Makanui** | Grants a random Keystone | Keystone | drop-disabled | not implemented | needs random keystone generation; limit 1 Keystone Tattoo |
+| **Journey Tattoo of Makanui** | Grants a random Keystone | Keystone | drop-disabled | works | client `0x77`; Roiling Tempest 40351 -> Mind Over Matter 34098; `/stat` mana_shield 1, lightning_purist 0; relog; a second keystone was refused; removal restored the original keystone |
 
 ### Loyalty (10)
 
@@ -566,8 +586,23 @@ Counting tattoos 2026-10-30 (client/server, `/stat`):
 - The test tattoos were removed and the three bonus notables refunded; the tree is back to 530 passives, 12 user
   tattoos and baseline pools (life 5490, mana 2306, ES 34, recovery 0).
 
-Not yet verified through the client: replace, reallocating a tattooed node, the 50 cap, Journey Makanui and the
-seven Forbidden tattoos.
+Journey Makanui and limit checks 2026-10-30 (client/server):
+
+- **Makanui random replacement:** applied through the client to 40351 Roiling Tempest; the server drew Mind Over
+  Matter (34098). `/stat keystone_lightning_purist` changed 1 -> 0 and `keystone_mana_shield` 0 -> 1. The save
+  stored `Tattoos[40351] = Journey Tattoo of Makanui` and `TattooKeystones[40351] = 34098`; a relog loaded both.
+  The same tattoo was then removed and the original keystone returned (`lightning_purist` 1, `mana_shield` 0).
+- **Keystone limit:** a second Makanui on 50679 was refused with "only one Keystone Tattoo can be applied" while
+  the first stayed on 40351. The only Keystone-group item is Makanui itself, so a same-node replacement has no
+  second item; the same-node rule is covered by the unit test with Honoured Warlord/Mountain.
+- **Ancestral limit:** Ancestral Bloodlines on 10221 was accepted; the same tattoo on 3644 was refused with "only
+  one Ancestral Tattoo can be applied". It was then removed.
+- Unit tests cover all five `LimitName` groups (0/4/5/6/40) and the same-node replacement rule.
+- The test tattoos were removed; the tree is back to 530 passives, the user's 12 tattoos and baseline keystones
+  (Roiling Tempest on 40351, Versatile Combatant on 50679).
+
+Not yet verified through the client: replace, reallocating a tattooed node, the 50 cap and the seven Forbidden
+tattoos.
 
 ## See also
 

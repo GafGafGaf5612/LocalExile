@@ -58,6 +58,7 @@ static class TattooStats
         ["Journey Tattoo of the Body"] = [("maximum_life_per_honoured_heart_tattoo_allocated", 25)],
         ["Journey Tattoo of the Mind"] = [("maximum_mana_per_honoured_mind_tattoo_allocated", 30)],
         ["Journey Tattoo of the Soul"] = [("maximum_es_per_honoured_soul_tattoo_allocated", 40)],
+        ["Journey Tattoo of Makanui"] = [("display_tattoo_grants_random_keystone", 1)],
         ["Ancestral Tattoo of Bloodlines"] =
             [("life_mana_es_recovery_rate_+%_per_different_tribe_tattoos_allocated", 2)],
     };

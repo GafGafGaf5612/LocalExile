@@ -10,7 +10,8 @@ partial class Program
     /// saved independently of the allocation, so refunding the passive keeps it.
     /// </summary>
     internal static async Task<string?> ApplyTattoo(string remote, NetworkStream stream, ConnectionCiphers ciphers,
-        ClientState conn, string name, ushort node, byte? consumeRow = null, uint consumeItemId = 0)
+        ClientState conn, string name, ushort node, byte? consumeRow = null, uint consumeItemId = 0,
+        ushort? chosenKeystone = null)
     {
         var tree = PassivesFor(conn);
         if (TattooCatalogue.Find(name) is not { } entry) return $"no tattoo \"{name}\"";
@@ -22,11 +23,26 @@ partial class Program
         if (!conn.Tattoos.ContainsKey(node) && conn.Tattoos.Count >= 50) return "a character can have at most 50 tattoos";
         if (entry.EventOnly) return $"{entry.Name} is event-only and is not supported yet";
         if (entry.Name.StartsWith("Loyalty ", StringComparison.Ordinal)) return "Loyalty tattoos are not supported yet";
-        if (entry.Name == "Journey Tattoo of Makanui") return "Journey Makanui is not supported yet";
         if (entry.Name.StartsWith("Honoured Tattoo of the ", StringComparison.Ordinal)
             && entry.Target.StartsWith("Notable", StringComparison.Ordinal)) return "Honoured attribute notables are not supported yet";
 
         var next = new Dictionary<ushort, string>(conn.Tattoos) { [node] = entry.Name };
+        if (TattooLimitRefusal(next, node, entry) is { } limitError) return limitError;
+        var nextKeystones = new Dictionary<ushort, ushort>(conn.TattooKeystones);
+        bool journeyMakanui = entry.Name == "Journey Tattoo of Makanui";
+        JourneyMakanuiCatalogue.Entry? chosen = null;
+        if (journeyMakanui)
+        {
+            if (chosenKeystone is ushort requested)
+            {
+                chosen = JourneyMakanuiCatalogue.FindByGraphId(requested);
+                if (chosen is null) return $"unknown keystone {requested}";
+            }
+            else chosen = JourneyMakanuiCatalogue.Pick(node);
+            if (chosen is null) return "no random keystone available";
+            nextKeystones[node] = chosen.GraphId;
+        }
+        else nextKeystones.Remove(node);
         var items = ItemsOf(conn);
         PlayerInventories.Consumption? taken = null;
         if (consumeRow is byte row)
@@ -34,16 +50,17 @@ partial class Program
             var used = Saves.Atomically(() =>
             {
                 if (items.ConsumeOne(row, consumeItemId) is not { } consumed) return null;
-                CharacterSaves.SetTattoos(CharacterName(conn), next);
+                CharacterSaves.SetTattoos(CharacterName(conn), next, nextKeystones);
                 return consumed;
             });
             if (used is not { } consumed) return "the tattoo item disappeared";
             taken = consumed;
         }
-        else CharacterSaves.SetTattoos(CharacterName(conn), next);
+        else CharacterSaves.SetTattoos(CharacterName(conn), next, nextKeystones);
         lock (conn.Monsters)
         {
             conn.Tattoos = next;
+            conn.TattooKeystones = nextKeystones;
             conn.TattooRevision++;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
@@ -57,7 +74,8 @@ partial class Program
         }
         await SendCharacterStats(remote, stream, ciphers, conn, "tattoo");
         await SendPassives(remote, stream, ciphers, conn);
-        Console.WriteLine($"[gateway] {remote} tattoo {entry.Name} on {node} {passive.Name} ({conn.Tattoos.Count} applied)");
+        Console.WriteLine($"[gateway] {remote} tattoo {entry.Name} on {node} {passive.Name} ({conn.Tattoos.Count} applied" +
+            (chosen is { } chosenEntry ? $", keystone {chosenEntry.Name})" : ")"));
         return null;
     }
 
@@ -109,6 +127,8 @@ partial class Program
         if (!conn.Tattoos.ContainsKey(node)) return $"{passive.Name} ({node}) has no tattoo";
         var next = new Dictionary<ushort, string>(conn.Tattoos);
         next.Remove(node);
+        var nextKeystones = new Dictionary<ushort, ushort>(conn.TattooKeystones);
+        nextKeystones.Remove(node);
         var items = ItemsOf(conn);
         PlayerInventories.Consumption? taken = null;
         if (consumeRow is byte row)
@@ -116,16 +136,17 @@ partial class Program
             var used = Saves.Atomically(() =>
             {
                 if (items.ConsumeOne(row, consumeItemId) is not { } consumed) return null;
-                CharacterSaves.SetTattoos(CharacterName(conn), next);
+                CharacterSaves.SetTattoos(CharacterName(conn), next, nextKeystones);
                 return consumed;
             });
             if (used is not { } consumed) return "the currency item disappeared";
             taken = consumed;
         }
-        else CharacterSaves.SetTattoos(CharacterName(conn), next);
+        else CharacterSaves.SetTattoos(CharacterName(conn), next, nextKeystones);
         lock (conn.Monsters)
         {
             conn.Tattoos = next;
+            conn.TattooKeystones = nextKeystones;
             conn.TattooRevision++;
             conn.Pools = PoolsFor(conn, conn.Pools.Level);
             conn.ApplyMovementSpeed();
@@ -140,6 +161,18 @@ partial class Program
         await SendCharacterStats(remote, stream, ciphers, conn, "tattoo removed");
         await SendPassives(remote, stream, ciphers, conn);
         Console.WriteLine($"[gateway] {remote} tattoo removed from {node} {passive.Name} ({conn.Tattoos.Count} applied)");
+        return null;
+    }
+
+    /// <summary>One tattoo per client limit group (Loyalty, Attribute Notable, Ancestral, Keystone, Ascendancy),
+    /// apart from the global 50 cap. The same group on the same node is a replacement and is allowed.</summary>
+    internal static string? TattooLimitRefusal(IReadOnlyDictionary<ushort, string> tattoos, ushort node,
+        TattooCatalogue.Entry entry)
+    {
+        if (entry.Limit < 0 || TattooCatalogue.LimitName(entry.Limit) is not { } group) return null;
+        foreach (var (other, name) in tattoos)
+            if (other != node && TattooCatalogue.Find(name) is { } existing && existing.Limit == entry.Limit)
+                return $"only one {group} can be applied";
         return null;
     }
 

@@ -70,6 +70,14 @@ partial class Program
                 .ToDictionary(kv => kv.Key, kv => kv.Value);
             conn.Tattoos = (save?.Tattoos ?? []).Where(kv => PassivesFor(conn).Find(kv.Key) is not null
                 && TattooCatalogue.Find(kv.Value) is not null).ToDictionary(kv => kv.Key, kv => kv.Value);
+            conn.TattooKeystones = (save?.TattooKeystones ?? [])
+                .Where(kv => conn.Tattoos.GetValueOrDefault(kv.Key) == "Journey Tattoo of Makanui"
+                    && JourneyMakanuiCatalogue.FindByGraphId(kv.Value) is not null)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            foreach (ushort node in conn.Tattoos
+                .Where(kv => kv.Value == "Journey Tattoo of Makanui" && !conn.TattooKeystones.ContainsKey(kv.Key))
+                .Select(kv => kv.Key).ToList())
+                conn.Tattoos.Remove(node);
             conn.TattooRevision++;
             conn.SavedPassiveProgress = new(conn.MainAscendancy, conn.Passives, conn.MasteryEffects, conn.RefundPoints);
             // Persist the pre-existing ordinary level/mastery normalization once. The compare protects a newer connection.
@@ -109,12 +117,14 @@ partial class Program
         // Mastery dictionaries are replaced as a whole, so retaining their current reference is safe.
         IReadOnlyDictionary<ushort, ushort> masteries;
         Dictionary<ushort, string> tattoos;
+        Dictionary<ushort, ushort> tattooKeystones;
         AscendancyFamily family;
         lock (conn.Monsters)
         {
             nodes = (nodes ?? conn.Passives).Concat(conn.MainAscendancy.Allocated).ToArray();
             masteries = conn.MasteryEffects;
             tattoos = new(conn.Tattoos);
+            tattooKeystones = new(conn.TattooKeystones);
             family = conn.MainAscendancy.Selection?.Family ?? AscendancyFamily.Normal;
         }
         var c = SkillsFor(conn).ClassFor(conn.ClassRow);
@@ -162,9 +172,14 @@ partial class Program
             foreach (var (node, name) in tattoos)
                 if (allocated.Contains(node) && nodeStats.ContainsKey(node)
                     && tree.Find(node) is { IsAscendancy: false }
-                    && TattooCatalogue.Find(name) is { } entry
-                    && TattooStats.For(name) is { } tattooStats)
+                    && TattooCatalogue.Find(name) is { } entry)
                 {
+                    IReadOnlyList<(uint Key, int Value)>? tattooStats = TattooStats.For(name);
+                    if (name == "Journey Tattoo of Makanui")
+                        tattooStats = tattooKeystones.TryGetValue(node, out ushort chosen)
+                            && tree.Find(chosen) is { IsKeystone: true } chosenKeystone
+                                ? chosenKeystone.Stats : [];
+                    if (tattooStats is null) continue;
                     int adjacent = OrdinaryPassives.Adjacent(node, family).Count(allocated.Contains);
                     bool tattooActive = entry.RequiresAdjacent > 0
                         ? adjacent >= entry.RequiresAdjacent
@@ -983,9 +998,18 @@ partial class Program
             int cluster = conn.ClusterPassives.Count;
             int unspent = points + PassivesFor(conn).PointsGranted(nodes) + AscendancyOrdinaryPoints(conn) - nodes.Count - cluster;
             var tattoos = conn.Tattoos
-                .Select(kv => (Node: kv.Key, Entry: TattooCatalogue.Find(kv.Value)))
+                .Select(kv =>
+                {
+                    var entry = TattooCatalogue.Find(kv.Value);
+                    ushort hash = (ushort)(entry?.OverrideHash ?? 0);
+                    if (kv.Value == "Journey Tattoo of Makanui"
+                        && conn.TattooKeystones.TryGetValue(kv.Key, out ushort chosen)
+                        && JourneyMakanuiCatalogue.FindByGraphId(chosen) is { } keystone)
+                        hash = keystone.OverrideHash;
+                    return (Node: kv.Key, Hash: hash, Entry: entry);
+                })
                 .Where(pair => pair.Entry is not null)
-                .ToDictionary(pair => pair.Node, pair => (ushort)pair.Entry!.OverrideHash);
+                .ToDictionary(pair => pair.Node, pair => pair.Hash);
             return (InstanceEntities.CharacterPassives((byte)conn.Pools.Level, PackedClass(conn), [.. nodes, .. conn.MainAscendancy.Allocated],
                     questPoints: conn.ExtraPassivePoints, refundPoints: refundPoints, ascendancyPoints: (ushort)conn.MainAscendancy.EarnedPoints, masteryEffects: masteries,
                     clusterNodes: [.. conn.ClusterPassives], tattoos: tattoos),
