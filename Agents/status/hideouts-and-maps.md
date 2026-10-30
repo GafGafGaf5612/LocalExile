@@ -118,7 +118,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Monastery of the Keepers pins lead to their hubs, which have a clickable waypoint back, a stash, a guild stash and
   their NPCs (Einhar, Divinia, the Kingsmarch villagers, the Heist crew, Ailith; Einhar also in every hideout).
   The hub waypoints stay unlit (client area-type rule); The Sovereign (Deepwater) has no layout yet.
-  The mine itself is not implemented.
+  The upper hub entrance now reaches an initial Delve_Main mine section and its return gate leads back to the hub.
+  Native entry, ordinary walking and return were verified; see the initial terrain block below.
+  Mine encounters and progression remain unimplemented.
   See [16](../docs/protocol/16-waypoints.md) §4.
   See [21](../docs/protocol/21-hideouts.md).
 - **Delve sulphite and the Crawler (verified live, 2026-10-29).**
@@ -126,8 +128,25 @@ Part of [Status](../Status.md); what to build next in this area is in
     shown by the Subterranean Chart's gauge. `/sulphite <n>` sets it.
   - The HUD gauge shows only in WorldAreas type 27, the mine areas; the encampment is type 15 in the client data, so
     there the gauge is the chart's.
-  - `/delve_crawler [x y degrees]` creates the Crawler (DelveRobot) in the encampment, or moves and turns it. A click on
-    it opens the chart (the Crawler showed live; the click is not checked yet).
+  - `/delve_crawler [x y degrees]` creates the stationary Crawler in the encampment or initial mine section,
+    or moves and turns it.
+    It uses the native DelveMapViewer interaction type with the Crawler model, highlights on hover and opens the chart
+    on a real mouse click; the roaming DelveRobot serializer remains separate.
+    Repeated creation is idempotent; client/server blockers follow relocation and chart use checks walk-up range.
+    Attached wheel meshes and a powered torch use the original body bones; explicit looping idle runs the engine.
+    The user confirmed the engine animation after restarting the client.
+  - The Voltaxic Generator console and its cables occupy their native hub-room positions.
+    Walking up and clicking opens the native Delve upgrades tab with resources, upgrade prices and purchase buttons.
+    Its shared window requires permanent achievement set 2 in AreaInstance; an empty list hides all its tabs.
+    Azurite, upgrade levels and flare/dynamite counts persist per account/league with atomic costs, caps and rollback.
+    Server transactions have automated coverage; live purchases remain unverified because the current balance is zero.
+    Equipment stats are sent in Delve areas; darkness damage and consumable use remain unimplemented.
+  - The first mine area receives a 1×2 Delve terrain block with an entrance and an Azurite quest room.
+    Delve_Main's copied hub is excluded from arrival selection; the actual mine-side transition is the return to camp.
+    The real client generated the section, accepted walking within it and returned through that gate.
+    Geometry uses client walk-map capture.
+    The chart's native route request is parsed; unsupported routes report unavailable without spending sulphite.
+    Route validation/execution, moving Crawler, darkness, encounters and rewards still need server mechanics.
   - The Crawler stands on the rails by the mine entrance at (408, 310), facing 90°, on every entry; the stash and the
     guild stash are at (355, 295) and (344, 295), facing 180°. Lioneye's Watch has them at (327, 270) and (317, 270).
     The user placed all of these live (2026-10-30).

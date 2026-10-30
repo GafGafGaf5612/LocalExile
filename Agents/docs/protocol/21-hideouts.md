@@ -549,8 +549,72 @@ This applies to login, waypoint travel and returns from other areas; moving the 
     Without it, the client read the next bytes as the index and crashed at `0x1415d7671` (live);
   - MinimapIcon, then StateMachine with the shared states `sector` and `mtx_variation`, each sent with flag 0x02.
 
-  A click (C→S 0x24) opens the chart, S→C 0x7b kind 0x1c with 1. The Crawler is created on every Delve_Hub entry at
-  (408, 310), facing 90°, on the rails by the mine entrance (placed live, 2026-10-30).
+  The roaming `DelveRobot` type has no Targetable component.
+  The stationary hub Crawler instead uses the native `DelveMapViewer` interaction type with the Crawler's model:
+  Positioned, BaseEvents (no bytes), Animated, Transitionable, MinimapIcon, InteractionAction, then tasks.
+  Its native Targetable component uses league quest flag 68, already sent for Niko's chart access.
+  Hover outlines the model and shows the localized chart label; a real mouse click sends C→S 0x24 and opens the chart
+  with S→C 0x7b kind 0x1c, followed by 0x23f/0x240.
+  It is created once on each Delve_Hub entry at (408, 310), facing 90°; repeated `/delve_crawler` does not duplicate it.
+  Three invisible `Metadata/NPC/Blocker` objects provide matching client/server collision along its length.
+  Moving the Crawler removes the old blockers, creates the new ones and pushes the player out of collision.
+  Chart opening checks the interaction action token and actual walk-up range.
+  The interactive type does not inherit the robot's client-only Wheels component.
+  Two PermanentServerEffect objects attach the original wheel art to `aux_L_wheel_attachment` and
+  `aux_R_wheel_attachment` through Animated bit 2; an attached powered DelveLight carries the torch.
+  Explicit 0x1b2 clip 0 selects the rig's looping idle engine animation; the waypoint type's default clips are invalid
+  for this two-clip robot rig.
+  A stationary Crawler also spawns beside arrival in the initial mine section.
+- **Voltaxic Generator.** `Metadata/MiscellaneousObjects/Delve/DelveCraftingBench` is the interactive console.
+  Its hub.arm placement is local (337,307), rotation 0.412551, with model
+  `Metadata/Terrain/Doodads/Leagues/Delve/DelveMapViewerTutorial.ao`.
+  With hub room origin (69,69), size 621 and orientation 3 this becomes (376,352), rotation 5.12494.
+  The large decorative machine's centre (382,370) is not the interaction point and is not walkable.
+  Components: Positioned, BaseEvents, Animated, InteractionAction, MinimapIcon; object_size 5.
+  The separate DelveCraftingBenchAttachment at (382,370) supplies cables and two shared equipment visual states.
+  A walk-up interaction opens S→C 0x7b kind 0x1d (DelveUpgradeScreen).
+  This screen is a child of the shared achievements window, not a standalone panel.
+  AreaInstance's vec8 at native +0x50 supplies visible achievement set ids; Delve areas send permanent set 2.
+  With an empty list, the client hides the entire TabControl, leaving a blank Challenges window even though
+  league flag 68 created and selected the Delve tab.
+  The real client now displays all equipment values, costs and consumable buttons; live purchases await Azurite.
+  C→S 0x23e requests equipment state; 0x229 carries a BE u16 upgrade type; 0x22a carries u8 flare/dynamite and u8 count.
+  Both purchase messages are four bytes including their id; the request is two bytes.
+  S→C 0x228's raw20 contains Azurite at 0..3, ten upgrade levels at 6..15 and sulphite at 16..17.
+  Its raw14 contains flare/dynamite counts at 8/9.
+  DelveUpgrades provides costs, stat rows and limits; DelveFlares.__col6 and DelveDynamite.__col12 provide purchase prices.
+  Equipment, consumables and Azurite persist in the account/league stash header, with atomic debit/update and rollback.
+  Equipment stats are projected while in Delve areas; sulphite still uses the existing character save.
+  Resource use, darkness damage and the machine's upgraded cable visual tiers remain future work.
+- **Route selection.** Native chart click C→S 0x241 carries u8 count then count × four BE i32 coordinates
+  (block X/Y and cell X/Y).
+  The first observed selection was (0,0,2,0) → (0,0,2,1).
+  Framing handles every TCP split; the Gateway logs the requested path and reports unavailable until execution exists.
+  No sulphite is debited and no movement starts on an unsupported route.
+  [GGG's FAQ](https://www.pathofexile.com/forum/view-thread/2197540) and
+  [Delve announcement](https://www.pathofexile.com/delve) describe route travel, speed scaling/catch-up,
+  darkness and equipment upgrades.
+  Their 2018 ownership/progression details are historical; this protocol implementation targets client 3.29.3b.
+  The next server slice should validate adjacent route cells against saved completed nodes, resolve the terrain path
+  and native depth cost, then atomically admit the trip before moving the Crawler.
+  Travel follows that path with player-speed scaling and catch-up when the player is ahead.
+  The Crawler's light determines darkness exposure; leaving a guessed player-centred circle is not a route request.
+  Encounters, success/failure and reward commitment need explicit states before routes can award progress.
+- **First mine entrance.** Delve_Hub's upper `DelveEntrance01_area_transition.ao` leads to `Delve_Main` (HASH16 64840).
+  The unused lower elevator must not be paired with it as a generic local gate.
+  Delve_Main receives `InstanceDelve.FirstMineTerrain()` in the area packet's extra terrain data.
+  It selects a Delve terrain block: eight header bytes, with width/height in the low/high nibbles of byte 6,
+  then five bytes per cell and any stat groups counted by header byte 7.
+  The initial 1×2 block contains Mines biome cells: MineEntrance (feature 1) and the Azurite quest room (feature 7),
+  joined north/south by bits 0x10/0x40 of each cell's biome/connections byte.
+  This block was accepted by the real client's parser and generated Delve_Main seed 1 successfully.
+  The native level includes a hub subarea as well as the mine rooms.
+  Arrival must use the mine's `delvemine_areatransition_v01_01_area_transition.ao`, not the copied hub gate.
+  That mine-side gate leads back to Delve_Hub; normal arrival places the character beside the matching return gate.
+  Real-client checks covered hub entry, walking inside the mine and returning to the hub.
+  Geometry still comes from the client's capture (`live.ps1 -Walkmaps`), not the server level generator.
+  This is a fixed initial terrain block; chart-driven route selection, Crawler movement, darkness, encounters,
+  Azurite rewards and persistent mine progression remain separate work.
 - **Placing stationary objects (dev).** `/stash_place`, `/guild_stash_place`, `/delve_crawler` and `/wp_place`
   `<x> <y> <degrees>` move an object with S→C 0x1b7 (terrain height 0x7fffffff) and turn it with the Positioned
   rotation update, as the hideout editor does. The path blocker moves too (the waypoint has none). `/wp_place` alone

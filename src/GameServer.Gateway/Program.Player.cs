@@ -909,8 +909,7 @@ partial class Program
             // read the character's sulphite from it.
             if (layout.Id.StartsWith("Delve", StringComparison.Ordinal))
             {
-                ushort sulphite = CharacterSaves.Load(CharacterName(conn))?.Sulphite ?? 0;
-                messages.Add(($"0x0228 Delve data: {sulphite} sulphite", InstanceDelve.DelveData(sulphite)));
+                messages.Add(("0x0228 Delve resources and equipment", PlayerDelveData(conn)));
             }
             // The contents of every stash tab with currency in it (stackable items), as 0xc7 would send them (0xc0, no 0xc8:
             // the panel is not open). The client checks a shop price against the currency it knows of, the inventory's and
