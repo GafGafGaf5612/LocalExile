@@ -249,6 +249,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
 
     public void ResumeAfterFailedTransfer() { lock (Monsters) LeavingArea = false; }
 
+    // Successful transfers retire all source-area workers independently of any particular carried mechanic.
+    public void Retire() { lock (Monsters) RageRetired = true; }
+
     /// <summary>The <see cref="Clock"/> time of a Stopwatch timestamp in the past (a socket read); now when 0 or paused.</summary>
     public double ClockAt(long timestamp)
     {

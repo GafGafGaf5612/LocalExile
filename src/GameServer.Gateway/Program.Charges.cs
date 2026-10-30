@@ -240,11 +240,11 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} charges carried from the last area: " +
                     string.Join(", ", carried.Select(c => $"{c.Held} {Charges.Name(c.Type)} ({c.Remaining:0.0} s left)")));
             }
-        while (!conn.Closed)
+        while (!conn.Closed && !conn.RageRetired)
         {
             await Task.Delay(TimeSpan.FromSeconds(ChargeSession.StepSeconds));
-            if (conn.Closed) break;
-            if (conn.Paused) continue;
+            if (conn.Closed || conn.RageRetired) break;
+            if (conn.LeavingArea || conn.Paused) continue;
             try
             {
                 Func<string, int>? stats = null;
@@ -260,6 +260,8 @@ partial class Program
                 List<ChargeSession.BuffChange> buffs;
                 using (ProjectileMutation(conn))
                 {
+                    if (conn.Closed || conn.RageRetired) break;
+                    if (conn.LeavingArea) continue;
                     now = ProjectileWorldTime(conn);
                     step = session.Step(now, stats, () => weapon, alive: conn.PlayerLife > 0, moving: now < conn.Walk.ArrivesAt,
                         inTown: InTown(conn), Random.Shared);
@@ -293,6 +295,7 @@ partial class Program
     // the same moment) takes the full SendCharacterStats.
     static async Task SendChargeStats(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, string why)
     {
+        if (conn.Closed || conn.LeavingArea || conn.RageRetired) return;
         var skills = PlayerSkills(conn);
         if (!conn.ClientSkillIds.SetEquals(skills.Select(s => s.Id)))
         {
