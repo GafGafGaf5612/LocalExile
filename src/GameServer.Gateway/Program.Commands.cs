@@ -1002,7 +1002,7 @@ partial class Program
             int level = conn.Pools.Level;
             if (args.Length > 0)
             {
-                if (!int.TryParse(args[0], out int requested) || requested is < 1 or > Progression.MaxLevel)
+                if (!int.TryParse(args[0], out int requested) || requested < 1 || requested > Progression.MaxLevel)
                     throw new ArgumentException($"monster level 1 to {Progression.MaxLevel}");
                 level = requested;
             }
@@ -1023,7 +1023,7 @@ partial class Program
             int level = conn.Pools.Level;
             if (args.Length > 0)
             {
-                if (!int.TryParse(args[0], out int requested) || requested is < 1 or > Progression.MaxLevel)
+                if (!int.TryParse(args[0], out int requested) || requested < 1 || requested > Progression.MaxLevel)
                     throw new ArgumentException($"monster level 1 to {Progression.MaxLevel}");
                 level = requested;
             }

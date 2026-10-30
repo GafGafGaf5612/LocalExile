@@ -80,6 +80,21 @@ tables. The server can only create items the client can resolve by an existing h
 | `socket_max_belt` | 0 | belt sockets (the base has no Sockets component by default) |
 | `passive_points_per_level` | 1 | passive points per level after the first |
 | `gold_drop_multiplier` | 1 | multiplier on the mode's gold amount; the Ruthless 0.25 base still applies |
+| `gold_drop_chance_multiplier` | 1 | multiplier on the per-rarity gold drop chance |
+| `gold_auto_loot_radius` | 15 | cells within which gold is picked up without a click |
+| `drop_multiplier_currency`, `drop_multiplier_equipment`, `drop_multiplier_flasks`, `drop_multiplier_gems` | 1 | category weights in the ordinary drop roll |
+| `drop_multiplier_maps` | 1 | generic map drop chance |
+| `drop_multiplier_unique_rarity` | 1 | equipment magic/rare-roll multiplier; unique item drops themselves are not in the drop table yet |
+| `monster_pack_density_multiplier` | 1 | scattered packs per walkable-cell area |
+| `monster_pack_size_multiplier` | 1 | members per pack |
+| `experience_multiplier` | 1 | monster experience after rarity and level penalty |
+| `max_level` | 100 | active level cap (1..100; the client/table ceiling) |
+| `tattoo_total_limit` | 50 | global tattoo cap |
+| `tattoo_group_limit` | 1 | fallback for the five tattoo group limits; `limit_overrides` still wins |
+| `timeless_jewel_limit` | 1 | Historic timeless jewel cap |
+| `impossible_escape_limit` | 1 | Impossible Escape cap |
+| `radius_jewel_default_limit` | 0 | fallback for radius jewels whose catalog `Limit` is 0; 0 means unlimited |
+| `grace_period_seconds` | 60 | entry protection duration; 0 disables it |
 
 The socket value is the class cap, clamped to the client's six sockets. It is not tied to the inventory cell count: a
 1x3 wand set to six can carry six sockets (the old `Game_SOCKET_CAPACITY` dev flag already exercised this). Item level
@@ -87,6 +102,15 @@ still limits what currency rerolls may create through `CurrencyEffects.MaximumSo
 `passive_points_per_level` is read through `Progression.PassivePoints`; changing it affects the next point calculation or
 area/level refresh, not a retroactive trim of an online character. `gold_drop_multiplier` multiplies the already
 mode-scaled amount, so the ordinary mode default 1 and Ruthless 0.25 keep their current behaviour.
+
+The drop multipliers scale the four category weights in `ItemDrops.RollOne`; the map multiplier scales the separate
+map chance, and `drop_multiplier_unique_rarity` scales the magic/rare branch (unique item drops are not in the table
+yet). Pack density scales the scattered-pack count, pack size scales each pack's member roll. `experience_multiplier`
+multiplies monster experience after rarity and the level penalty. `max_level` lowers the active cap from the client's
+100; values above 100 are refused because the client and `ExperienceLevels` do not have them. `gold_drop_chance_multiplier`
+scales the per-rarity chance, `gold_auto_loot_radius` sets the auto-pickup distance, and `grace_period_seconds` drives
+both the buff duration and the protection deadline. The tattoo/jewel limits in `system_settings` are the defaults;
+`limit_overrides` remains the per-key override layer.
 
 ### Candidate lists currently in code
 
@@ -124,17 +148,17 @@ The practical split is:
 
 ### More system-setting ideas
 
-The next safe numeric knobs, in rough order:
+The next safe numeric knobs, in rough order (the first batch is already in `system_settings`):
 
-- drop multipliers: currency, equipment, flasks, gems, maps, unique rarity and item quantity;
+- drop multipliers: category weights, map chance, unique rarity (done); item quantity/rarity next;
 - vendor and crafting costs: shop price multiplier, bench cost multiplier, gold respec multiplier;
-- monster balance: life, damage, speed, pack size, magic/rare pack chance, density;
+- monster balance: life, damage, speed, pack density/size (done), magic/rare pack chance next;
 - map policy: maximum tier, portal count, map device slots, instance lifetime;
 - flask policy: charges per kill, charge recovery, effect duration, quality cap;
-- experience: rate multiplier, safe-zone level width, maximum level;
-- gold: auto-loot radius, amount multiplier, drop chance;
-- limits: tattoo total/group defaults, timeless/radius jewel defaults, socket class caps (already in the table);
-- server quality of life: respawn delay, grace period, area reset time, raid/instance expiry.
+- experience: rate multiplier and maximum level (done); safe-zone width next;
+- gold: auto-loot radius, amount multiplier, drop chance (done);
+- limits: tattoo/jewel defaults and socket caps (done); per-entry overrides remain in `limit_overrides`;
+- server quality of life: grace period (done), respawn delay, area reset time, raid/instance expiry.
 
 Keep calculation order and stat semantics in code. A setting is safe when it scales or caps a number; moving damage
 formulas or conditional rules into a generic table is a separate, tested engine.
@@ -313,9 +337,11 @@ server process edits the same file later, add a `revision` check or a file-watch
 4. **Content catalogues (done).** `catalog_entries` stores unique items, radius jewels, threshold jewels, unique
    jewels, timeless jewels, tattoo effects and unique jewel art. The current code arrays seed each kind on the first
    run; after that the database is the source. `GameDataCatalog` swaps the typed arrays/dictionaries on reload.
-5. **System settings (done).** `system_settings` seeds socket caps by item class, passive points per level and the gold
-   drop multiplier; `/game_data setting`, `clear_setting` and `settings` expose them. Socket capacity and gold drops
-   read the snapshot; `Progression.PassivePoints` reads the per-level value.
+5. **System settings (done).** `system_settings` seeds socket caps by item class, passive points per level, gold
+   chance/amount/auto-loot, category drop multipliers, pack density/size, experience multiplier, maximum level, default
+   tattoo/jewel limits and grace period; `/game_data setting`, `clear_setting` and `settings` expose them. Socket
+   capacity, drop weights, packs, experience, limits and grace read the snapshot; `Progression.PassivePoints` and
+   `Progression.MaxLevel` read the per-level and cap values.
 6. **Item templates + custom name (next).** Add `Item.CustomName`, save it, add a template validator and
    `/item_template`; tests for existing base + existing mods + custom name + relog. The `item_templates` schema is in
    place but has no reader/writer yet.
@@ -353,8 +379,9 @@ Live check 2026-10-30 (Gateway and real client):
 - Changing the `Crown of Eyes` row's `ItemLevel` from 86 to 50 in `catalog_entries`, `/game_data reload`, and
   `/item Crown of Eyes` produced an ilvl 50 item. Restoring 86 and reloading published revision 3 with the original
   values.
-- `system_settings` seeded 23 rows: 21 socket caps (wand 3, body 6, helmet/gloves/boots 4, shield 3, belt 0, two-handed 6),
-  `passive_points_per_level` 1 and `gold_drop_multiplier` 1. `/game_data settings` listed them.
+- `system_settings` seeded 41 rows: 21 socket caps (wand 3, body 6, helmet/gloves/boots 4, shield 3, belt 0, two-handed 6),
+  `passive_points_per_level` 1, the gold/drop/pack/experience/max-level/limit/grace defaults above. `/game_data settings`
+  listed them; the first upgrade added the new keys without overwriting existing rows.
 - Set `socket_max_wand` 6, created a Kinetic Wand, and `/sockets RRGBBB` gave it six sockets; set the key back to 3 and
   reduced the test item to three. The class cap is not limited by the 1x3 inventory shape.
 - The Gateway restart loaded the overlay at startup; the reference mod/base lists were warmed during that open.

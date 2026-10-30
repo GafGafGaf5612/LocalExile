@@ -70,9 +70,9 @@ features.
 - **Editable game data and limits:** the SQLite overlay, snapshot/reload foundation, mod roll ranges and item limits are
   implemented and live-checked. The unique-item, radius/threshold/unique/timeless jewel, tattoo-effect and jewel-art
   catalogues are now in `catalog_entries`, seeded from the current code arrays and swapped on `/game_data reload`.
-  `system_settings` now holds socket caps by item class, passive points per level and the gold drop multiplier.
-  The next step is item templates with custom names, then the admin interface, then NPC shops/placements, drop tables
-  and the broader system-setting list.
+  `system_settings` now holds socket caps by item class, passive points per level, drop/pack/experience/max-level/
+  gold/default-limit/grace numbers. The next step is item templates with custom names, then the admin interface, then
+  NPC shops/placements and the remaining drop/balance settings.
   The client-compatibility boundary, schema and cache plan are in
   [dev/editable-game-data.md](../docs/dev/editable-game-data.md).
   The extracted JSON stays the reference; the database only overrides it.

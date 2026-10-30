@@ -159,6 +159,14 @@ public class GameDataTests
         Assert.Equal(4, SystemSettings.Seeds["socket_max_helmet"]);
         Assert.Equal(1, SystemSettings.Seeds["passive_points_per_level"]);
         Assert.Equal(1, SystemSettings.Seeds["gold_drop_multiplier"]);
+        Assert.Equal(1, SystemSettings.Seeds["drop_multiplier_currency"]);
+        Assert.Equal(1, SystemSettings.Seeds["monster_pack_density_multiplier"]);
+        Assert.Equal(1, SystemSettings.Seeds["experience_multiplier"]);
+        Assert.Equal(100, SystemSettings.Seeds["max_level"]);
+        Assert.Equal(15, SystemSettings.Seeds["gold_auto_loot_radius"]);
+        Assert.Equal(50, SystemSettings.Seeds["tattoo_total_limit"]);
+        Assert.Equal(60, SystemSettings.Seeds["grace_period_seconds"]);
+        Assert.Equal(41, SystemSettings.Seeds.Count);
     }
 
     [Fact]
@@ -178,6 +186,38 @@ public class GameDataTests
         Assert.Equal(6, settings.SocketMax("Belt")); // clamped to the client's maximum
         Assert.Equal(0, settings.SocketMax("Unknown"));
         Assert.Equal(2.5, settings.GoldDropMultiplier);
+
+        settings.Replace(new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["drop_multiplier_currency"] = 2,
+            ["drop_multiplier_maps"] = 0.5,
+            ["monster_pack_density_multiplier"] = 3,
+            ["monster_pack_size_multiplier"] = 2,
+            ["experience_multiplier"] = 4,
+            ["max_level"] = 50,
+            ["gold_drop_chance_multiplier"] = 2,
+            ["gold_auto_loot_radius"] = 20,
+            ["tattoo_total_limit"] = 100,
+            ["tattoo_group_limit"] = 2,
+            ["timeless_jewel_limit"] = 3,
+            ["impossible_escape_limit"] = 4,
+            ["radius_jewel_default_limit"] = 5,
+            ["grace_period_seconds"] = 30,
+        });
+        Assert.Equal(2, settings.DropMultiplier("currency"));
+        Assert.Equal(0.5, settings.DropMultiplier("maps"));
+        Assert.Equal(3, settings.MonsterPackDensityMultiplier);
+        Assert.Equal(2, settings.MonsterPackSizeMultiplier);
+        Assert.Equal(4, settings.ExperienceMultiplier);
+        Assert.Equal(50, settings.MaxLevel);
+        Assert.Equal(2, settings.GoldChanceMultiplier);
+        Assert.Equal(20, settings.GoldAutoLootRadius);
+        Assert.Equal(100, settings.TattooTotalLimit);
+        Assert.Equal(2, settings.TattooGroupLimit);
+        Assert.Equal(3, settings.TimelessJewelLimit);
+        Assert.Equal(4, settings.ImpossibleEscapeLimit);
+        Assert.Equal(5, settings.RadiusJewelDefaultLimit);
+        Assert.Equal(30, settings.GracePeriodSeconds);
     }
 
     [Fact]
@@ -186,8 +226,13 @@ public class GameDataTests
         Assert.False(SystemSettings.Validate("socket_max_wand", 7, out _));
         Assert.False(SystemSettings.Validate("socket_max_wand", 2.5, out _));
         Assert.True(SystemSettings.Validate("socket_max_wand", 6, out _));
+        Assert.False(SystemSettings.Validate("passive_points_per_level", 0, out _));
         Assert.False(SystemSettings.Validate("passive_points_per_level", 101, out _));
         Assert.False(SystemSettings.Validate("gold_drop_multiplier", -1, out _));
+        Assert.False(SystemSettings.Validate("drop_multiplier_currency", -1, out _));
+        Assert.False(SystemSettings.Validate("experience_multiplier", -1, out _));
+        Assert.False(SystemSettings.Validate("max_level", 101, out _));
+        Assert.False(SystemSettings.Validate("grace_period_seconds", 3601, out _));
         Assert.False(SystemSettings.Validate("unknown", 1, out _));
     }
 

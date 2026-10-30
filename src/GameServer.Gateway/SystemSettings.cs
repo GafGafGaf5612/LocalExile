@@ -33,6 +33,24 @@ sealed class SystemSettings
         ["socket_max_belt"] = 0,
         ["passive_points_per_level"] = 1,
         ["gold_drop_multiplier"] = 1,
+        ["gold_drop_chance_multiplier"] = 1,
+        ["gold_auto_loot_radius"] = 15,
+        ["drop_multiplier_currency"] = 1,
+        ["drop_multiplier_equipment"] = 1,
+        ["drop_multiplier_flasks"] = 1,
+        ["drop_multiplier_gems"] = 1,
+        ["drop_multiplier_maps"] = 1,
+        ["drop_multiplier_unique_rarity"] = 1,
+        ["monster_pack_density_multiplier"] = 1,
+        ["monster_pack_size_multiplier"] = 1,
+        ["experience_multiplier"] = 1,
+        ["max_level"] = 100,
+        ["tattoo_total_limit"] = 50,
+        ["tattoo_group_limit"] = 1,
+        ["timeless_jewel_limit"] = 1,
+        ["impossible_escape_limit"] = 1,
+        ["radius_jewel_default_limit"] = 0,
+        ["grace_period_seconds"] = 60,
     };
 
     static readonly Dictionary<string, string> SocketKeys = new(StringComparer.Ordinal)
@@ -81,6 +99,31 @@ sealed class SystemSettings
     public int PassivePointsPerLevel => Math.Clamp(GetInt("passive_points_per_level"), 1, 100);
 
     public double GoldDropMultiplier => Math.Max(0, Get("gold_drop_multiplier"));
+    public double GoldChanceMultiplier => Math.Clamp(Get("gold_drop_chance_multiplier"), 0, 100);
+    public double GoldAutoLootRadius => Math.Clamp(Get("gold_auto_loot_radius"), 0, 100);
+
+    public double DropMultiplier(string category) => category switch
+    {
+        "currency" => Math.Max(0, Get("drop_multiplier_currency")),
+        "equipment" => Math.Max(0, Get("drop_multiplier_equipment")),
+        "flasks" => Math.Max(0, Get("drop_multiplier_flasks")),
+        "gems" => Math.Max(0, Get("drop_multiplier_gems")),
+        "maps" => Math.Max(0, Get("drop_multiplier_maps")),
+        "unique_rarity" => Math.Max(0, Get("drop_multiplier_unique_rarity")),
+        _ => 1,
+    };
+
+    public double MonsterPackDensityMultiplier => Math.Clamp(Get("monster_pack_density_multiplier"), 0, 100);
+    public double MonsterPackSizeMultiplier => Math.Clamp(Get("monster_pack_size_multiplier"), 0, 50);
+    public double ExperienceMultiplier => Math.Clamp(Get("experience_multiplier"), 0, 1000);
+    public int MaxLevel => Math.Clamp(GetInt("max_level"), 1, Progression.MaxLevelCeiling);
+
+    public int TattooTotalLimit => Math.Max(0, GetInt("tattoo_total_limit"));
+    public int TattooGroupLimit => Math.Max(0, GetInt("tattoo_group_limit"));
+    public int TimelessJewelLimit => Math.Max(0, GetInt("timeless_jewel_limit"));
+    public int ImpossibleEscapeLimit => Math.Max(0, GetInt("impossible_escape_limit"));
+    public int RadiusJewelDefaultLimit => Math.Max(0, GetInt("radius_jewel_default_limit"));
+    public int GracePeriodSeconds => Math.Clamp(GetInt("grace_period_seconds"), 0, 3600);
 
     public void Replace(IReadOnlyDictionary<string, double> values) =>
         Volatile.Write(ref _values, new Dictionary<string, double>(values, StringComparer.OrdinalIgnoreCase));
@@ -89,20 +132,23 @@ sealed class SystemSettings
     {
         Default.Replace(Seeds);
         Progression.PassivePointsPerLevel = 1;
+        Progression.ExperienceMultiplier = 1;
+        Progression.MaxLevel = Progression.MaxLevelCeiling;
     }
 
     public static void Reload(GameDataStore store)
     {
-        if (!store.SettingsSeeded())
-        {
-            var existing = store.LoadSettings().Select(row => row.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var (key, value) in Seeds)
-                if (!existing.Contains(key)) store.SetSetting(key, value);
-            store.MarkSettingsSeeded();
-        }
+        // Add keys introduced by a newer build without overwriting an edited row. The seeded flag is informational;
+        // the missing-key check is what makes an upgrade fill the new rows.
+        var existing = store.LoadSettings().Select(row => row.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in Seeds)
+            if (!existing.Contains(key)) store.SetSetting(key, value);
+        if (!store.SettingsSeeded()) store.MarkSettingsSeeded();
         var loaded = store.LoadSettings().ToDictionary(row => row.Key, row => row.Value, StringComparer.OrdinalIgnoreCase);
         Default.Replace(loaded);
         Progression.PassivePointsPerLevel = Default.PassivePointsPerLevel;
+        Progression.ExperienceMultiplier = Default.ExperienceMultiplier;
+        Progression.MaxLevel = Default.MaxLevel;
     }
 
     public static bool Validate(string key, double value, out string? error)
@@ -123,10 +169,52 @@ sealed class SystemSettings
             if (value < 1 || value > 100 || value != Math.Round(value))
                 error = "passive_points_per_level is an integer 1..100";
         }
+        else if (key.StartsWith("drop_multiplier_", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!double.IsFinite(value) || value < 0 || value > 100)
+                error = $"{key} is a number 0..100";
+        }
         else if (key.Equals("gold_drop_multiplier", StringComparison.OrdinalIgnoreCase))
         {
             if (!double.IsFinite(value) || value < 0 || value > 10000)
                 error = "gold_drop_multiplier is a number 0..10000";
+        }
+        else if (key.Equals("gold_drop_chance_multiplier", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("gold_auto_loot_radius", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!double.IsFinite(value) || value < 0 || value > 100)
+                error = $"{key} is a number 0..100";
+        }
+        else if (key.Equals("monster_pack_density_multiplier", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!double.IsFinite(value) || value < 0 || value > 100)
+                error = "monster_pack_density_multiplier is a number 0..100";
+        }
+        else if (key.Equals("monster_pack_size_multiplier", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!double.IsFinite(value) || value < 0 || value > 50)
+                error = "monster_pack_size_multiplier is a number 0..50";
+        }
+        else if (key.Equals("experience_multiplier", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!double.IsFinite(value) || value < 0 || value > 1000)
+                error = "experience_multiplier is a number 0..1000";
+        }
+        else if (key.Equals("max_level", StringComparison.OrdinalIgnoreCase))
+        {
+            if (value < 1 || value > Progression.MaxLevelCeiling || value != Math.Round(value))
+                error = $"max_level is an integer 1..{Progression.MaxLevelCeiling}";
+        }
+        else if (key.Equals("grace_period_seconds", StringComparison.OrdinalIgnoreCase))
+        {
+            if (value < 0 || value > 3600 || value != Math.Round(value))
+                error = "grace_period_seconds is an integer 0..3600";
+        }
+        else if (key is "tattoo_total_limit" or "tattoo_group_limit" or "timeless_jewel_limit"
+            or "impossible_escape_limit" or "radius_jewel_default_limit")
+        {
+            if (value < 0 || value > 1000 || value != Math.Round(value))
+                error = $"{key} is an integer 0..1000";
         }
         return error is null;
     }

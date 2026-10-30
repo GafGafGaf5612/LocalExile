@@ -9,7 +9,28 @@ namespace GameServer.Core.World;
 /// </summary>
 public static class Progression
 {
-    public const int MaxLevel = 100;
+    /// <summary>The client's/table's hard ceiling. The configurable <see cref="MaxLevel"/> may lower it.</summary>
+    public const int MaxLevelCeiling = 100;
+
+    static int _maxLevel = MaxLevelCeiling;
+
+    /// <summary>The active level cap. The Gateway sets it from the system settings; lowering it clamps new level
+    /// calculations and the passive-point budget, while the experience table and client remain at 100.</summary>
+    public static int MaxLevel
+    {
+        get => Volatile.Read(ref _maxLevel);
+        set => Volatile.Write(ref _maxLevel, Math.Clamp(value, 1, MaxLevelCeiling));
+    }
+
+    static double _experienceMultiplier = 1;
+
+    /// <summary>A global multiplier on monster experience. The Gateway sets it from the system settings; 1 is the
+    /// live game's value.</summary>
+    public static double ExperienceMultiplier
+    {
+        get => Volatile.Read(ref _experienceMultiplier);
+        set => Volatile.Write(ref _experienceMultiplier, Math.Clamp(value, 0, 1000));
+    }
 
     /// <summary>
     /// The level penalty: monsters within a safe zone of 3 + level / 16 levels give full experience; beyond it the
@@ -43,7 +64,10 @@ public static class Progression
     public static uint MonsterExperience(int baseExperience, int multiplierPercent, MonsterRarity rarity, int playerLevel, int monsterLevel)
     {
         if (baseExperience <= 0 || multiplierPercent <= 0) return 0;
-        double xp = baseExperience * (multiplierPercent / 100.0) * RarityMultiplier(rarity) * LevelPenalty(playerLevel, monsterLevel);
+        double experienceMultiplier = ExperienceMultiplier;
+        if (experienceMultiplier <= 0) return 0;
+        double xp = baseExperience * (multiplierPercent / 100.0) * RarityMultiplier(rarity)
+            * LevelPenalty(playerLevel, monsterLevel) * experienceMultiplier;
         return (uint)Math.Max(1, Math.Round(xp));
     }
 
