@@ -1324,6 +1324,27 @@ partial class Program
             atlas.Select(CharacterName(conn), layout);
             await conn.Commands!.Reply($"Atlas layout set to {layout.Name} ({layout.Id}, tier {layout.Tier}).");
         })
+        .Add("atlas_tree", "/atlas_tree (dev: open the Atlas passive tree; S→C 0x7b kind 0x11)", async _ =>
+        {
+            await Send(remote, stream, ciphers, InstanceWaypoints.OpenUi(InstanceWaypoints.AtlasUi),
+                "0x007b open the Atlas passive tree");
+        })
+        .Add("atlas_points", "/atlas_points [<n>] (dev: show or set the Atlas passive point budget, saved)", async args =>
+        {
+            if (args.Length == 0)
+            {
+                await conn.Commands!.Reply($"Atlas passive points: {conn.AtlasPassivePoints}; " +
+                    $"preset allocations: {string.Join(", ", conn.AtlasPassives.Select((p, i) => $"{i}={p.Count}"))}.");
+                return;
+            }
+            if (!int.TryParse(args[0], out int points) || points is < 0 or > ushort.MaxValue)
+                throw new ArgumentException("a number from 0 to 65535");
+            conn.AtlasPassivePoints = (ushort)points;
+            if (CharacterName(conn) is { } character)
+                CharacterSaves.SetAtlasPassives(character, conn.AtlasPassives, conn.AtlasPassivePoints);
+            await SendAtlasSlots(remote, stream, ciphers, conn, "/atlas_points");
+            await conn.Commands!.Reply($"Atlas passive points: {points}.");
+        })
         .Add("goto", "/goto <area id or name> [seed] (dev: change area as if through an area transition, e.g. /goto 1_1_3; with a seed, a new instance at that seed, e.g. /goto 1_1_5 1384217569)", async args =>
         {
             // A last number is the seed: a new instance at it, as the capture tour's stops (towns keep seed 1).

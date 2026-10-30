@@ -437,6 +437,9 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     // (PassiveSkillGraphId), both kept in its save (CharacterSaves). Changed under the Monsters lock.
     public uint Experience;
     public List<ushort> Passives = [];
+    /// <summary>The three Atlas passive presets (PassiveSkillGraphId) and the points the character has; kept in its save.</summary>
+    public List<ushort>[] AtlasPassives = [[], [], []];
+    public ushort AtlasPassivePoints;
     /// <summary>The cluster jewel nodes allocated in the tree's expansion cells: the client's own small ids, sent with
     /// the expansion flag (C->S 0x34/0x36) and carried in 0x33's second list. Empty until a cluster jewel is socketed.
     /// </summary>
