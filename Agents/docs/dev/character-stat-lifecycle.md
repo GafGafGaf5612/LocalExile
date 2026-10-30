@@ -11,10 +11,12 @@ An equipped gem's skill could disappear from the current native Actor until anot
 The common fix belongs to the character-panel prerequisite, PR #318, before ordinary Inquisitor.
 The #318 author retains ownership of `issue-75-character-stats`.
 The contributor proposal updates `candidate/pr318-main361-admission` from exact owner head
-`b001bfa3c6fdf23c07affc0da66252f6858a9731`, containing main
-`5d5b5150e1b2e287c642edcaf75a49d075b9b4fe`.
-Owner follow-up `cb8ff7ee6b416b9b1d4e05acb510c3d57285ffb8` is merged as well.
-It changes only the gem-requirement documentation; production code and tests match the tested owner base.
+`58edf093c7885082bf70d4ec3bc0847e27fb4ce5`, containing main
+`c1b112e4890d909a11f612a68702b514e66bdb0d` and the owner's Arcane Might/stat composition.
+The current upstream main is `4602dd8ff8321574dfc8e26de0610bd77b931186`.
+#318 still needs its author's reconciliation with that newer base before upstream readiness.
+An exact merge-tree check finds nine conflicted paths, including the replaced bow executors and panel/combat code.
+The proposal follows the owner's head without taking over that broader integration.
 It supersedes the older admission proposal; the owner already performed that merge independently.
 The earlier candidate `f651d0e6` is retained locally as `archive/pr318-admission-f651`.
 The new diff contains no Inquisitor gameplay, fixtures, data generation or catalog-path changes.
@@ -25,34 +27,57 @@ The new diff contains no Inquisitor gameplay, fixtures, data generation or catal
 publishing its equipment snapshot or its qualification log.
 The function can still calculate local sources for transfer capture and read-only callers.
 The lifecycle check occurs after calculation, so a calculation queued before retirement cannot publish afterwards.
-The existing `CarryRage` successful-transfer path retires the source even when its Rage balance is empty.
+`Transfer` explicitly calls `conn.Retire()` after capturing all carried mechanics.
+`CarryRage` also retains its original retirement contract for its direct callers, even with an empty Rage balance.
 
 The continuous recovery, player, charge, Fortification and flask workers stop on retirement before socket closure.
 Temporary LeavingArea suspends work without permanently stopping the connection.
 Recovery resets its elapsed boundary and invalidates cached rates while leaving, allowing a failed transfer to resume
 without applying cached regeneration across the loading interval.
+It also advances and discards independently accumulated leech, Fortification, Antiquarian and Enduring Cry recovery.
+Unexpired recovery sources remain active after a refused transfer; their loading-time recovery is not paid later.
 Queued Energy Shield refreshes check lifecycle inside their send gate before source aggregation.
-Critical-context and Rage/charge refreshes also reject old lifecycles before their preparatory stat reads.
+Rage/charge refreshes also reject old lifecycles before their preparatory stat reads.
+`CriticalContext` retains its existing implementation without adding a full-calculation combat lock or a stale default.
 Current connections retain normal requirement removal/restoration and panel publication.
+
+This guard covers closed, leaving and retired connections, not a general per-character publication owner.
+The admission path does not guarantee closing an older half-open socket when the same character relogs.
+Ruthless's separate resource-admission owner protects its vitals, not this shared qualification dictionary.
+A still-open, non-retired old connection and out-of-order calculations on one current connection remain follow-up work.
 
 ## Automated evidence
 
-The code revision is `8b6a9c76eecd99eb9d2507d01332be4bbd8a5d46`.
-`AscendancyGatewayIntegrationTests.StatLifecycle.cs` adds 17 generic cases using real extracted items and gems.
+The reviewed code revision is `576625933f964c3528848ab73d774868b1985866`.
+`AscendancyGatewayIntegrationTests.StatLifecycle.cs` adds 20 generic cases using real extracted items and gems.
 It covers three stale lifecycles, a refresh retired while queued at the send gate, active publication, real
 successful-transfer retirement, resource rollback/resumption, and seven continuous publishers.
 The same-character fixture gives the earlier connection insufficient raw Dexterity and the current connection enough
 to qualify a Short Bow containing Fireball.
 Assertions inspect the shared snapshot before a current rebuild could hide a stale write.
 The four stale-publication/resource-retirement cases fail on unmodified owner code `b001bfa3` and pass with the fix.
+Three review regressions cover all four independent recovery consumers, active leech through an actual refused
+`Transfer`, and preservation of the critical-context baseline across loading/resumption.
+The latter two fail with the reviewed loading/CriticalContext behavior restored and pass with these fixes.
+Evidence for the current review run uses `logs/pr318-review-*`; the initial validation below retains its old revision.
+On `57662593`, the solution builds with zero warnings/errors and passes Core 394, Data 34 and Gateway 3192.
+All suites have no failures or skipped tests; Gateway collections run serially.
+Passive graphs v5 are extracted through the standard read-only extraction script for the owner's jewel fixtures.
 
-Solution build: zero warnings and errors.
-Core 389, Data 34 and Gateway 2578 pass, with no failures or skipped tests and serial Gateway collections.
+Initial code `8b6a9c76` builds with zero warnings/errors and passes Core 389, Data 34 and Gateway 2578.
+These are historical counts for that revision; serial Gateway collections have no skipped tests.
 Ignored evidence: `logs/pr318-lifecycle-{build,core,data,gateway,before,focused}.log` and their TRX results.
 
 ## Native evidence and boundaries
 
-Twelve native controls pass on the pinned code revision, launched through `scripts/dev/live.ps1`.
+The current review code `57662593` passes twelve native controls through `scripts/dev/live.ps1` again.
+Its Gateway SHA-256 is `82ff61eb1c4d4bfd63d31d65d118e09632e980337a1244b5111d62da60b51f33`.
+Evidence is in `logs/pr318-lifecycle-native-20261030-144229/{metadata,results}.json` and
+`logs/pr318-review-native-{run,gateway}.log`.
+The initial stopped runtime is restored.
+The refused-transfer leech case and deterministic accumulator checks are automated controls, not native Auth rejection.
+
+The initial twelve native controls on `8b6a9c76` also passed through `scripts/dev/live.ps1`.
 Gateway SHA-256: `dae82555202af09f734443d52b050a39fbdc6f4ca77342605406bb0e4becbf29`.
 The initial stopped runtime is restored after validation, which used a separate copied SQLite database.
 Raw Dexterity removal removes the bow's Fireball from the current native Actor; restoration restores it.
