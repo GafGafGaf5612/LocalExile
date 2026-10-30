@@ -1,12 +1,13 @@
 # Tattoos
 
-**Status: in progress (documentation complete, catalogue 100/100; 32 plain-stat tattoos client-verified).** The
+**Status: in progress (documentation complete, catalogue 100/100; 36 tattoo rows client-verified).** The
 client's right-click tattoo + left-click passive flow is traced and implemented: C->S `0x77` carries the inventory
 id, item id and passive graph id; the server consumes the item, replaces the passive's stats and sends the tattoo in
-`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Thirty-two rows are `works` (the ten pilot
-plus 22 plain stats), five are `partial` (Honoured Makanga and the four plain Makanga adjacency gates) and 63 are
-`not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol, the target/limit
-rules and the implementation groups. The `Status` column is per row; `Reason` names the missing layer.
+`0x33`'s fifth list as `node | PassiveSkillOverrides.HASH16 << 16`. Thirty-six rows are `works` (the ten pilot,
+22 plain stats and four Makanga adjacency gates), one is `partial` (Tukohama Makanga's seven-neighbour live
+check) and 63 are `not implemented`. This page records the 3.29.3b catalogue, the client mechanics, the protocol,
+the target/limit rules and the implementation groups. The `Status` column is per row; `Reason` names the missing
+layer.
 
 This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`, `PassiveSkillTattoos`,
 `PassiveSkillTattooTargetSets` and `PassiveSkillOverrides`, cross-checked with the poewiki
@@ -20,9 +21,9 @@ This page is based on the 3.29.3b client tables `BaseItemTypes`, `CurrencyItems`
 | Group | Items | Works | Partial | Inert | Not implemented |
 |---|---:|---:|---:|---:|---:|
 | Current (drop-enabled) | 53 | 26 | 0 | 0 | 27 |
-| Drop-disabled | 40 | 6 | 5 | 0 | 29 |
+| Drop-disabled | 40 | 10 | 1 | 0 | 29 |
 | Event-only | 7 | 0 | 0 | 0 | 7 |
-| **Total** | **100** | **32** | **5** | **0** | **63** |
+| **Total** | **100** | **36** | **1** | **0** | **63** |
 
 | Status | Meaning |
 |---|---|
@@ -38,9 +39,9 @@ stat already has a gameplay consumer. The first implementation pass must audit e
 
 | Group | Contents | State |
 |---|---|---|
-| 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 32/33 plain stats client-verified; Honoured Makanga remains partial pending the live adjacency check. |
+| 1. Plain stats | The ten pilot tattoos plus the next ten (resistances, attributes, evasion, accuracy, regeneration, stun and max-res). | 32/32 non-Makanga plain stats client-verified; the Makanga rows are in group 3. |
 | 2. Ailment/avoidance and skill stats | Chance/avoid ailments, leech, guard/warcry/mark/flask/minion/totem stats. | Not implemented. |
-| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Four plain Makanga are mapped with the dynamic adjacency gate (partial); Honoured Makanga is partial; the six conditional Makanga, counting and limits are still not implemented. |
+| 3. Counting, adjacency and limits | Journey per-allocated-tattoo, Ancestral per-tribe, Makanga adjacency, the Honoured attribute-notable limit. | Honoured, Ngamahu, Arohongui and Valako Makanga are live-verified; Tukohama is unit-tested/partial. The six conditional Makanga, counting and limits are still not implemented. |
 | 4. Random specials | Journey Makanui (random keystone) and the seven Forbidden ascendancy tattoos. | Not implemented. |
 | 5. Loyalty summons | The ten Summon Spirit triggers, each limited to 1 Loyalty Tattoo. | Not implemented. |
 
@@ -376,7 +377,7 @@ tattoos do not. All are drop-disabled in 3.29.
 | **Honoured Tattoo of the Flood** | Gain Arcane Surge on Hit with Spells | Notable (+30 Int) | drop-disabled | not implemented | needs Arcane Surge on spell hit |
 | **Honoured Tattoo of the Hatungo** | 1% increased Reservation Efficiency of Skills | Small Attribute | drop-disabled | not implemented | needs reservation efficiency |
 | **Honoured Tattoo of the Hunter** | +1 to Level of all Dexterity Skill Gems | Notable (+30 Dex) | drop-disabled | not implemented | needs Dexterity gem levels |
-| **Honoured Tattoo of the Makanga** | +2% to all maximum Resistances | Small Attribute | drop-disabled | partial | client apply; RequiresAdjacent 8; stats inactive below 8 allocated neighbours |
+| **Honoured Tattoo of the Makanga** | +2% to all maximum Resistances | Small Attribute | drop-disabled | works | live 8-neighbour gate; max res 86 -> 84 after refunding one neighbour |
 | **Honoured Tattoo of the Mountain** | +1% to maximum Fire Resistance<br>+1 to Maximum Endurance Charges | Notable (+30 Str) | drop-disabled | not implemented | needs max fire res + endurance charge cap |
 | **Honoured Tattoo of the Oak** | 2% increased maximum Life | Small Attribute | drop-disabled | works | client apply; max life +2% |
 | **Honoured Tattoo of the Pa** | Melee Hits Fortify | Notable (+30 Str) | drop-disabled | not implemented | needs melee-hit fortify |
@@ -421,16 +422,16 @@ Four require at most 1 adjacent allocated passive (Arohongui, Ngamahu, Rongokura
 
 | Tattoo | Effect | Replaces | Source | Status | Reason |
 |---|---|---|---|---|---|
-| **Tattoo of the Arohongui Makanga** | +1% to maximum Cold Resistance | Small Dexterity | drop-disabled | partial | server stat; MaxAdjacent 1 dynamic gate; live check pending |
+| **Tattoo of the Arohongui Makanga** | +1% to maximum Cold Resistance | Small Dexterity | drop-disabled | works | live MaxAdjacent 1; max cold 85 -> 84 with two neighbours |
 | **Tattoo of the Hinekora Makanga** | 8% increased Effect of your Curses | Small Intelligence | drop-disabled | not implemented | adjacency min 7; needs curse effect |
 | **Tattoo of the Kitava Makanga** | 80% increased Maximum total Life Recovery per second from Leech | Small Strength | drop-disabled | not implemented | adjacency min 7; needs leech recovery cap |
-| **Tattoo of the Ngamahu Makanga** | +1% to maximum Fire Resistance | Small Strength | drop-disabled | partial | server stat; MaxAdjacent 1 dynamic gate; live check pending |
+| **Tattoo of the Ngamahu Makanga** | +1% to maximum Fire Resistance | Small Strength | drop-disabled | works | live MaxAdjacent 1; max fire 85 -> 84 with two neighbours |
 | **Tattoo of the Ramako Makanga** | Skills fire an additional Projectile | Small Dexterity | drop-disabled | not implemented | adjacency min 7; needs additional projectile |
 | **Tattoo of the Rongokurai Makanga** | 8% chance to Defend with 200% of Armour | Small Strength | drop-disabled | not implemented | adjacency max 1; needs armour-defend roll |
 | **Tattoo of the Tasalio Makanga** | 8% increased Cooldown Recovery Rate | Small Intelligence | drop-disabled | not implemented | adjacency min 7; needs cooldown recovery |
 | **Tattoo of the Tawhoa Makanga** | Flasks applied to you have 8% increased Effect | Small Dexterity | drop-disabled | not implemented | adjacency min 7; needs flask effect |
-| **Tattoo of the Tukohama Makanga** | 16% increased Life Regeneration rate | Small Strength | drop-disabled | partial | server stat; RequiresAdjacent 7 dynamic gate; live check pending |
-| **Tattoo of the Valako Makanga** | +1% to maximum Lightning Resistance | Small Intelligence | drop-disabled | partial | server stat; MaxAdjacent 1 dynamic gate; live check pending |
+| **Tattoo of the Tukohama Makanga** | 16% increased Life Regeneration rate | Small Strength | drop-disabled | partial | RequiresAdjacent 7 unit-tested; live life-regeneration panel check pending |
+| **Tattoo of the Valako Makanga** | +1% to maximum Lightning Resistance | Small Intelligence | drop-disabled | works | live MaxAdjacent 1; max lightning 84 -> 83 with two neighbours |
 
 ### Forbidden (7)
 
@@ -521,8 +522,24 @@ Next plain-stat batch 2026-10-30 (client `0x77`, real client):
   reflect Honoured Turtle's global defences and the replaced attribute nodes. Block and suppression are unchanged.
 - All 13 were accepted; no refusals.
 
-Not yet verified through the client: replace, unallocate/reallocate, the 50 cap, live Makanga activation/
-deactivation, Journey Makanui, the seven Forbidden tattoos, and the six conditional Makanga.
+Makanga live checks 2026-10-30 (client and server, real tree):
+
+- **Honoured Makanga** on 4367 (eight allocated neighbours): active, maximum resistances 86/86/85/77.
+  Refunding leaf 60989 left seven neighbours and dropped them to 84/84/83/75; reallocating 60989 restored
+  86/86/85/77. The tattoo stayed applied; it was then removed.
+- **Ngamahu Makanga** on 30733 (small Strength, one allocated neighbour): max fire 85. Allocating a second
+  neighbour (49178) dropped it to 84; refunding 49178 restored 85. Refunding the tattooed node kept the map entry;
+  the tattoo was then removed.
+- **Arohongui Makanga** on 11497 (small Dexterity, one neighbour): max cold 85 -> 84 with a second neighbour ->
+  85 after refunding it.
+- **Valako Makanga** on 36542 (small Intelligence, one neighbour): max lightning 84 -> 83 with a second
+  neighbour -> 84 after refunding it.
+- **Tukohama Makanga**'s seven-neighbour gate is covered by unit tests; its life-regeneration stat has no
+  command readout, so the live panel check remains.
+- The test nodes were refunded/removed; the character keeps its own 12 tattoos and 530 passives from the session.
+
+Not yet verified through the client: replace, reallocating a tattooed node, the 50 cap, Tukohama Makanga's live
+life-regeneration value, Journey Makanui, the seven Forbidden tattoos, and the six conditional Makanga.
 
 ## See also
 

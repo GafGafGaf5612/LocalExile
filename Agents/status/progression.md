@@ -225,9 +225,9 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Tattoos: the 100-item 3.29.3b catalogue, protocol and implementation groups are documented in
   [tattoos](../docs/game/tattoos.md). The client flow is implemented: C->S `0x77` names the inventory, item and
   passive; `0x33`'s fifth list carries `node | PassiveSkillOverrides.HASH16 << 16`; the item is consumed and the
-  map is saved independently of allocation. **32 plain-stat tattoos** are client-verified: the ten pilot plus
-  22 plain stats. Firewalker also survived relog and was removed with an Orb of Scouring. The Makanga adjacency
-  gate is dynamic (`RequiresAdjacent`/`MaxAdjacent`): an inactive tattoo grants nothing until enough direct
-  neighbours are allocated. The tree currently carries the 13-tattoo plain batch. Five rows are partial
-  (Honoured Makanga and the four plain Makanga); 63 rows remain not implemented. The seven Forbidden
-  ascendancy tattoos use a separate event-only flow.
+  map is saved independently of allocation. **36 tattoo rows** are client-verified: the ten pilot, 22 plain
+  stats and four Makanga adjacency gates. Firewalker also survived relog and was removed with an Orb of
+  Scouring. The Makanga gate is dynamic (`RequiresAdjacent`/`MaxAdjacent`): an inactive tattoo grants nothing
+  until enough direct neighbours are allocated. The character currently has 530 passives and 12 tattoos from
+  the test session. One row is partial (Tukohama Makanga's seven-neighbour live value); 63 rows remain not
+  implemented. The seven Forbidden ascendancy tattoos use a separate event-only flow.
