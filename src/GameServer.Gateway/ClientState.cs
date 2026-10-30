@@ -521,6 +521,10 @@ sealed partial class ClientState(AreaLayout layout, uint ticket, uint seed)
     /// <summary>The Delve Crawler in the Azurite Mine Encampment (Program.Delve), and its cell.</summary>
     public uint DelveCrawlerObject;
     public (int X, int Y) DelveCrawlerAt;
+    public readonly List<uint> DelveCrawlerBlockers = [];
+    public readonly List<uint> DelveCrawlerAttachments = [];
+    public uint DelveGeneratorObject;
+    public bool DelveGeneratorOpen;
     public readonly HashSet<int> StashTabsSent = [];
     /// <summary>The guild stash: its object in the hideout, its tabs this connection has the contents of, and whether its
     /// panel is the one open (then the stash messages act on it; StashOf).</summary>

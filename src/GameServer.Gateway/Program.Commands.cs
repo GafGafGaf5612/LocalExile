@@ -277,7 +277,7 @@ partial class Program
         })
         .Add("delve_crawler", "/delve_crawler [x y degrees] (dev: create the Delve Crawler in the Azurite Mine Encampment, or move and turn the one there; a click on it opens the Subterranean Chart)", async args =>
         {
-            if (conn.Layout.Hash != StashCatalog.DelveHub) { await conn.Commands!.Reply("Only in the Azurite Mine Encampment"); return; }
+            if (conn.Layout.Hash is not (StashCatalog.DelveHub or InstanceDelve.MineArea)) { await conn.Commands!.Reply("Only in the Azurite Mine Encampment or mine"); return; }
             if (args.Length == 3 && int.TryParse(args[0], out int x) && int.TryParse(args[1], out int y) && float.TryParse(args[2],
                     System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float degrees))
             {
@@ -286,6 +286,9 @@ partial class Program
                 conn.DelveCrawlerAt = (x, y);
                 await Send(remote, stream, ciphers, InstanceProtocol.Teleport(conn.DelveCrawlerObject, x, y, 0x7fffffff), $"Delve Crawler to ({x}, {y})");
                 await Send(remote, stream, ciphers, InstanceHideoutEditing.Rotation(conn.DelveCrawlerObject, radians), $"Delve Crawler turned {degrees}°");
+                foreach (uint part in conn.DelveCrawlerAttachments)
+                    await Send(remote, stream, ciphers, InstanceProtocol.Teleport(part, x, y, 0x7fffffff), null);
+                await BlockDelveCrawler(remote, stream, ciphers, conn, x, y, radians);
                 await conn.Commands!.Reply($"Delve Crawler at ({x}, {y}), {degrees}°");
                 return;
             }
@@ -346,7 +349,7 @@ partial class Program
         {
             if (args.Length != 1 || !ushort.TryParse(args[0], out ushort amount)) throw new ArgumentException("/sulphite <amount 0-65535>");
             CharacterSaves.SetSulphite(CharacterName(conn), amount);
-            await Send(remote, stream, ciphers, InstanceDelve.DelveData(amount), $"0x0228 Delve data: {amount} sulphite (/sulphite)");
+            await Send(remote, stream, ciphers, PlayerDelveData(conn), $"0x0228 Delve data: {amount} sulphite (/sulphite)");
             await conn.Commands!.Reply($"Sulphite: {amount}");
         })
         .Add("item_tab", $"/item_tab <stash tab name> <count> (dev: up to count, at most {ItemTabMax}, more of every item type that has its own slot on that tab, as far as each slot holds, e.g. /item_tab Currency 1000)", async args =>
