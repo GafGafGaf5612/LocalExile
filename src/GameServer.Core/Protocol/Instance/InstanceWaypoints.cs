@@ -8,7 +8,11 @@ namespace GameServer.Core.Protocol.Instance;
 /// </summary>
 public static class InstanceWaypoints
 {
-    public const ushort WaypointsId = 0x4c, OpenUiId = 0x7b, TravelId = 0x4d, VisitHideoutId = 0x17a;
+    public const ushort WaypointsId = 0x4c, OpenUiId = 0x7b, TravelId = 0x4d, VisitHideoutId = 0x17a, VisitDelveHubId = 0x17d;
+
+    /// <summary>C→S 0x17d: the World panel's Mine Encampment pin (SpecialMapPins DelveHub), 6 bytes: u32 BE the waypoint
+    /// object the panel was opened from (live 2026-10-30: <c>017D 00002F00</c>).</summary>
+    public const int VisitDelveHubLength = 6;
 
     /// <summary>
     /// C→S 0x17a: the World panel's Hideout button, opened from a waypoint (live 2026-10-20). u16 n + n bytes UTF-8: the

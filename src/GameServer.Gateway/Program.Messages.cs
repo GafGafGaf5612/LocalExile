@@ -20,7 +20,7 @@ partial class Program
             // Immediate transfer ingress cuts the old epoch off instead of replaying overdue old-world damage.
             // Movement/combat handlers also advance atomically inside their mutation boundaries.
             bool transferIngress = id is InstanceTransfer.ChooseInstanceId or InstanceTransfer.LeaveAreaAckId
-                or InstanceWaypoints.TravelId or InstanceWaypoints.VisitHideoutId or InstanceHideouts.SelectId
+                or InstanceWaypoints.TravelId or InstanceWaypoints.VisitHideoutId or InstanceWaypoints.VisitDelveHubId or InstanceHideouts.SelectId
                 || id == InstanceProtocol.ResurrectId && InstanceProtocol.ReadResurrectInTown(bytes)
                 || id == InstanceItems.CommandId && InstanceItems.ReadCommand(bytes).Id == InstanceItems.WarpToHideoutCommand;
             if (!transferIngress) AdvanceProjectiles(conn);
@@ -286,6 +286,12 @@ partial class Program
                 Console.WriteLine($"[gateway] {remote} <= 0x017a visit the hideout of {visit.Character} (from object 0x{visit.Waypoint:x}, u8 {visit.Flag})");
                 // Only the player's own hideout exists (no parties or other players' hideouts yet).
                 await WarpToHideout(remote, stream, ciphers, conn, "World panel Hideout button");
+            }
+            else if (id == InstanceWaypoints.VisitDelveHubId)
+            {
+                Console.WriteLine($"[gateway] {remote} <= 0x017d World panel Mine Encampment pin");
+                if (AreaTransitionCatalog.HashOf(WaypointCatalog.DelveHub) is { } delve)
+                    await ChangeArea(remote, stream, ciphers, conn, new PendingTransfer(delve, 0, false, AtSpawn: true), "World panel Mine Encampment pin");
             }
             else if (id == InstanceItems.UnsocketGemId)
                 await UnsocketGem(remote, stream, ciphers, conn, InstanceItems.ReadUnsocketGem(bytes));

@@ -105,7 +105,10 @@ Part of [Status](../Status.md); what to build next in this area is in
   first mine section (the other fields are being worked out with `/delve_chart`).
   Visit Mine Encampment goes to Delve_Hub, which has its tile's waypoint (still drawn inactive: no 0x4c bit), Niko,
   the stash and the guild stash.
+  The World panel's special pins are all shown (league quest flags for every character, the Labyrinth's waypoint
+  always activated); the Mine Encampment pin (C→S 0x17d) leads to Delve_Hub, the Hideout pin to the hideout.
   The mine itself is not implemented.
+  See [16](../docs/protocol/16-waypoints.md) §4.
   See [21](../docs/protocol/21-hideouts.md).
 - **Delve sulphite and the Crawler (verified live, 2026-10-29).**
   - The character's Voltaxic Sulphite is saved, sent on entering the Mine Encampment or a Delve area (S→C 0x228), and

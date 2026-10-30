@@ -28,6 +28,9 @@ static class WaypointCatalog
     /// <summary>The Azurite Mine Encampment (WorldAreas Delve_Hub), where Niko's Visit Mine Encampment leads.</summary>
     public const string DelveHub = "Delve_Hub";
 
+    /// <summary>The Aspirants' Plaza (WorldAreas Labyrinth_Airlock), the World panel's Labyrinth pin.</summary>
+    public const string LabyrinthPlaza = "Labyrinth_Airlock";
+
     static readonly Lazy<AreaVisitFlags> VisitFlags = new(() => AreaVisitFlags.Load("data/tables/WorldAreas.json", "data/tables/MapPins.json"));
 
     /// <summary>The quest flags entering an area sets (AreaVisitFlags), and the areas with a World panel pin.</summary>
