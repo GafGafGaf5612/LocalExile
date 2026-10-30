@@ -748,10 +748,35 @@ partial class Program
                 ? $"Map portals will be created at {conn.PortalRotationDegrees:0.#}°."
                 : $"{rebuilt} map portal(s) rebuilt at {conn.PortalRotationDegrees:0.#}°.");
         })
-        .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
+        .Add("mod", "/mod [implicit|explicit|enchant|scourge|hidden] <Mods row, Id or part of it> [values…] | /mod set [section] <mod> [values…] | /mod clear [section] (the held item; missing values are rolled)", async args =>
         {
             if (args.Length == 0) throw new ArgumentException("which mod?");
             ModSection? section = null;
+            if (args[0].Equals("set", StringComparison.OrdinalIgnoreCase))
+            {
+                args = args[1..];
+                if (args.Length == 0) throw new ArgumentException("which mod?");
+                ModSection? setSection = null;
+                if (args.Length > 1 && ParseSection(args[0]) is { } parsed) { setSection = parsed; args = args[1..]; }
+                if (ItemsFor(conn).Mods.Find(args[0]) is not { } setMod) { await conn.Commands!.Reply($"No mod \"{args[0]}\" in Mods.dat"); return; }
+                if (ItemsOf(conn).Items(PlayerInventories.Cursor) is not [var held, ..]) { await conn.Commands!.Reply("Hold an item first"); return; }
+                var setValues = args[1..].Select(int.Parse).ToList();
+                var replacement = setMod.With(setSection ?? setMod.DefaultSection, setValues, Random.Shared);
+                int existing = held.Item.Mods.Select((m, index) => (m, index))
+                    .Where(p => p.m.Hash == replacement.Hash && (setSection is null || p.m.Section == setSection))
+                    .Select(p => p.index).DefaultIfEmpty(-1).First();
+                if (existing < 0) { await conn.Commands!.Reply($"The held item has no {setMod.Id}; use /mod to add it"); return; }
+                var targetSection = held.Item.Mods[existing].Section;
+                replacement = replacement with { Section = targetSection };
+                await ChangeHeldItem(remote, stream, ciphers, conn, i =>
+                {
+                    var mods = i.Mods.ToList();
+                    int index = mods.FindIndex(m => m.Hash == replacement.Hash && m.Section == targetSection);
+                    if (index >= 0) mods[index] = replacement;
+                    return i with { Mods = mods };
+                }, $"set {ItemsFor(conn).Mods.Describe(replacement)}");
+                return;
+            }
             if (args.Length > 1 && ParseSection(args[0]) is { } s) { section = s; args = args[1..]; }
             if (args[0].Equals("clear", StringComparison.OrdinalIgnoreCase))
             {
