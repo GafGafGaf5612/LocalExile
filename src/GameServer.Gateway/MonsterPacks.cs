@@ -162,6 +162,24 @@ static class AreaPopulation
         return m.Groups[1].Success ? [.. m.Groups[1].Value.Split('&').Select(int.Parse)] : [];
     }
 
+    /// <summary>Server-side spawner objects of a room that stand for one of the area's unique bosses (their .ot names no
+    /// monster: the official server turns them into it), and that boss's MonsterVarieties Id. The Quay's boss.arm:
+    /// TolmanBossSpawner, Tolman in the stocks beside Clarissa, who breaks out (its "spawning" states 1 … 7).</summary>
+    public static readonly IReadOnlyDictionary<string, string> BossSpawners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Metadata/Monsters/Zombies/Tolman/TolmanBossSpawner"] = "Metadata/Monsters/Zombies/ZombieBossTolman_",
+    };
+
+    /// <summary>The boss points of the area's <see cref="BossSpawners"/> among a placed room's server objects:
+    /// "mapboss&lt;n&gt;" for the n-th of WorldAreas Bosses, at the spawner's cell.</summary>
+    public static IEnumerable<RoomPoint> SpawnerPoints(PackCatalog.AreaPacks area, IEnumerable<RoomObject> objects, Func<int, string?> varietyId)
+    {
+        foreach (var o in objects)
+            if (BossSpawners.TryGetValue(o.Type, out var boss)
+                && Enumerable.Range(0, area.Bosses.Count).FirstOrDefault(i => varietyId(area.Bosses[i]) == boss, -1) is int row and >= 0)
+                yield return new RoomPoint($"mapboss{row + 1}", o.X, o.Y, o.Angle);
+    }
+
     static readonly System.Text.RegularExpressions.Regex BossPointName =new("^(?:force:)?mapboss(?:([1-9][0-9]*(?:&[1-9][0-9]*)*)|pack)?(?:WG)?$");
 
     // One scattered pack per this many walkable cells (The Coast seed 1: 404 620 cells → 45 packs).

@@ -158,6 +158,28 @@ public sealed class BossRoomPointsTests : IDisposable
     }
 
     [Fact]
+    public void An_absent_boss_stands_nowhere()
+    {
+        var spawns = Plan(Area(11, 22, 33) with { Absent = new HashSet<int> { 0, 2 } }, new AreaPopulation.RoomPoint("mapboss", 100, 100));
+        Assert.Equal([22], spawns.Select(s => s.Variety));
+    }
+
+    [Fact]
+    public void A_boss_spawner_object_becomes_its_boss_point()
+    {
+        // The Quay's boss.arm: TolmanBossSpawner (Tolman in the stocks) is mapboss<n> of Tolman's place in Bosses.
+        var area = Area(7, 1226);
+        AreaPopulation.RoomObject[] objects =
+        [
+            new("Metadata/NPC/Act8/ClarissaQuay", "Clarissa.ao", 10, 10, 0, 1),
+            new("Metadata/Monsters/Zombies/Tolman/TolmanBossSpawner", "Tolman.ao", 40, 50, 0, 1),
+        ];
+        var points = AreaPopulation.SpawnerPoints(area, objects, v => v == 1226 ? "Metadata/Monsters/Zombies/ZombieBossTolman_" : "x").ToList();
+        Assert.Equal([("mapboss2", 40, 50)], points.Select(p => (p.Name, p.X, p.Y)));
+        Assert.Empty(AreaPopulation.SpawnerPoints(Area(7), objects, _ => "x"));
+    }
+
+    [Fact]
     public void A_boss_room_the_layout_did_not_place_has_no_boss()
     {
         // broken_bridge and broken_bridge_left share their doodads; only one is placed (rooms.json), but both fit it.

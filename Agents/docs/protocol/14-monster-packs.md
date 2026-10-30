@@ -115,6 +115,9 @@ So:
    creates them; before, they stood from the start beside the first form. The area's `bosspack` stands once: at its own
    `%area%-bosspack` points when the layout has them, else at the first boss point; before, every boss point added one
    (The Cavern of Anger, The Dried Lake, The Lunaris Temple Level 2 up to three times).
+   **Spawner objects** (`AreaPopulation.BossSpawners`): a room's server-side spawner that stands for one of the area's
+   bosses becomes that boss's point. The Quay's `boss.arm` (kept for Clarissa, a quest NPC): `TolmanBossSpawner`, Tolman
+   in the stocks, who breaks out in the official game (its `spawning` states), is created as Tolman at the spawner.
    **Not placed** (the check below lists them with the reason): Marceus the Defaced (The Marketplace) is a tile's
    statue spawner (`Spawner_StoneStatueLargeMaleBoss`) that wakes as the player comes near, and tile spawners are not
    among the generated quest objects (`AreaObjects.QuestTypes`); The Solaris Temple Level 2's three Banners have their
