@@ -51,6 +51,33 @@ public static class AreaObjects
     public static List<PlacedTileObject> Transitions(TerrainCache files, GenerationResult result) =>
         Place(files, result, t => files.IsTransitionType(t) || IsEffect(t), tile => files.HasTransition(tile));
 
+    /// <summary>The waypoints a placed .arm room holds as a server object line (type <c>Waypoint</c>) instead of a tile
+    /// object: The Ledge's <c>Act1/Area5/Rooms/waypoint.arm</c>. Placed as <see cref="DoodadStage"/>'s room lines
+    /// (<c>0x142040770</c>: the cell turned by the room's code, the angle mirrored for codes 4–7 plus (code &amp; 3)·π/2),
+    /// which skip them as no client doodad. Not in the recorder's .transitions.json (it records tile objects only).</summary>
+    public static List<PlacedTileObject> RoomWaypoints(GenerationResult result)
+    {
+        var placed = new List<PlacedTileObject>();
+        foreach (var record in result.Records)
+            foreach (var room in record.Rooms)
+            {
+                int code = room.Orientation;
+                foreach (var d in room.Room.Doodads)
+                {
+                    if (d.Type != WaypointType) continue;
+                    var (cx, cy) = Orientation.Map(code, (int)d.X, (int)d.Y, room.Room.Width * 23, room.Room.Height * 23);
+                    float angle = code is >= 4 and < 8 ? MathF.PI * 2 - d.Angle : d.Angle;
+                    angle = (angle + (code & 3) * (MathF.PI / 2)) % (MathF.PI * 2);
+                    var waypoint = new PlacedTileObject(d.Type, d.Model, room.X * 23 + cx, room.Y * 23 + cy, angle,
+                        d.FixedHeight ?? float.NaN, code);
+                    if (!placed.Contains(waypoint)) placed.Add(waypoint);
+                }
+            }
+        return placed;
+    }
+
+    const string WaypointType = "Metadata/MiscellaneousObjects/Waypoint";
+
     /// <summary>The <see cref="QuestTypes"/> objects of a generated grid, placed as <see cref="Transitions"/>.</summary>
     public static List<PlacedTileObject> QuestObjects(TerrainCache files, GenerationResult result) =>
         Place(files, result, QuestTypes.Contains, _ => false);

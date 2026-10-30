@@ -94,10 +94,16 @@ static class AreaLayouts
 
     const string Folder = "data/walkability";
 
+    static string IdOf(ushort hash) =>
+        Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? HideoutCatalog.ByArea(hash)?.AreaId ?? $"0x{hash:x4}";
+
+    /// <summary>The seed the instance's layout is generated and played at (<see cref="ServerLevels.PlayableSeed"/>).</summary>
+    public static uint PlayableSeed(ushort hash, uint seed) => ServerLevels.PlayableSeed(IdOf(hash), seed);
+
     public static AreaLayout For(ushort hash, uint seed)
     {
         var hideout = HideoutCatalog.ByArea(hash);
-        string id = Ids.GetValueOrDefault(hash) ?? AreaTransitionCatalog.IdOf(hash) ?? hideout?.AreaId ?? $"0x{hash:x4}";
+        string id = IdOf(hash);
         // A hideout's waypoint is one of its decoration's doodads (21-hideouts.md §2), not a tile object.
         return WithoutWaypoint(hash, id, seed) with { Waypoint = hideout is null ? WaypointCatalog.For(hash, id, seed) : HideoutCatalog.Waypoint(hideout) };
     }

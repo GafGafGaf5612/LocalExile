@@ -206,6 +206,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   Ordinary bow ground/object attacks now share contact-time release and damage at the actual flight collision
   (#203, automated and native collision/release/pause checks pass).
   Object uses no longer also deal a melee contact hit.
+  The client spawns the primary projectiles of its own gem skill use itself, every one of a volley, from where it
+  stands; the server simulates them but sends no object for them (one fireball was two, 2026-10-29). Their
+  continuation children still get server objects; whether the client predicts ordinary bow arrows is not checked.
+  Tornado Shot fires `Metadata/Projectiles/TornadoShotArrow` (`SkillCatalog.ProjectileFallbacks`; its row is not named
+  after the effect, so every use was refused and the server walked on while the client stopped, 2026-10-29); it is the
+  basic straight-flight arrow only: the secondary arrows from the target point are not modelled yet.
   Projectiles spawn at the captured terrain height + `Game_PROJECTILE_HEIGHT` (5 steps = torso) on natural ground;
   without a capture they use the bare offset.
   An attack gem at the ground swings (and pays its mana) when the point is within the weapon's reach, and only walks
