@@ -70,6 +70,15 @@ sealed class ItemCatalog
         /// <summary>BaseItemTypes or ItemClasses forbids modification of this base.</summary>
         public bool Unmodifiable { get; init; }
 
+        /// <summary>ItemClasses CanBeFractured: true for equipment, flasks, jewels, maps, contracts and logbooks;
+        /// false for currency, gems, fragments, tinctures and relics. The Fracturing Orb's class check.</summary>
+        public bool CanBeFractured { get; init; }
+
+        /// <summary>ItemClasses <c>__col21</c> (unnamed in the dat schema): true for the equipment classes (weapons,
+        /// armour, jewellery and quivers) and false for flasks, jewels, maps and currency. The Mirror of Kalandra's
+        /// non-unique equipment check; the wiki's equipment definition is the same set.</summary>
+        public bool CanBeMirrored { get; init; }
+
         public bool Supported => Components.Count > 0 && Item.CanSerialize(Components);
         /// <summary>Several of the type share one cell (a Stack component and a CurrencyItems StackSize above 1).</summary>
         public bool Stackable => MaxStack > 1;
@@ -509,6 +518,8 @@ sealed class ItemCatalog
         var classes = new List<string>();
         var stances = new List<byte>();
         var unmodifiableClasses = new List<bool>();
+        var fracturableClasses = new List<bool>();
+        var mirrorableClasses = new List<bool>();
         string classesPath = Path.Combine(folder, "tables", "ItemClasses.json");
         if (File.Exists(classesPath))
         {
@@ -517,6 +528,13 @@ sealed class ItemCatalog
             stances = [.. doc.RootElement.EnumerateArray().Select(r => r.GetProperty("ItemStance") is { ValueKind: JsonValueKind.Number } s ? (byte)s.GetInt32() : (byte)0xff)];
             unmodifiableClasses = [.. doc.RootElement.EnumerateArray().Select(r =>
                 r.TryGetProperty("Unmodifiable", out var u) && u.ValueKind == JsonValueKind.True)];
+            fracturableClasses = [.. doc.RootElement.EnumerateArray().Select(r =>
+                r.TryGetProperty("CanBeFractured", out var f) && f.ValueKind == JsonValueKind.True)];
+            // __col21 is unnamed in the dat schema. Its true set is exactly the equipment classes (weapons, armour,
+            // jewellery, quivers); flasks, jewels, maps and currency are false, which is the Mirror's "non-unique
+            // equipment" rule from the wiki.
+            mirrorableClasses = [.. doc.RootElement.EnumerateArray().Select(r =>
+                r.TryGetProperty("__col21", out var m) && m.ValueKind == JsonValueKind.True)];
         }
         List<string> tagIds = [];
         string tagsPath = Path.Combine(folder, "tables", "Tags.json");
@@ -554,6 +572,10 @@ sealed class ItemCatalog
                     Unmodifiable = r.TryGetProperty("Unmodifiable", out var u) && u.ValueKind == JsonValueKind.True ||
                         r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } uc &&
                         uc.GetInt32() >= 0 && uc.GetInt32() < unmodifiableClasses.Count && unmodifiableClasses[uc.GetInt32()],
+                    CanBeFractured = r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } fc &&
+                        fc.GetInt32() >= 0 && fc.GetInt32() < fracturableClasses.Count && fracturableClasses[fc.GetInt32()],
+                    CanBeMirrored = r.GetProperty("ItemClassesKey") is { ValueKind: JsonValueKind.Number } mc &&
+                        mc.GetInt32() >= 0 && mc.GetInt32() < mirrorableClasses.Count && mirrorableClasses[mc.GetInt32()],
                 });
             }
         }

@@ -321,12 +321,21 @@ Part of [Status](../Status.md); what to build next in this area is in
   and the remaining refusal paths stay under automated coverage.
 - **Glassblower's Bauble (verified live, 2026-10-21):** +1% flask quality up to 20%; Scouring resets it.
   See [13](../docs/protocol/13-items.md), "Glassblower's Bauble".
-- **Fracturing Orb (verified live, 2026-10-21):** one random mod of a rare item with 4+ mods is fractured and kept by
-  every other currency, Scouring included; shown fractured (magic properties u8 +0x7a).
-  See [13](../docs/protocol/13-items.md), "Fracturing Orb".
-- **Mirror of Kalandra (verified live, 2026-10-21):** a mirrored copy (Mods flag bit 1) of a non-corrupted,
-  non-mirrored item goes onto the cursor; mirrored items take no currency.
-  See [13](../docs/protocol/13-items.md), "Mirror of Kalandra".
+- **Fracturing Orb (verified live, 2026-10-21; rules rechecked 2026-10-30):** one random explicit mod of a rare item
+  with 4+ explicit mods is fractured and kept by every other currency, Scouring included; shown fractured (magic
+  properties u8 +0x7a). The admission checks now also require a supported non-`Unmodifiable` base whose
+  `ItemClasses.CanBeFractured` is set, and refuse corrupted/mirrored/already-fractured items; metamod-protected mods
+  stay eligible. Influence, synthesis and veiled modifiers are not modelled. Native 2026-10-30: a four-mod rare wand
+  was fractured, a second use was refused without spending. See [13](../docs/protocol/13-items.md), "Fracturing Orb",
+  and [the game rules](../docs/re/fracturing-mirror-mechanics.md).
+- **Mirror of Kalandra (verified live, 2026-10-21; rules rechecked 2026-10-30):** a mirrored copy (Mods flag bit 1) of
+  a non-unique equipment item that is not corrupted, mirrored or unmodifiable goes onto the cursor; the original
+  stays unchanged. Unique items and non-equipment classes (flasks, jewels, maps, currency) are refused, as are
+  unmodifiable/unknown/no-`Mods` bases. A mirrored item takes no currency at all, including a Scroll of Wisdom;
+  Reflective Oil and Split/Sanctified items are not modelled. Native 2026-10-30: a rare wand produced a mirrored copy
+  on the cursor, while a unique Mageblood, a Diamond Flask, a Crimson Jewel and a Scroll of Wisdom on the copy were
+  refused without spending. See [13](../docs/protocol/13-items.md), "Mirror of Kalandra", and
+  [the game rules](../docs/re/fracturing-mirror-mechanics.md).
 - **Orb of Fusing: verified live (2026-10-21).** Captured 0x71/0x72 packets feed the same handler.
   Only links change; sockets, colours, gems and item properties stay intact.
   Refuses fewer than two sockets and protects fully linked 5/6-socket items; 2-4 sockets remain rerollable.

@@ -66,6 +66,11 @@ features.
   Remaining special mechanics include Ward conversions, ring-slot and jewel-radius operators.
   Sacred Orb rerolls use the ordinary/Shift currency path and atomic inventory/stash saves.
   See Status and 13-items.md, "Sacred Orb" for the native checks and local roll distribution policy.
+  Fracturing and Mirror have validated class/rarity admission (Fracturing uses `ItemClasses.CanBeFractured`, Mirror
+  the equipment flag, non-unique targets and no currency on mirrored items); the 2026-10-30 native run covered the
+  success and refusal paths. Influence/synthesis/veiled modifiers and Reflective Oil/Split/Sanctified remain separate,
+  and Mirror from a stash tab is still unsupported. See
+  [the game rules](../docs/re/fracturing-mirror-mechanics.md).
 - **Socket colours (3.29):** the 3.29 rules are in (white by default with an item-level colour chance, the
   Chromatic and non-white bench crafts, white sockets from Jeweller's/bench socket adds, Vaal colouring one white
   socket; [13](../docs/protocol/13-items.md), "Socket colours (3.29)", Status).

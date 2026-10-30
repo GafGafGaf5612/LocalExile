@@ -1052,12 +1052,16 @@ partial class Program
         if (type?.Id == CurrencyEffects.MirrorOfKalandra)
         {
             if (stashTab is not null || targetTab is not null) { Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra with the stash: not handled, use it in the inventory"); return; }
-            await MirrorItem(remote, stream, ciphers, conn, items, usedRow, used, target);
+            await MirrorItem(remote, stream, ciphers, conn, items, RollsFor(conn), usedRow, used, target);
             return;
         }
         // What the currency makes of the target, or null (nothing happens, nothing is spent).
-        // A corrupted or mirrored item takes no currency but a Scroll of Wisdom (no corrupted currency yet).
-        Item? result = (target.Item.Corrupted || target.Item.Mirrored) && type?.Id != Wisdom ? null : type?.Id switch
+        // A corrupted item takes no currency but a Scroll of Wisdom (no corrupted currency yet). A mirrored item takes
+        // no currency at all: the wiki says a mirrored copy cannot be altered in any way except a Reflective Oil, which
+        // is not modelled.
+        Item? result = target.Item.Mirrored ? null
+            : target.Item.Corrupted && type?.Id != Wisdom ? null
+            : type?.Id switch
         {
             Wisdom => target.Item.Identified || !target.Item.Components.Contains("Mods") ? null : target.Item with { Identified = true },
             CurrencyEffects.ChromaticOrb => ItemsFor(conn).ByHash(target.Item.TypeHash) is { } targetType
@@ -1096,7 +1100,7 @@ partial class Program
             CurrencyEffects.OrbOfChance => CurrencyEffects.Chance(target.Item, RollsFor(conn), Random.Shared),
             CurrencyEffects.GlassblowersBauble => CurrencyEffects.Glassblower(target.Item),
             CurrencyEffects.GemcuttersPrism => CurrencyEffects.Gemcutter(target.Item),
-            CurrencyEffects.FracturingOrb => CurrencyEffects.Fracture(target.Item, Random.Shared),
+            CurrencyEffects.FracturingOrb => CurrencyEffects.Fracture(target.Item, RollsFor(conn), Random.Shared),
             CurrencyEffects.VaalOrb => ItemsFor(conn).ByHash(target.Item.TypeHash) is { } vaalType
                 ? CurrencyEffects.Vaal(target.Item, vaalType, ItemsFor(conn).Requirements(vaalType), RollsFor(conn), Random.Shared) : null,
             _ when isEssence => EssencesFor(conn).Apply(type!.Hash, target.Item, Random.Shared),
@@ -1166,11 +1170,11 @@ partial class Program
     // Mirror of Kalandra (C→S 0x71 / Shift 0x72): a mirrored copy of the target goes onto the (empty) cursor, as if picked
     // up, for the player to place; the target stays as it was. One mirror and the copy are saved together.
     static async Task MirrorItem(string remote, NetworkStream stream, ConnectionCiphers ciphers, ClientState conn, PlayerInventories items,
-        byte usedRow, InventoryItem used, InventoryItem target)
+        ItemRolls rolls, byte usedRow, InventoryItem used, InventoryItem target)
     {
-        if (CurrencyEffects.Mirror(target.Item) is not { } copy || items.Items(PlayerInventories.Cursor).Count > 0)
+        if (CurrencyEffects.Mirror(target.Item, rolls) is not { } copy || items.Items(PlayerInventories.Cursor).Count > 0)
         {
-            Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra on item {target.Id}: refused (corrupted / mirrored / no mods / cursor not empty)");
+            Console.WriteLine($"[gateway] {remote} <= 0x0071 Mirror of Kalandra on item {target.Id}: refused (corrupted / mirrored / unique / non-equipment / unmodifiable / no mods / cursor not empty)");
             return;
         }
         var done = Saves.Atomically<(PlayerInventories.Consumption, InventoryItem)?>(() =>

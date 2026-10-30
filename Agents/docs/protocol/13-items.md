@@ -773,31 +773,37 @@ quality back to 0, as for armour and weapons.
 `CurrencyGemQuality`, same handler (0x71, 0x72 with Shift). `CurrencyEffects.Gemcutter`: +1% quality on an item with a
 SkillGem component (active or support) that is not corrupted, up to 20%. Anything else is refused and nothing is spent.
 
-### Fracturing Orb (2026-10-21, verified live)
+### Fracturing Orb (2026-10-21, verified live; rules rechecked 2026-10-30)
 
 `CurrencyFractureRare`, same handler (0x71, 0x72 with Shift). As the official orb: a rare item with at least four explicit
-mods, not corrupted and not fractured yet, has one random explicit mod fractured (`CurrencyEffects.Fracture`). The mod
-moves to the front of the explicits and `Item.FracturedCount` (saved) counts it. Every other currency keeps fractured
-mods: Chaos, Vaal and the other rerolls roll around them (they count towards the affix limits), Annulment and Divine
-skip them, Augmentation / Exalted insert after them, and Scouring removes everything else (the item stays magic so the
-mod still shows).
+mods, not corrupted, mirrored or already fractured, on a supported non-`Unmodifiable` base whose
+`ItemClasses.CanBeFractured` is set, has one random explicit mod fractured (`ItemRolls.Fracture`). Metamod-protected
+mods are eligible: the orb does not respect metamods. The mod moves to the front of the explicits and
+`Item.FracturedCount` (saved) counts it. Every other currency keeps fractured mods: Chaos, Vaal and the other rerolls
+roll around them (they count towards the affix limits), Annulment and Divine skip them, Augmentation / Exalted insert
+after them, and Scouring removes everything else (the item stays magic so the mod still shows).
 
 The client is told through the magic properties' u8 `+0x7a` (the byte right after their u16 flags, sent 0 before):
 the fractured explicit count, the first explicits being the fractured ones. Verified live: those mods show fractured.
 Tried first and wrong: the Mods component's flag bit 4 with a u8 after the flags shifted the item (it showed magic).
 
-### Mirror of Kalandra (2026-10-21, verified live)
+Influence, synthesis and veiled modifiers are not modelled, so those official refusals cannot be exercised locally.
+See [the game rules](../re/fracturing-mirror-mechanics.md).
 
-`CurrencyDuplicate`, same 0x71 / 0x72 messages (`MirrorItem`). As the official mirror: an item that is neither
-corrupted nor mirrored is copied with every property (mods and values, fractured mods, quality, sockets, links,
-socketed gems, name); the copy is **mirrored** and goes onto the cursor (S→C 0xbf on the cursor inventory) for the
-player to place, the original stays unchanged. A held item,
-a corrupted or mirrored target, or an item without mods is refused and nothing is spent. A mirrored item takes no
-currency but a Scroll of Wisdom.
+### Mirror of Kalandra (2026-10-21, verified live; rules rechecked 2026-10-30)
+
+`CurrencyDuplicate`, same 0x71 / 0x72 messages (`MirrorItem`). As the official mirror: a non-unique equipment item
+that is neither corrupted nor mirrored, on a supported non-`Unmodifiable` base whose `ItemClasses` equipment flag is
+set, is copied with every property (mods and values, fractured mods, quality, sockets, links, socketed gems, rarity,
+identification and name); the copy is **mirrored** and goes onto the cursor (S→C 0xbf on the cursor inventory) for
+the player to place, the original stays unchanged. A held item, a corrupted or mirrored target, a unique item, a
+non-equipment item (flask, jewel, map, currency), an unmodifiable base, or an item without mods is refused and
+nothing is spent. A mirrored item takes no currency at all, including a Scroll of Wisdom; Reflective Oil is not
+modelled. Using a Mirror from a stash tab is a local limitation, not a game rule.
 
 `Item.Mirrored` (saved) is sent as the Mods component's u16 flags bit 1 (`+0x2df`, a plain bool with no data after
 it): the client's crafting check refuses an item with it (`0x141d68f9b`); the tooltip shows
-"Mirrored".
+"Mirrored". See [the game rules](../re/fracturing-mirror-mechanics.md).
 
 ### Vaal Orb and corruption (2026-10-21, verified live)
 
