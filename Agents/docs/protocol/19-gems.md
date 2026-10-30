@@ -105,7 +105,10 @@ the transfigured item-name display still needs a native retest.
   inactive items (`SocketedGemRequirements`, from catalog data and the resolver's own attribute totals, never the
   pools, which may not exist yet at login; a `/set_stat virtual_*_for_requirements` replaces the attribute there as
   it does for the client), and `InactiveItems` keeps the result. PR #175 had dropped this rule, so the
-  gems stayed on the skill bar and every use was refused (restored 2026-10-29). Its mods and its gems do nothing and
+  gems stayed on the skill bar and every use was refused (restored 2026-10-29). The official game does the same
+  (checked 2026-10-29 on live Path of Exile 1: boots whose tooltip lists "Requires Level 72 (gem), 142 Str (gem), 114
+  Dex (gem), 62 Int (gem)" read "You cannot use this item. Its stats will be ignored" once Dexterity fell under 114,
+  and became usable again when that gem was taken out). Its mods and its gems do nothing and
   its skills leave the Actor skill list, so the client has
   nothing to cast (`GemSkillEffects`); a use that arrives anyway is refused before the action is started — no 0x1ab so
   the cast does not run, and the mana pool goes out again so the cost comes back (`GemDisabled`, logged "(disabled,
