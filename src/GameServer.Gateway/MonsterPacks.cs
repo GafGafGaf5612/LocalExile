@@ -30,7 +30,8 @@ sealed class PackCatalog(string folder = "data")
         IReadOnlyDictionary<string, Pack> Named, IReadOnlyList<int> Bosses)
     {
         /// <summary>Places in <see cref="Bosses"/> (0-based) this instance does not place with the area: the later forms a
-        /// fight brings (<see cref="AreaPopulation.LaterForms"/>).</summary>
+        /// fight brings (<see cref="AreaPopulation.LaterForms"/>) and the bosses a map boss override leaves out
+        /// (<see cref="MapBossOverride"/>).</summary>
         public IReadOnlySet<int> Absent { get; init; } = new HashSet<int>();
     }
 
@@ -204,7 +205,7 @@ static class AreaPopulation
         // The room points first. Each boss of WorldAreas Bosses stands once: at its own numbered point ("mapboss2"), in a
         // named pack whose boss it is (The Mines Level 1's "%area%-minerhammerbosspack": Pikerivet), or else, with every
         // other boss left, at one "mapboss" point (The Den: The Great White Bones with The Bone Sculptor; The Solaris
-        // Temple Level 1: both seals). Bosses the instance leaves out (area.Absent: later forms) stand nowhere. The area's
+        // Temple Level 1: both seals). Bosses the instance leaves out (area.Absent: later forms, The Ashen Fields' map boss override) stand nowhere. The area's
         // boss pack stands once: at its own "%area%-bosspack" points when the layout has them, else at the first boss point
         // (before, every boss point added one: The Cavern of Anger, The Dried Lake and The Lunaris Temple Level 2 had it
         // up to three times).

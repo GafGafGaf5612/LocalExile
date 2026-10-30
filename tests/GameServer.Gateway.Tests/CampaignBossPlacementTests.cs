@@ -7,7 +7,8 @@ using Xunit.Abstractions;
 namespace GameServer.Gateway.Tests;
 
 /// <summary>Every unique boss of the campaign (WorldAreas Bosses of the act 1–10 areas) stands exactly once in the
-/// Gateway's own generation of the area (ServerLevels → AreaPopulation.FitRooms → AreaPopulation.Plan), at the seeds of
+/// Gateway's own generation of the area (ServerLevels → AreaPopulation.FitRooms → AreaPopulation.Plan, with the map
+/// boss override for a character without bandit flags), at the seeds of
 /// Game_BOSS_CHECK_SEEDS (default "1,2,3,7"), and the monster blob can write its variety. A boss missing without a
 /// reason in <see cref="Unplaced"/>, a unique standing twice or not in the list, or a variety the blob refuses fails
 /// it; later forms (AreaPopulation.LaterForms) are reported. Needs the game files (Client/Content.ggpk, Tools/ooz) and
@@ -56,7 +57,7 @@ public sealed class CampaignBossPlacementTests(ITestOutputHelper output)
                 var left = uniques.ToList();
                 foreach (int b in bosses.Where((_, i) => area.Absent.Contains(i)))
                 {
-                    lines.Add($"{names[b]} left to its fight");
+                    lines.Add($"{names[b]} left out");
                     if (!LeftOut.Contains(ids[b])) missing.Add($"{areaId} seed {asked}: {names[b]} left out, but not a known later form");
                 }
                 foreach (int boss in bosses.Where((_, i) => !area.Absent.Contains(i)))
@@ -90,9 +91,11 @@ public sealed class CampaignBossPlacementTests(ITestOutputHelper output)
             $"{unsupported.Count} boss varieties the monster blob cannot write:\n{string.Join("\n", unsupported)}");
     }
 
-    /// <summary>The area as PopulateArea plans it: its bosses' later forms left to their fight.</summary>
+    /// <summary>The area as PopulateArea plans it: its bosses' later forms left to their fight, and The Ashen Fields'
+    /// boss for a character without the Act 2 bandit flags (as /goto gives): Greust alone.</summary>
     static PackCatalog.AreaPacks Area(PackCatalog.AreaPacks area, Dictionary<int, string> ids, Dictionary<int, string> names) =>
-        AreaPopulation.LaterForms(area, v => ids.TryGetValue(v, out var id) ? (id, names[v]) : null);
+        MapBossOverride.Apply(AreaPopulation.LaterForms(area, v => ids.TryGetValue(v, out var id) ? (id, names[v]) : null),
+            new HashSet<string>(), v => ids.GetValueOrDefault(v));
 
     /// <summary>The campaign bosses the Gateway does not place yet, and why (14-monster-packs.md §3). Areas the Gateway does
     /// not generate (1_2_3, 2_6_1, 2_6_5, 2_6_12: "client-side area") are only reported: they need a recorder capture.</summary>
@@ -107,11 +110,13 @@ public sealed class CampaignBossPlacementTests(ITestOutputHelper output)
             "its pack 1_3_15-bosspack (BossMonster Thistlesage) is named by no room or tile of the area's room set",
     };
 
-    /// <summary>The bosses the area leaves to their fight (AreaPopulation.LaterForms); any other boss left out fails.</summary>
+    /// <summary>The bosses the area leaves out: to their fight (AreaPopulation.LaterForms), and the bandit lords The
+    /// Ashen Fields' map boss override does not meet without bandit flags; any other boss left out fails.</summary>
     static readonly HashSet<string> LeftOut =
     [
         "Metadata/Monsters/Abberath/Abberath2", "Metadata/Monsters/Shakari/Shakari2", "Metadata/Monsters/Malachai/MalachaiBoss2",
         "Metadata/Monsters/UnholyTrio/UnholyTrio",
+        "Metadata/Monsters/Ralakesh/Oak/Oak", "Metadata/Monsters/Ralakesh/Alira/Alira", "Metadata/Monsters/Ralakesh/Kraityn/Kraityn",
     ];
 
     const string Banners = "only tencent_lunaris_boss_1.arm has their point, a room the layouts never place (the area's unique is The Goddess of Purity, a gold statue spawner)";

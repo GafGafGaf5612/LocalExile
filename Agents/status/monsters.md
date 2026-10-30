@@ -23,6 +23,7 @@ Part of [Status](../Status.md); what to build next in this area is in
   `mapboss<n>[WG]` is the n-th of the area's bosses, sub-graph rooms included (Brutus, Merveil).
   `mapboss`, `force:mapboss` (Kitava) and `mapbosspack` take every boss left, once (The Den's two, both seals).
   Named packs bring their boss (Pikerivet, The Burning Man); The Quay's Tolman stands at his spawner.
+  The Ashen Fields' boss is the bandit lord the character spared in Act 2, or Greust (`MapBossOverride`).
   A boss whose point is off the walk map stands on the nearest walkable cell; the boss pack stands once per area.
   `CampaignBossPlacementTests` (`Game_BOSS_CHECK=1`) checks every boss of the act 1–10 areas the Gateway generates.
   Code: `MonsterPacks.cs`, Gateway (`PopulateArea`), `scripts/walkmaps`, `scripts/re/atlas room-points`.

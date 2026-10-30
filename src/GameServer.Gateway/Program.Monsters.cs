@@ -182,6 +182,8 @@ partial class Program
         bool Spawnable(int row) => Monsters.Find(row.ToString()) is { Supported: true } v && Emerges.CanPlace(v);
         // A boss's later form (Abberath2, Shakari2, Malachai's second form, The Depraved Trinity) comes with its fight.
         area = AreaPopulation.LaterForms(area, row => Monsters.Find(row.ToString()) is { } v ? (v.Id, v.Name) : null);
+        // The Ashen Fields' boss depends on the character's Act 2 bandit choice (MapBossOverride).
+        area = MapBossOverride.Apply(area, Quests.Names(PlayerQuestFlags(conn)), row => Monsters.Find(row.ToString())?.Id);
         var notes = new List<string>();
         var (points, objects, _) = AreaPopulation.FitRooms(layout.Id, conn.Seed, notes, "data");
         // A boss whose room has a spawner object for it (The Quay's Tolman) stands at the spawner.

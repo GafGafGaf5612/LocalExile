@@ -179,6 +179,30 @@ public sealed class BossRoomPointsTests : IDisposable
         Assert.Empty(AreaPopulation.SpawnerPoints(Area(7), objects, _ => "x"));
     }
 
+    [Theory]
+    [InlineData("", "Greust/Greust")]
+    [InlineData("a2b-KilledStrBandit,a2b-KilledIntBandit,a2b-KilledDexBandit", "Greust/Greust")]
+    [InlineData("a2b-KilledIntBandit,a2b-KilledDexBandit", "Oak/Oak")]
+    [InlineData("a2b-KilledStrBandit,a2b-KilledDexBandit", "Alira/Alira")]
+    [InlineData("a2b-KilledStrBandit,a2b-KilledIntBandit", "Kraityn/Kraityn")]
+    [InlineData("a2b-KilledStrBandit", "Greust/Greust")]
+    public void The_ashen_fields_boss_is_the_spared_bandit_lord_or_greust(string flags, string boss)
+    {
+        // WorldAreas 2_7_7 Bosses: Greust, Oak, Alira, Kraityn (MapBossOverrideAshenFields).
+        string[] ids = ["Greust/Greust", "Oak/Oak", "Alira/Alira", "Kraityn/Kraityn"];
+        string Id(int v) => "Metadata/Monsters/Ralakesh/" + ids[v - 100];
+        var area = new PackCatalog.AreaPacks("2_7_7", 53, [], new Dictionary<string, PackCatalog.Pack>(), [100, 101, 102, 103]);
+        var set = flags.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var chosen = MapBossOverride.Apply(area, set, Id);
+        Assert.Equal([Array.IndexOf(ids, boss)], Enumerable.Range(0, 4).Where(i => !chosen.Absent.Contains(i)));
+        // Any other area is left as it is.
+        var other = area with { AreaId = "1_1_1" };
+        Assert.Same(other, MapBossOverride.Apply(other, set, Id));
+        // A later form marked before stays absent.
+        var marked = MapBossOverride.Apply(area with { Absent = new HashSet<int> { 0 } }, set, Id);
+        Assert.Contains(0, marked.Absent);
+    }
+
     [Fact]
     public void A_boss_room_the_layout_did_not_place_has_no_boss()
     {

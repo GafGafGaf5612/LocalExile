@@ -118,6 +118,15 @@ So:
    **Spawner objects** (`AreaPopulation.BossSpawners`): a room's server-side spawner that stands for one of the area's
    bosses becomes that boss's point. The Quay's `boss.arm` (kept for Clarissa, a quest NPC): `TolmanBossSpawner`, Tolman
    in the stocks, who breaks out in the official game (its `spawning` states), is created as Tolman at the spawner.
+   **Map boss override** (`MapBossOverride`): an area with a `MapBossOverride…` mod (stat `map_boss_override`) lists
+   every candidate boss and meets one. The Ashen Fields (`MapBossOverrideAshenFields`; Greust, Oak, Alira, Kraityn of
+   `Metadata/Monsters/Ralakesh/`): the bandit lord the character spared in Act 2 (the other two
+   `a2b-Killed{Str,Int,Dex}Bandit` flags set) is Ralakesh's avatar, Greust when all three died or no bandit quest was
+   done. The client's own lines say so: Eramir's `EramirRalakeshQuestOak`/`…Alira`/`…Kraityn`/`…Greust` and Helena's
+   `HelenaOn…Quest` ("He truly believed that if he stood against Oak…").
+   Nothing on the server sets the `a2b-Killed…Bandit` flags yet but `/quest_flag` (the campaign's quest engine sets
+   them on the bandit lords' kills; their help-or-kill dialogue is not offered), and an instance's boss follows the first
+   character to enter it: others who join that instance meet the same boss.
    **Not placed** (the check below lists them with the reason): Marceus the Defaced (The Marketplace) is a tile's
    statue spawner (`Spawner_StoneStatueLargeMaleBoss`) that wakes as the player comes near, and tile spawners are not
    among the generated quest objects (`AreaObjects.QuestTypes`); The Solaris Temple Level 2's three Banners have their
