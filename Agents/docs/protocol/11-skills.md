@@ -972,7 +972,8 @@ Live 2026-10-18 with the Witch's Fireball. Code: `SkillCatalog.EffectStats`, `Ge
   [ranged-monster-actions-port.md](../dev/ranged-monster-actions-port.md) "Live reference").
   A bow's arrow hits, both the default attack's and the attack gem's, carry the main-hand bit `0x0200` and skill
   index 2, and the header after the attacker's id is a per-hit u32 and u16 1, not zeros.
-  A monster's hit on the player sent no 0x1af at all, only 0x1b1.
+  A Sand Spitter's hit on the player (live 2026-10-30) is kind 3, flags 0x4201 (0x4221 on a crit), code 0, skill
+  index 2, with the sequence of the monster's own action (0x80c0…, from its 0x1ab), not 0xffff.
 - **Release.** A spell leaves at its cast animation's **contact** keyframe, which the client plays stretched to the cast
   time: the Witch's `spell_projectile_wand` in `Art/Models/CHARACTERS/Witch/rig.amd` is 1066 ms long with `contact` at
   599 ms, so Fireball leaves after 56% of the cast. `python -I scripts/re/anim_contacts.py` writes every class's

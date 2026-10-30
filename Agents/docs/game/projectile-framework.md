@@ -102,9 +102,10 @@ hit instantly at half the attack time. A mortar leaves at its clip's contact key
 arrow or bolt leaves from the class clip's keyframe (`data/animation-contacts.json` positions). Objects are created at
 the release point and their first move runs from there; the visual trails the simulation by the output delay and
 catches up at the stop. GGG's server sends no object for a player's bow shot, default attack or gem: the live client
-draws its own arrows, which fly about 308 cells/s after a release about 258 ms into the attack
-([port record](../dev/ranged-monster-actions-port.md), "Live reference"). A flight that has already
-ended when its creation snapshot runs is still created when its stop keeps the object (impact clip, stuck arrow), so
+draws its own arrows, which fly about 308 cells/s after a release about 258 ms into the attack. It sends none for a
+Sand Spitter's mortar either ([port record](../dev/ranged-monster-actions-port.md), "Live reference").
+A flight that has already ended when its creation snapshot runs is still created when its stop keeps the object
+(impact clip, stuck arrow), so
 a short shot on a busy connection appears at its impact instead of not at all; other ended flights are skipped.
 Area event effects use the actual event radius and the selected art's exported radius to set uniform native scale.
 Both callback and payload effects use this conversion; art without a known radius keeps its native scale.

@@ -66,13 +66,26 @@ they hold account data and are not committed. The analysis used `sniff.py` on bo
   arrow flies about 308 cells/s (30 hits, 8–72 cells). Live delays also fall on about 33 ms steps. The gem's hits fit
   267 ms + 3.90 ms per cell. This branch fits 249 ms + 2.72 ms per cell (about 367 cells/s): the release is close and
   the arrow is about 20% fast.
-- **Monster hits on the player send no `0x1af`.** The player's life fell 39 → 32 → 24 with only `0x1b1` updates, and
-  no monster sent `0x1af` in the session (the Strand's melee monsters). This branch sends `0x1af` (kind 3, `0x4201`)
-  for a monster's hit on the player.
 - **Undecoded:** S→C `0x1b4` went 27 times to the player only. It carries the attack's skill id (`0x4000`/`0x8002`)
   and a list of compact-int points, and may be the shot's path.
-- **Not covered:** no ranged monster appeared, so mortars and monster projectiles have no live reference yet. A capture
-  in an area with Sand Spitters would give one.
+
+A second live capture on 2026-10-30 covered Sand Spitters. It was the same kind of character, on the Twilight Strand
+from login. Live 0x20 registered `Metadata/Monsters/SandSpitters/SandSpitter12@1` (row 490), the variety and level
+this branch spawns there, and all 11 hits the player took came from three of them (type `0xe63d7611`). In the first
+capture the player was never hit (its `0x1b1` changes were mana, pool 1).
+
+- **No mortar objects.** No `0x2b9` was created around the spits, so the live client draws the mortar as well. This
+  branch sends `Metadata/Projectiles/SandspitterMortarProjectile` objects.
+- **The spit and its hit.** Each spit is `0x1ab` flags `0x80` with the player as the target object and a real action
+  sequence (`0x80bc`, `0x80bd`, …; the Spitter's skills there were `0x4000`–`0x4002`). Each hit is `0x1af` kind 3,
+  flags `0x4201` (`0x4221` on the one crit), code 0, skill index 2, with the sequence of the spit that caused it. This
+  branch sends the spit with sequence `0xffff`, and the hit with `0xffff` and skill index 0.
+- **Damage.** On live, 10 hits took exactly 4 life each and the crit took 5. This branch's level 1 Spitter hits for
+  5–7: `DefaultMonsterStats` level 1 `Damage` 4.99 × `DamageMultiplier` 120 (its MonsterTypes row
+  `SandSpitterTwilightStrand` ignores attack speed) = 5.99, ±20% `DamageSpread`. Its 2026-10-29 log shows 5, 6 and 6.
+  The skill (`MMASandSpitterProjectile`, stat set 624) has no damage stat and base effectiveness 1. A ±20% spread
+  can't give a constant 4, so live computes or rolls this hit differently; what it does is open.
+- **Rate.** A Spitter's spits were at least about 990 ms apart (its `AttackSpeed` 990), often 1–2.5 s.
 
 ## Validation and limits
 

@@ -45,8 +45,9 @@ Part of [Status](../Status.md); what to build next in this area is in
   Thresholds and duration profiles remain a bounded local policy rather than a complete official stun formula.
   The weapon impact sound and the target's blood come from S→C 0x1af "action hit", sent on melee and attack-gem hits
   and on monster hits on the player (2026-10-25; not yet checked live after the timing cap).
-  GGG's server sent no 0x1af for melee monsters' hits on the player, only 0x1b1 (live capture 2026-10-29, the
-  Twilight Strand; [port record](../docs/dev/ranged-monster-actions-port.md) "Live reference").
+  GGG's server sends it too, but with the monster action's own sequence and skill index 2, where we send 0xffff and 0
+  (Sand Spitters, live capture 2026-10-30; [port record](../docs/dev/ranged-monster-actions-port.md) "Live reference").
+  A level 1 Sand Spitter hits for 5–7 here and a constant 4 on live (5 on a crit); the cause is not known.
   Code: `HitReaction.cs`, `MonsterCatalog.TakeHit`, Gateway (`SendMonsterFlinch`), `scripts/re/monster_takehit.py` →
   `data/monster-takehit.json`.
   Docs: [11](../docs/protocol/11-skills.md).

@@ -265,14 +265,15 @@ The suspend/restore lifecycle is explicit LocalExile policy; see protocol/11-ski
   Spitter's attack2 would spit 75 ms earlier and 1.3 cells farther back), the grid handedness of a keyframe's lateral
   offset (not applied), MonsterVarieties `MinimumAttackDistance` (6 for the Spitter) and the minimum-range dead zone,
   all to check live.
-- **Live reference** ([port record](../docs/dev/ranged-monster-actions-port.md) "Live reference", 2026-10-29): GGG's
-  server sends no object for a player's bow shot and the client draws it.
+- **Live reference** ([port record](../docs/dev/ranged-monster-actions-port.md) "Live reference", 2026-10-29/30): GGG's
+  server sends no object for a player's bow shot or a Sand Spitter's mortar, and the client draws both.
   Find what stops our client from drawing its own (try live-style skill ids, `0x4000` for the default attack, and the
   live `0x1af` fields: main-hand `0x0200`, skill index 2, the header u32/u16), then drop the server arrow objects.
+  For monsters, try real action sequences (live `0x80bc`…) instead of `0xffff` in the attack's `0x1ab` and its `0x1af`
+  (skill index 2), and see whether the client then draws the mortar.
   Match the live arrow speed (about 308 cells/s, ours 367) and the 300 ms stun bit on hits.
-  Revisit the `0x1af` we send for a monster's hit on the player: live sent none for the Strand's melee hits.
+  Find why a level 1 Sand Spitter hits for 5–7 here and a constant 4 on live.
   Decode S→C `0x1b4` (player only, the attack's skill id and a point list).
-  Capture an area with Sand Spitters live for the mortar and monster-projectile half.
 - **Start:** user-run Fireball/KB checks from the skill guide, including return, terrain and overlapping explosions.
   Calibrate cluster radial distribution, counter-clockwise sequence timing and native art against client evidence.
   Build a server-side surface-height/world model for platforms and doodads (#182), height grids for more areas
