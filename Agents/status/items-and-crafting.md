@@ -223,6 +223,12 @@ Part of [Status](../Status.md); what to build next in this area is in
   coverage. A separate Eldritch dominance state and the Orb of Conflict remain separate, and native tooltip
   acceptance is pending.
   See [13](../docs/protocol/13-items.md), "Eldritch Embers", and [evidence](../docs/re/eldritch-ember-coe.md).
+- **Visual client acceptance (2026-10-30):** the main successful uses of all implemented currencies were checked in
+  the 3.29.3b client: Transmutation, Augmentation, Regal, Alteration, Alchemy, Exalted, Chaos, Vaal, Chance,
+  Annulment, all four Eldritch Ichors and all four Eldritch Embers. Vaal turned normal items rare (yellow) and the
+  tooltip showed `Corrupted`; the Eater/Exarch implicit names, values and tiers were visible. No visual defects were
+  found. Vaal on jewels remains outside the local rule; official jewel/Vaal outcomes are separate work. Stash/Shift
+  and the remaining refusal paths stay under automated coverage.
 - **Glassblower's Bauble (verified live, 2026-10-21):** +1% flask quality up to 20%; Scouring resets it.
   See [13](../docs/protocol/13-items.md), "Glassblower's Bauble".
 - **Fracturing Orb (verified live, 2026-10-21):** one random mod of a rare item with 4+ mods is fractured and kept by
