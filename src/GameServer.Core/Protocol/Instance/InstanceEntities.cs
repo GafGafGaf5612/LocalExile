@@ -525,7 +525,8 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
 
 /// <summary>
 /// A monster: a 0x2b9 object whose type is a MonsterVarieties row. The client's object-type register files every
-/// MonsterVarieties row (0x31a bytes) under its Id with the row's BaseMonsterTypeIndex (+0x48) as the .ot, but a monster
+/// MonsterVarieties row (0x31a bytes) under its Id with the row's BaseMonsterTypeIndex (+0x48) as the .ot (an .ot file
+/// under the Id itself wins: KitavaFinal is built from kitavafinal.ot, not its base Kitava1; Gateway MonsterCatalog), but a monster
 /// also needs a level: the server registers "&lt;Id&gt;@&lt;level&gt;" with S→C 0x20 (<see cref="InstanceEntities.MonsterTypes"/>)
 /// and the 0x2b9 type is <c>ObjectTypeHash(TypePath(Id, level))</c>. The components come from the .ot chain
 /// (`Metadata/Monsters/Monster`: Positioned, Stats, ObjectMagicProperties, BaseEvents, Pathfinding, Buffs, Life,
