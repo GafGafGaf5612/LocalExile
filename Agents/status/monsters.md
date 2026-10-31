@@ -125,3 +125,5 @@ Part of [Status](../Status.md); what to build next in this area is in
   the boss life bar and boss stages exist for Hillock only (`BossFights.cs`;
   other bosses with `BossHealthBar` get the bar too); monsters respawn on every entry;
   a new (area, seed) needs a `-Walkmaps` visit for its unique boss ([14](../docs/protocol/14-monster-packs.md) §4).
+  Act 2's bandit lords (Kraityn, Alira, Oak) are created hostile without their help-or-kill dialogue
+  ([17](../docs/protocol/17-npcs.md)).

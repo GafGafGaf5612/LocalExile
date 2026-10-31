@@ -558,9 +558,11 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
          "Inventories", "Actor", "Monster"];
 
     /// <summary>Components a type may add after the base list that this blob can write. StateMachine (per-type state
-    /// lists from the .ot) needs <see cref="StateMachineData"/>; DiesAfterTime's primary vtable 0x14359f478 has a
-    /// bare `ret` slot 17, so it reads nothing.</summary>
-    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass", "StateMachine", "DiesAfterTime"];
+    /// lists from the .ot) needs <see cref="StateMachineData"/>; DiesAfterTime's primary vtable 0x14359f478 and Timer's
+    /// only vtable 0x1435a10a0 (Solaris and Lunaris, The Harbour Bridge) have a bare `ret` slot 17, so they read nothing;
+    /// InteractionAction (Kraityn, Alira and Oak, Act 2's bandit lords) reads a u8 of flags (0x141e1e240), as on an NPC.</summary>
+    static readonly HashSet<string> Extras = ["Transitionable", "MinimapIcon", "Preload", "Functions", "PlayerClass", "StateMachine", "DiesAfterTime",
+        "NPC", "InteractionAction", "Timer"];
 
     /// <summary>The registered type path of a variety at a level (1..100), after S→C 0x20 has registered it:
     /// "&lt;variety Id&gt;@&lt;level&gt;" (0x141ec2540; the Monster type parses the number after the last '@').</summary>
@@ -615,11 +617,18 @@ public sealed record MonsterObject(int GridX, int GridY, uint Life, IReadOnlyLis
                 // event interpreter (0x141ded7b9).
                 case "Transitionable": w.U8((byte)(TransitionState & 0x7f)); break;
                 case "MinimapIcon": w.U8(0); break;      // slot 20 0x141e6f5d0: u8 flags
+                // A boss that speaks (Fairgraves, Merveil, the Siren: their .ot chain reads NPC after Transitionable): the NPC
+                // component's two bytes as NpcObject writes them, without dialogue (+0x20 0: no NPCTalk rows offered) and
+                // no component that must be alive (+0x21 0xff), 17-npcs.md.
+                case "NPC": w.U8(0).U8(0xff); break;
+                // 0x141e1e240: u8 flags (bit 2 adds a u8 and a u16); 0, as NpcObject and AreaTransitionObject write it.
+                case "InteractionAction": w.U8(0); break;
+                // Timer (0x1435a10a0): slot 17 is `ret`, nothing to write.
                 // 0x141e3ee40: u8 shared-state count, u8 shared-timer count (the client throws unless they match the
                 // type); per define_shared_state a compact int value + u8 flags (0x02 keeps the sent value), per
                 // define_shared_timer a u32 + u8. The .ot defaults are sent.
                 case "StateMachine": StateMachine!.Write(w); break;
-                // BaseEvents, Pathfinding, Monster, Preload, Functions, PlayerClass: no data.
+                // BaseEvents, Pathfinding, Monster, Preload, Functions, PlayerClass, DiesAfterTime, Timer: no data.
             }
         }
         w.U8(0);            // tasks
