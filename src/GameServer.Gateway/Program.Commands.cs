@@ -1366,7 +1366,11 @@ partial class Program
             }
             string query = string.Join(' ', args);
             if (atlas.Find(query) is not { } layout) { await conn.Commands!.Reply($"No Atlas layout \"{query}\"."); return; }
-            atlas.Select(CharacterName(conn), layout);
+            if (CharacterName(conn) is { } character)
+            {
+                atlas.Select(character, layout);
+                CharacterSaves.SetAtlasLayout(character, layout.Id);
+            }
             await conn.Commands!.Reply($"Atlas layout set to {layout.Name} ({layout.Id}, tier {layout.Tier}).");
         })
         .Add("atlas_tree", "/atlas_tree (dev: open the Atlas passive tree; S→C 0x7b kind 0x11)", async _ =>
