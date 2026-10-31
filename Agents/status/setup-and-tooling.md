@@ -96,6 +96,9 @@ Tests that need the real client pass quietly without `Client/`.
 Teleport-name controls use an unmapped synthetic destination, so real WorldAreas data cannot change their labels.
 Bow hit-recovery controls explicitly start their connection clock before checking input admission.
 These fixture corrections leave production catalogs and the shared module initializer unchanged.
+The Arcane Might area fixture measures range from the weapon-contact origin to its target.
+Monster AI cadence tests run in a nonparallel collection: their real 300 ms socket-latency limit is unchanged,
+but unrelated catalogue loads and GC pauses no longer run beside that measurement.
 
 ## Tooling
 
