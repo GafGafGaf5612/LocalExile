@@ -186,7 +186,10 @@ partial class Program
             [.. layout.AreaTransitions.Select(t => (t.Transition.GridX, t.Transition.GridY))], points,
             HashCode.Combine(layout.Hash, conn.Seed), Spawnable, notes);
         foreach (var n in notes) Console.WriteLine($"[gateway] {remote} area {layout.Id} monsters: {n}");
-        byte level = (byte)Math.Clamp(area.AreaLevel, 1, 100);
+        int areaLevel = area.AreaLevel;
+        if (MapDevice.OpenOf(CharacterName(conn)) is { } openMap && openMap.Area.Hash16 == layout.Hash && openMap.Area.Level > 0)
+            areaLevel = openMap.Area.Level;
+        byte level = (byte)Math.Clamp(areaLevel, 1, 100);
         foreach (var s in spawns)
         {
             var variety = Monsters.Find(s.Variety.ToString())!;
