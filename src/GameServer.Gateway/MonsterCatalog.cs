@@ -190,6 +190,9 @@ sealed class MonsterCatalog(string folder = "data")
 
     /// <summary>A MonsterVarieties row by number, or by Id: exact, then the last path segment, then any part of it,
     /// then the display name. Several matches: the first one the blob writer supports.</summary>
+    /// <summary>Every MonsterVarieties row (the launcher's suggestions).</summary>
+    public IReadOnlyList<Variety> All => _rows.Value.Rows;
+
     public Variety? Find(string query)
     {
         var rows = _rows.Value.Rows;
