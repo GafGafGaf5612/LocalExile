@@ -16,7 +16,8 @@ Part of [Status](../Status.md); what to build next in this area is in
 - Dev account service: register, log in, create characters, list every account (JSON-lines over TCP).
   Code: `GameServer.Host`, `GameServer.DevClient`.
   Docs: [dev-server.md](../docs/dev-server.md).
-- Hooks for outside tools such as the desktop launcher: `live.ps1 -Stop` (also with `-Only` or `-NoClient`), the
+- Hooks for outside tools such as the desktop launcher: `live.ps1 -Stop` (also with `-Only` or `-NoClient`),
+  `live.ps1 -ClientOnly -Walkmaps` (the client and its walk-map recorder against running servers), the
   Gateway's `commands` and `values <kind>` modes (its chat commands, their argument kinds and values, as JSON lines),
   and the dev host's `accounts`.
   Checked on a real setup: `-Stop` ending a watched Gateway with its `dotnet watch`, every argument kind's values, and

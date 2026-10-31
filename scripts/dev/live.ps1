@@ -17,6 +17,8 @@
 #               within seconds and the client stays in game. An edit hot reload cannot apply (a changed signature, a new
 #               static initializer) rebuilds and restarts the Gateway, which drops the client to the login screen.
 #   -NoHotReload  start the built Gateway without `dotnet watch`. Agents/GettingStarted.md step 10.
+#   -ClientOnly start only the client, against servers that already run (refused without them; a running client stays);
+#               with -Walkmaps also the walk-map recorder, unless one runs. Nothing is built, extracted or restarted.
 #   -Stop       stop the patched client, the walk-map recorder and our servers, then exit; with -Only only those servers,
 #               with -NoClient everything but the client
 param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [switch]$ClientOnly, [switch]$NoHotReload, [switch]$Stop, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
@@ -94,29 +96,19 @@ function Select-LocalGateway {
     & dotnet (Join-Path $repo 'src\GameServer.Patch\bin\Debug\net10.0\GameServer.Patch.dll') gateway (Join-Path $repo 'Client\Content.ggpk') --login '127.0.0.1:20493' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'could not select local login server; close all clients and retry' }
 }
+# Long-running processes start through `cmd /c ... > log` rather than Start-Process -RedirectStandardOutput: the
+# redirecting form creates them with handle inheritance on, so they would hold this shell's stdout open, and whoever runs
+# this script through a pipe (an AI agent's shell tool, `| Select-Object`) would wait until they exit. Started this way
+# (ShellExecute) they inherit the environment (the Game_* settings) but no handles.
+function Start-Detached([string]$exe, [string[]]$arguments, [string]$log, [string]$err) {
+    $line = (@($exe) + $arguments | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
+    Start-Process cmd.exe -ArgumentList "/c $line 1>`"$log`" 2>`"$err`"" -WorkingDirectory $repo -WindowStyle Hidden
+}
 Need (Get-Command dotnet -ErrorAction SilentlyContinue) '.NET SDK not found (dotnet)'
 Need (Test-Path (Join-Path $repo 'data\login-keys.json')) 'data\login-keys.json missing: run GameServer.Auth keygen'
 Need (Test-Path (Join-Path $repo 'Client\Game.exe')) 'Client\Game.exe missing: copy the client and its PathOfExile.exe'
 Need (Test-Path (Join-Path $repo 'Client\Game.patched.exe')) 'Client\Game.patched.exe missing: run GameServer.Auth patch'
 Need (Test-Path (Join-Path $repo 'Client\Content.ggpk')) 'Client\Content.ggpk missing: this needs the standalone client layout'
-
-# The control bridge can open a closed client without restarting the servers or touching an existing game.
-if ($ClientOnly) {
-    if ($NoClient -or $Only -or $Walkmaps) { throw '-ClientOnly cannot be combined with -NoClient, -Only or -Walkmaps' }
-    $existing = @(Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue)
-    if ($existing.Count) {
-        Need ($existing.Count -eq 1 -and $existing[0].Path -eq (Join-Path $repo 'Client\Game.patched.exe')) 'another patched client is running'
-        Write-Output "client already running: $($existing[0].Id)"
-        return
-    }
-    foreach ($port in @(12995, 20493, 6112)) {
-        Need (@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count -gt 0) "local servers must be running before -ClientOnly (missing port $port)"
-    }
-    Select-LocalGateway
-    $p = Start-Process (Join-Path $repo 'Client\Game.patched.exe') -ArgumentList '--patching-server', '127.0.0.1:12995' -WorkingDirectory (Join-Path $repo 'Client') -PassThru
-    Write-Output "client pid $($p.Id)"
-    return
-}
 
 $python = $null
 if ($Walkmaps) {
@@ -127,6 +119,44 @@ if ($Walkmaps) {
     Need $python 'Python not found (needed for -Walkmaps)'
     & $python -c 'import frida' 2>$null
     Need ($LASTEXITCODE -eq 0) 'the frida Python package is missing: python -m pip install frida'
+}
+
+# The walk-map recorder attaches to the client and ends with it, so each new client needs one. A recorder already running
+# is kept (only one ever attaches); the previous one's logs move to logs\archive\<time>-walkmaps\.
+function Start-Recorder {
+    if (@(Get-Recorders).Count) { Write-Output 'walk-map recorder already running'; return }
+    $archive = Join-Path (Join-Path $out 'archive') ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-walkmaps')
+    foreach ($name in 'walkmaps.log', 'walkmaps.err') {
+        $path = Join-Path $out $name
+        if ((Test-Path $path) -and (Get-Item $path).Length -gt 0) {
+            New-Item -ItemType Directory -Force $archive | Out-Null
+            Move-Item $path $archive -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Start-Detached $python @((Join-Path $repo 'scripts\walkmaps\walkmaps.py')) (Join-Path $out 'walkmaps.log') (Join-Path $out 'walkmaps.err')
+    Write-Output 'walk-map capture on (logs\walkmaps.log)'
+}
+
+# The control bridge and the launcher open a closed client without restarting the servers or touching an existing game.
+# With -Walkmaps the recorder starts beside it; the Gateway announces area loads to it only when it was started with
+# -Walkmaps too.
+if ($ClientOnly) {
+    if ($NoClient -or $Only) { throw '-ClientOnly cannot be combined with -NoClient or -Only' }
+    $existing = @(Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue)
+    if ($existing.Count) {
+        Need ($existing.Count -eq 1 -and $existing[0].Path -eq (Join-Path $repo 'Client\Game.patched.exe')) 'another patched client is running'
+        if ($Walkmaps) { Start-Recorder }
+        Write-Output "client already running: $($existing[0].Id)"
+        return
+    }
+    foreach ($port in @(12995, 20493, 6112)) {
+        Need (@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count -gt 0) "local servers must be running before -ClientOnly (missing port $port)"
+    }
+    Select-LocalGateway
+    if ($Walkmaps) { Start-Recorder }
+    $p = Start-Process (Join-Path $repo 'Client\Game.patched.exe') -ArgumentList '--patching-server', '127.0.0.1:12995' -WorkingDirectory (Join-Path $repo 'Client') -PassThru
+    Write-Output "client pid $($p.Id)"
+    return
 }
 
 # Game data from the GGPK (data/tables, object-types.json, ...): before the servers start, since they read it once.
@@ -180,15 +210,6 @@ if (-not $NoBuild) {
             if ($LASTEXITCODE -ne 0) { Write-Warning "mod $($mod.BaseName) did not build (run: dotnet build $($mod.FullName)); the Gateway starts without it" }
         }
     }
-}
-
-# Long-running processes start through `cmd /c ... > log` rather than Start-Process -RedirectStandardOutput: the
-# redirecting form creates them with handle inheritance on, so they would hold this shell's stdout open, and whoever runs
-# this script through a pipe (an AI agent's shell tool, `| Select-Object`) would wait until they exit. Started this way
-# (ShellExecute) they inherit the environment (the Game_* settings) but no handles.
-function Start-Detached([string]$exe, [string[]]$arguments, [string]$log, [string]$err) {
-    $line = (@($exe) + $arguments | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
-    Start-Process cmd.exe -ArgumentList "/c $line 1>`"$log`" 2>`"$err`"" -WorkingDirectory $repo -WindowStyle Hidden
 }
 
 $bin = 'bin\Debug\net10.0'
