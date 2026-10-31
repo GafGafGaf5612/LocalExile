@@ -88,6 +88,7 @@ These are suggestions that have worked well, for people and agents alike; use yo
   Keep the monster AI cadence collection nonparallel: its socket-latency assertion retains its 300 ms limit, so
   parallel catalogue loads and their GC pauses must not run beside it. Arcane Might's area fixture measures its
   projectile range from the weapon-contact origin to the target, rather than assuming the player is the origin.
+  Tests of a single area sweep await its executor, so a sustained channel cannot add a second contact during assertions.
 - **Auth and Patch are not watched.** Changes there still need `live.ps1 -Only Auth` or `-Only Patch`.
 
 ## What a good run looks like

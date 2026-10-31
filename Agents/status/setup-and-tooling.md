@@ -99,6 +99,7 @@ These fixture corrections leave production catalogs and the shared module initia
 The Arcane Might area fixture measures range from the weapon-contact origin to its target.
 Monster AI cadence tests run in a nonparallel collection: their real 300 ms socket-latency limit is unchanged,
 but unrelated catalogue loads and GC pauses no longer run beside that measurement.
+The per-target area accuracy regression awaits one completed sweep instead of racing a sustained Cyclone channel.
 
 ## Tooling
 
