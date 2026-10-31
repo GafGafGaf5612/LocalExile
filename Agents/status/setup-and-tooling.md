@@ -55,6 +55,8 @@ Part of [Status](../Status.md); what to build next in this area is in
   Unit-tested (`ModHostTests`): every hook, two mods' modifiers together, a reload starting the state over, a
   dependency arriving later and reloading its dependent, a failed load leaving no hook, the watcher, and the unloaded
   context being freed.
+  Assemblies load from a private temporary disk copy rather than collectible memory streams; original build outputs
+  remain free, and collected contexts release their copied files. Loader and cleanup regressions cover this path.
   Missing: catalog overrides, and the hooks not yet tried with the client (drops, experience, stats, packets).
   Code: `src/GameServer.Modding/`, `ModHost.cs`, `ModLoadContext.cs`, `Program.Mods.cs`, `Mods/Source/`.
   Docs: [modding](../docs/dev/modding.md).
