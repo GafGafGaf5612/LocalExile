@@ -474,6 +474,12 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
     /// Server side only; the blob names the area itself as the destination.</summary>
     public (int X, int Y)? TeleportTo { get; init; }
 
+    /// <summary>Whether the exit stands in a town. Only then does the client read the compact int (<see cref="Index"/>)
+    /// after the destination: 0x141e5b870 reads it when the state is 0 and the byte at +0x14 of the current area's
+    /// WorldAreas row (entity +8 → world +0x78 → +0xb0) is set, which is IsTown; the server-side writer 0x141e5b7a0
+    /// has the same condition. Elsewhere the byte was left over at the blob's end.</summary>
+    public bool InTown { get; init; }
+
     /// <summary>Components that read data, in the order the client deserializes them for this type (traced live
     /// 2026-10-16: Positioned, BaseEvents (no data), Animated, AreaTransition (live vtable 0x14346de00), Stats,
     /// ObjectMagicProperties, MinimapIcon, InteractionAction, then two components the loop does not reach).</summary>
@@ -507,9 +513,12 @@ public sealed record AreaTransitionObject(int GridX, int GridY, ushort Destinati
                 // end with .ao"): the area transition's model, the white surface highlighted on hover. For a tile object it is the
                 // client's virtual "<.tdt folder>/<.tmd record name>.ao" around the record's fixed mesh.
                 case "Animated": if (Model is null) w.U8(0); else w.U8(1).WStr32(Model); break;
-                // state 0, variant 2 = HASH16, then a compact int (+0xa4) that is read when the type's flag
-                // (type+0x78 → +0xb0 → +0x14) is set and the state is 0: true for AreaTransition (traced live).
-                case "AreaTransition": w.U8(0).U8(2).U16(DestinationHash16).CompactI(Index); break;
+                // state 0, variant 2 = HASH16, then in a town (InTown) the compact int +0xa4, which nothing but the
+                // component's debug dump reads (Agents/docs/protocol/08-area-transitions.md §2).
+                case "AreaTransition":
+                    w.U8(0).U8(2).U16(DestinationHash16);
+                    if (InTown) w.CompactI(Index);
+                    break;
                 case "Stats": w.U8(0).U32(0).U32(0).U8(0); break;
                 // base magic properties first (0x142201d70: u16 flags, rarity = low 3 bits; u8 +0x7a; sections behind
                 // flag bits 0x10/0x40/0x200/0x400/0x800 and, with bit3, 0x80/0x100/0x20), then the component's u8 flags.

@@ -535,13 +535,13 @@ public class InstanceEntitiesTests
     {
         // Traced live 2026-10-16: the client consumed all 41 bytes (Positioned 16, Animated 1, AreaTransition 5, Stats 10,
         // ObjectMagicProperties 4, MinimapIcon 1, InteractionAction 1, + flags, base data, tasks).
-        byte[] b = new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: 0x7ad2).Blob();
+        byte[] b = new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: 0x7ad2) { InTown = true }.Blob();
         Assert.Equal(41, b.Length);
         Assert.Equal(
             "00" + "00" +                                                    // flags, base data
             "80010000" + "D9000000" + "00000000" + "0000" + "0000" +         // Positioned (384, 217)
             "00" +                                                           // Animated
-            "00" + "02" + "D27A" + "00" +                                    // AreaTransition: state 0, variant 2 = HASH16 0x7ad2, compact int
+            "00" + "02" + "D27A" + "00" +                                    // AreaTransition: state 0, variant 2 = HASH16 0x7ad2, compact int (town)
             "00" + "00000000" + "00000000" + "00" +                          // Stats
             "0000" + "00" + "00" +                                           // ObjectMagicProperties
             "00" + "00" +                                                    // MinimapIcon, InteractionAction
@@ -558,7 +558,7 @@ public class InstanceEntitiesTests
         // Positioned rotation float, flags0 bit2 = fixed height (u32 steps of 7.8125, float z), Animated bit0 + .ao path.
         const string model = "Metadata/Terrain/Beach/Town_v2/beachencampment_v01_01_area_transition2.ao";
         byte[] b = new AreaTransitionObject(GridX: 388, GridY: 230, DestinationHash16: 0x7ad2, Model: model,
-            Rotation: MathF.PI / 2, Height: -351.04f).Blob();
+            Rotation: MathF.PI / 2, Height: -351.04f) { InTown = true }.Blob();
         string hex = Convert.ToHexString(b);
         Assert.StartsWith(
             "00" + "00" +
@@ -567,6 +567,17 @@ public class InstanceEntitiesTests
             "01" + "49000000" + Convert.ToHexString(System.Text.Encoding.Unicode.GetBytes(model)) +
             "00" + "02" + "D27A" + "00", hex);                               // AreaTransition as before
         Assert.Equal(41 + 8 + 4 + model.Length * 2, b.Length);
+    }
+
+    [Fact]
+    public void Outside_a_town_the_area_transition_has_no_compact_int()
+    {
+        // 0x141e5b870 reads the int only when the current area is a town (WorldAreas +0x14): The Coast's exit to The Mud
+        // Flats is the town exit's 41 bytes less that one.
+        var town = new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: 0x7ad2) { InTown = true }.Blob();
+        byte[] b = new AreaTransitionObject(GridX: 384, GridY: 217, DestinationHash16: 0x7ad2).Blob();
+        Assert.Equal(40, b.Length);
+        Assert.Equal(Convert.ToHexString(town).Remove(2 * 23, 2), Convert.ToHexString(b));
     }
 
     [Fact]
