@@ -139,6 +139,15 @@ compact uint n, n × (compact uint stat key, compact int value)
 They refuse paused, leaving, closed or dead owners before combat mutation.
 `/set_stat` can replace raw chance inputs 20680/8404; authoritative outputs 4534/12268 always come from contact history.
 
+For tools outside the game (the desktop launcher's console), the built Gateway lists its commands without starting:
+`dotnet src/GameServer.Gateway/bin/Debug/net10.0/GameServer.Gateway.dll commands` prints each command's name, full
+usage and argument kinds as JSON lines (`Program.CommandUsages`, the loaded mods' commands not included).
+A command declares the kinds of its leading arguments where it registers (`ChatCommands.Add`: area, monster, item, gem,
+stat, npc, quest_flag), and `GameServer.Gateway.dll values <kind>` prints what such an argument can be, from the catalog
+the command looks it up in (`Program.CompletionValues`): a name only one row has, else the row's Id with the name as
+its detail; `/goto`'s areas say whether the Gateway generates them, a capture has them, or only the client can.
+Both run before `ServerLog`, so their output is JSON lines only.
+
 | Command | Effect |
 |---|---|
 | `/commands [page \| name]`, `/com …` | lists the commands, 8 per page (`/com 2`, `/com 3`, …; after four blank lines a green header, then each command's syntax only), or the full usage of one command (`/com item`; otherwise every command whose name contains the text) |

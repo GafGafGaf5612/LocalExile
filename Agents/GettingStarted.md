@@ -368,6 +368,8 @@ connection's last packets in `logs\packets\`. `Game_TRACE` adds dev traces, and 
 all for an issue ([debugging](docs/dev/debugging.md)).
 
 `live.ps1` options:
+- `-Stop` stops the client, the walk-map recorder and the servers, a watched Gateway included, then waits until their
+  ports are free (with `-Only Gateway` only that server, with `-NoClient` everything but the client).
 - `-NoClient` restarts the servers but keeps the running client.
 - `-Only Gateway` (or `Auth`, `Patch`, comma-separated) rebuilds and restarts only those servers; the client and the
   other servers keep running. After a Gateway change hot reload cannot apply this is all you need: the client drops to

@@ -12,11 +12,14 @@
 #               capture tours (Game_WALKMAPS=1). Without it nothing is recorded.
 #   -Only Gateway[,Auth,Patch]   rebuild and restart only these servers; the others and the client keep running (implies
 #               -NoClient). Restarting the Gateway drops the client to the login screen, but Auth keeps the login session.
+#               With -Walkmaps the restarted Gateway announces loads again, and a recorder already running is kept.
 #   The Gateway runs under `dotnet watch` (.NET hot reload): a saved edit to its code applies to the running server
 #               within seconds and the client stays in game. An edit hot reload cannot apply (a changed signature, a new
 #               static initializer) rebuilds and restarts the Gateway, which drops the client to the login screen.
 #   -NoHotReload  start the built Gateway without `dotnet watch`. Agents/GettingStarted.md step 10.
-param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [switch]$ClientOnly, [switch]$NoHotReload, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
+#   -Stop       stop the patched client, the walk-map recorder and our servers, then exit; with -Only only those servers,
+#               with -NoClient everything but the client
+param([switch]$NoClient, [switch]$NoBuild, [switch]$NoExtract, [switch]$Walkmaps, [switch]$ClientOnly, [switch]$NoHotReload, [switch]$Stop, [ValidateSet('Auth', 'Patch', 'Gateway')][string[]]$Only = @())
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -24,6 +27,68 @@ $out = Join-Path $repo 'logs'
 New-Item -ItemType Directory -Force $out | Out-Null
 
 function Need($ok, $message) { if (-not $ok) { throw "setup incomplete: $message (see Agents/GettingStarted.md)" } }
+function Get-Recorders {
+    Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*walkmaps.py*' }
+}
+$patchWebPort = if ($env:Game_PATCH_URL -match ':(\d+)') { [int]$Matches[1] } else { 8080 }
+$ports = @{ Auth = @(20493); Patch = @(12995, $patchWebPort); Gateway = @(6112) }
+# Stops our own processes of these servers and returns the names of those that were running.
+function Stop-Servers([string[]]$names) {
+    $stopped = @()
+    # Our own processes of each server go first, found by their command line: one still loading its game data holds no
+    # port yet, and its cmd wrapper keeps the log open (the next run's log then goes nowhere). That is
+    # `dotnet <server>.dll`, a watched Gateway's `dotnet watch` (which would otherwise start it again on the next saved
+    # edit, beside the new one), its `dotnet run` and executable, and the cmd wrappers. Builds and test runs of the same
+    # projects are left alone.
+    $ours = Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe' OR Name = 'cmd.exe' OR Name LIKE 'GameServer.%'" -ErrorAction SilentlyContinue
+    foreach ($s in $names) {
+        $found = @($ours | Where-Object {
+            $_.Name -eq "GameServer.$s.exe" -or
+            ($_.CommandLine -like "*GameServer.$s*" -and $_.CommandLine -notmatch "GameServer\.$s\.Tests|\s(build|test)\s" -and
+                ($_.CommandLine -like "*GameServer.$s.dll*" -or $_.CommandLine -match '\bwatch\b|DOTNET_WATCH'))
+        })
+        $found | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        if ($found.Count) { $stopped += $s }
+    }
+    # Then whatever of ours still holds a dev port (dotnet, or the Gateway's own executable when `dotnet watch` started
+    # it); anything else there is reported, not killed.
+    foreach ($s in $names) {
+        foreach ($port in $ports[$s]) {
+            foreach ($c in Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+                $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
+                if ($proc -and $proc.ProcessName -in 'dotnet', 'GameServer.Gateway') { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue; $stopped += $s }
+                elseif ($proc) { throw "port $port is used by $($proc.ProcessName) (pid $($proc.Id)); close it or change the port (Agents/GettingStarted.md)" }
+            }
+        }
+    }
+    $stopped | Select-Object -Unique
+}
+
+if ($Stop) {
+    if ($ClientOnly -or $Walkmaps) { throw '-Stop cannot be combined with -ClientOnly or -Walkmaps' }
+    $servers = if ($Only) { $Only } else { @('Auth', 'Patch', 'Gateway') }
+    $stopped = @()
+    if (-not $Only -and -not $NoClient) {
+        $clients = @(Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue)
+        $clients | Stop-Process -Force
+        if ($clients.Count) { $stopped += 'client' }
+    }
+    if (-not $Only) {
+        $recorders = @(Get-Recorders)
+        $recorders | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        if ($recorders.Count) { $stopped += 'walk-map recorder' }
+    }
+    $stopped += @(Stop-Servers $servers)
+    # Until the ports are free, so that a start right after this one can bind them.
+    $deadline = (Get-Date).AddSeconds(10)
+    while (@($servers | ForEach-Object { $ports[$_] } | Where-Object { Get-NetTCPConnection -LocalPort $_ -State Listen -ErrorAction SilentlyContinue }).Count) {
+        if ((Get-Date) -gt $deadline) { throw 'servers still listening after 10 s' }
+        Start-Sleep -Milliseconds 200
+    }
+    Write-Output $(if ($stopped.Count) { "stopped: $($stopped -join ', ')" } else { 'nothing was running' })
+    return
+}
 function Select-LocalGateway {
     # The client can use a cached gateway list even when the patch welcome needs no download.
     & dotnet (Join-Path $repo 'src\GameServer.Patch\bin\Debug\net10.0\GameServer.Patch.dll') gateway (Join-Path $repo 'Client\Content.ggpk') --login '127.0.0.1:20493' | Out-Null
@@ -74,35 +139,10 @@ $servers = if ($Only) { $Only } else { @('Auth', 'Patch', 'Gateway') }
 if ($Only) { $NoClient = $true }
 # Hot reload (the Gateway under `dotnet watch`) unless -NoHotReload.
 $Watch = -not $NoHotReload -and $servers -contains 'Gateway'
-$patchWebPort = if ($env:Game_PATCH_URL -match ':(\d+)') { [int]$Matches[1] } else { 8080 }
-$ports = @{ Auth = @(20493); Patch = @(12995, $patchWebPort); Gateway = @(6112) }
 
 if (-not $NoClient) { Get-Process -Name 'Game.patched' -ErrorAction SilentlyContinue | Stop-Process -Force }
-if (-not $Only) {
-    Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like '*walkmaps.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-}
-# Our own processes of each server go first, found by their command line: one still loading its game data holds no port
-# yet, and its cmd wrapper keeps the log open (the next run's log then goes nowhere). That is `dotnet <server>.dll`,
-# a watched Gateway's `dotnet watch` (which would otherwise start it again on the next saved edit, beside the new one),
-# its `dotnet run` and executable, and the cmd wrappers. Builds and test runs of the same projects are left alone.
-$ours = Get-CimInstance Win32_Process -Filter "Name = 'dotnet.exe' OR Name = 'cmd.exe' OR Name LIKE 'GameServer.%'" -ErrorAction SilentlyContinue
-foreach ($s in $servers) {
-    $ours | Where-Object {
-        $_.Name -eq "GameServer.$s.exe" -or
-        ($_.CommandLine -like "*GameServer.$s*" -and $_.CommandLine -notmatch "GameServer\.$s\.Tests|\s(build|test)\s" -and
-            ($_.CommandLine -like "*GameServer.$s.dll*" -or $_.CommandLine -match '\bwatch\b|DOTNET_WATCH'))
-    } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-}
-# Stop only our own servers on the dev ports (dotnet, or the Gateway's own executable when `dotnet watch` started it);
-# anything else there is reported, not killed.
-foreach ($port in ($servers | ForEach-Object { $ports[$_] })) {
-    foreach ($c in Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
-        $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
-        if ($proc -and $proc.ProcessName -in 'dotnet', 'GameServer.Gateway') { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
-        elseif ($proc) { throw "port $port is used by $($proc.ProcessName) (pid $($proc.Id)); close it or change the port (Agents/GettingStarted.md)" }
-    }
-}
+if (-not $Only) { Get-Recorders | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+Stop-Servers $servers | Out-Null
 Start-Sleep -Milliseconds 500
 # The previous run's logs move to logs\archive\<time>\ instead of being deleted: a crash noticed only after the
 # restart still has its log. Empty files go. A -Only restart's folder is <time>-<servers>; the newest 10 full runs and
@@ -220,7 +260,10 @@ foreach ($name in ($servers | Where-Object { $_ -ne 'Patch' } | ForEach-Object {
 }
 
 if ($Walkmaps) {
-    Start-Detached $python @((Join-Path $repo 'scripts\walkmaps\walkmaps.py')) (Join-Path $out 'walkmaps.log') (Join-Path $out 'walkmaps.err')
+    # -Only keeps the recorder that is already running (it stopped none above), so only one ever attaches.
+    if (-not ($Only -and @(Get-Recorders).Count)) {
+        Start-Detached $python @((Join-Path $repo 'scripts\walkmaps\walkmaps.py')) (Join-Path $out 'walkmaps.log') (Join-Path $out 'walkmaps.err')
+    }
     Write-Output 'walk-map capture on (logs\walkmaps.log)'
 }
 
