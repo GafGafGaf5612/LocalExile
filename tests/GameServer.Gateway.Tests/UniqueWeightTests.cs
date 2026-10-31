@@ -1,4 +1,5 @@
 using GameServer.Storage;
+using Microsoft.Data.Sqlite;
 
 namespace GameServer.Gateway.Tests;
 
@@ -6,13 +7,8 @@ namespace GameServer.Gateway.Tests;
 // provider ItemDrops reads. The extracted JSON is the fallback only until the reference table exists.
 public class UniqueWeightTests
 {
-    static string Data()
-    {
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-            if (File.Exists(Path.Combine(dir.FullName, "data/tables/BaseItemTypes.json")))
-                return Path.Combine(dir.FullName, "data");
-        throw new DirectoryNotFoundException("BaseItemTypes.json");
-    }
+    // The shared TestEnvironment establishes the checkout root before any catalogue loads.
+    static string Data() => "data";
 
     static readonly Lazy<(ItemCatalog Catalog, string Data, UniqueCatalog Uniques)> Setup = new(() =>
     {
@@ -27,6 +23,69 @@ public class UniqueWeightTests
     {
         foreach (string file in new[] { path, path + "-wal", path + "-shm" })
             try { File.Delete(file); } catch (IOException) { }
+    }
+
+    [Fact]
+    public void Schema_two_upgrade_preserves_old_ranges_and_weight_overrides_survive_rebuilds_and_reopen()
+    {
+        string path = TempDb();
+        try
+        {
+            using (var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+            {
+                db.Open();
+                using var command = db.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE game_data_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+                    INSERT INTO game_data_meta VALUES ('schema_version', '2');
+                    CREATE TABLE mod_stat_overrides (
+                        mod_id TEXT NOT NULL, stat_index INTEGER NOT NULL, minimum INTEGER NOT NULL,
+                        maximum INTEGER NOT NULL, updated_utc TEXT NOT NULL, PRIMARY KEY (mod_id, stat_index)
+                    ) STRICT;
+                    INSERT INTO mod_stat_overrides VALUES ('LocalAddedPhysicalDamage9', 0, 12, 34, '2026-01-01T00:00:00Z');
+                    """;
+                command.ExecuteNonQuery();
+            }
+            using (var store = new GameDataStore(path))
+            {
+                Assert.Equal("3", store.Meta("schema_version"));
+                Assert.Equal(12, Assert.Single(store.LoadModRanges()).Minimum);
+                Assert.True(GameDataWeights.Seed(store));
+                store.SetUniqueWeight("Mageblood", .5, .25);
+                for (int i = 0; i < 2; i++)
+                {
+                    Assert.True(GameDataWeights.Seed(store, force: true));
+                    Assert.Equal(.5, Assert.Single(store.LoadUniqueWeightOverrides()).Weight);
+                }
+            }
+            using (var reopened = new GameDataStore(path))
+            {
+                Assert.Equal("3", reopened.Meta("schema_version"));
+                Assert.Equal(34, Assert.Single(reopened.LoadModRanges()).Maximum);
+                var provider = new UniqueWeightProvider();
+                GameDataWeights.Reload(reopened, provider);
+                Assert.Equal(.5, provider.Weight("Mageblood", false));
+                Assert.Equal(.25, provider.Weight("Mageblood", true));
+            }
+        }
+        finally { Delete(path); }
+    }
+
+    [Fact]
+    public void Invalid_weights_are_rejected_without_creating_an_override()
+    {
+        string path = TempDb();
+        try
+        {
+            using var store = new GameDataStore(path);
+            foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -.1, 1.1 })
+            {
+                Assert.Throws<ArgumentException>(() => store.SetUniqueWeight("Mageblood", invalid, .5));
+                Assert.Throws<ArgumentException>(() => store.SetUniqueWeight("Mageblood", .5, invalid));
+            }
+            Assert.Empty(store.LoadUniqueWeightOverrides());
+        }
+        finally { Delete(path); }
     }
 
     [Fact]

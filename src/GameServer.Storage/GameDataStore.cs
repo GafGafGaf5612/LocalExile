@@ -301,8 +301,9 @@ public sealed class GameDataStore : IDisposable
     public void SetUniqueWeight(string name, double weight, double ruthlessWeight)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("unique name is empty", nameof(name));
-        if (!double.IsFinite(weight) || !double.IsFinite(ruthlessWeight))
-            throw new ArgumentException("unique weight must be finite");
+        if (!double.IsFinite(weight) || !double.IsFinite(ruthlessWeight)
+            || weight is < 0 or > 1 || ruthlessWeight is < 0 or > 1)
+            throw new ArgumentException("unique weight must be finite and between 0 and 1");
         Atomically(() =>
         {
             using var command = Command("""

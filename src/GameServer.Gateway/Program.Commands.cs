@@ -1593,7 +1593,8 @@ partial class Program
                                 return;
                             }
                             string name = string.Join(' ', args[1..^valueCount]);
-                            if (name.Length == 0 || normal is < 0 or > 1 || ruthless is < 0 or > 1)
+                            if (name.Length == 0 || !double.IsFinite(normal) || !double.IsFinite(ruthless)
+                                || normal is < 0 or > 1 || ruthless is < 0 or > 1)
                             {
                                 await conn.Commands!.Reply("Usage: /game_data unique_weight <name> <weight 0..1> [ruthless 0..1]");
                                 return;
