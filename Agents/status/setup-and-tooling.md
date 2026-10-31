@@ -100,6 +100,8 @@ The Arcane Might area fixture measures range from the weapon-contact origin to i
 Monster AI cadence tests run in a nonparallel collection: their real 300 ms socket-latency limit is unchanged,
 but unrelated catalogue loads and GC pauses no longer run beside that measurement.
 The per-target area accuracy regression awaits one completed sweep instead of racing a sustained Cyclone channel.
+Gateway test collections now run sequentially by default to keep real socket deadlines and collectible mod contexts
+away from unrelated catalogue-load/GC contention. Individual concurrency tests still run their own concurrent tasks.
 
 ## Tooling
 
