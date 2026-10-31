@@ -84,10 +84,10 @@ These are suggestions that have worked well, for people and agents alike; use yo
   is back at the login screen (the Gateway tries to say so in chat first). It can be kind to tell the person playing
   before saving such an edit.
 - **Tests while it runs.** The watched Gateway holds its `bin\` folder; build and test elsewhere, for example
+  `dotnet test tests/GameServer.Gateway.Tests --artifacts-path C:\Temp\lx` (Troubleshooting in GettingStarted).
   Keep the monster AI cadence collection nonparallel: its socket-latency assertion retains its 300 ms limit, so
   parallel catalogue loads and their GC pauses must not run beside it. Arcane Might's area fixture measures its
   projectile range from the weapon-contact origin to the target, rather than assuming the player is the origin.
-  `dotnet test tests/GameServer.Gateway.Tests --artifacts-path C:\Temp\lx` (Troubleshooting in GettingStarted).
 - **Auth and Patch are not watched.** Changes there still need `live.ps1 -Only Auth` or `-Only Patch`.
 
 ## What a good run looks like
