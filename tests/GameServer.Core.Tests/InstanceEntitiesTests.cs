@@ -5,11 +5,13 @@ namespace GameServer.Core.Tests;
 public class InstanceEntitiesTests
 {
     [Fact]
-    public void Projectile_impact_teleport_carries_height_and_preserves_the_legacy_default()
+    public void A_teleport_follows_the_terrain_unless_given_a_fixed_height()
     {
+        // Marker 0 is a fixed height (world z 0), not "none": a player teleported with it stood under raised ground.
         const string header = "01B700003001000000000000000000280000001E";
-        Assert.Equal(header + "7FFFFFFF00000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, 0x7fffffff)));
-        Assert.Equal(header + "0000000000000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30)));
+        Assert.Equal(header + "7FFFFFFF00000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30)));
+        Assert.Equal(header + "7FFFFFFF00000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, InstanceProtocol.FollowTerrain)));
+        Assert.Equal(header + "0000000000000000", Convert.ToHexString(InstanceProtocol.Teleport(0x3001, 40, 30, 0)));
     }
 
     [Theory]
