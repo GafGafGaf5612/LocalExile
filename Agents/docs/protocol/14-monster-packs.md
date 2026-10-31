@@ -82,6 +82,10 @@ So:
 
 1. `scripts/re/atlas` with `room-points` writes `data/room-points.json`: per area, the rooms of its RoomSet and
    FillTiles that have `mapboss` or `%area%-…` points, with the points and the room's doodads (room cells).
+   Rooms with a quest server object (an NPC, a `Metadata/QuestObjects/` object or a quest chest; lore objects under
+   `Metadata/NPC/Info/` excepted, `RoomFile.IsQuestObject`) are kept too, without any point (version 4): Fairgraves'
+   ship, Piety's room in The Upper Prison, the blocked road at Prisoner's Gate, so quests find their objects
+   ([12](12-quests.md) §5).
 2. `scripts/walkmaps` (`live.ps1 -Walkmaps`) hooks `0x142042360` and writes `data/walkability/<area>_seed<seed>.doodads.json`.
 3. `AreaPopulation.LoadPoints` fits each candidate room: anchored on the room doodad whose model is rarest in the
    capture, it tries each captured doodad of that model × the 8 turns/flips, and keeps a placement when ≥ 70% of the
@@ -91,6 +95,11 @@ So:
    `<area>_seed<seed>.rooms.json` (12-quests.md, opening encounter). Doing so for every sparse room would change other
    areas: on the captures it adds The Mud Flats' `miniboss5` mapboss (Oozeback Bloom) and twelve nest packs around
    a1q4's Rhoa Nests, and moves the start points of The Coast's `to_coast` and The Tidal Island's `toislandcliff`.
+   A room with a quest server object takes its actual placement for its objects (its points keep the fit), from
+   `rooms.json` or the Gateway's own generation (`ServerLevels`), whenever there is one: the fit misses sparse rooms and
+   matches a repeated one more than once. Seed 1 places Fairgraves on his ship in The Ship Graveyard at (742, 374), the
+   Allflame's slave girl in The Ship Graveyard Cave at (666, 233), Piety in The Upper Prison at (1486, 553) and her
+   blockage at Prisoner's Gate at (1275, 390), The Twilight Strand's force wall at (1403, 679) as before.
 
 The Coast seed 1 (live): `scavenger_camp_2a` at (1241, 598) turned [0 −1; 1 0], 32/33 doodads; `mapboss` (1135, 630),
 its `cannibalfire` (1173, 679); 8 bonfire rooms (12/12 or 21/21 doodads). The doodad angles agree (room angle + π/2).

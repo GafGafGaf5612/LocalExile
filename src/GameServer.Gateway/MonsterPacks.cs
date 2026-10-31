@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameServer.Core.Protocol.Instance;
+using GameServer.Data.Terrain;
 
 /// <summary>
 /// The monster packs of an area, from the extracted tables: MonsterPacks (which areas and their weights, how many
@@ -338,6 +339,7 @@ static class AreaPopulation
                         points.Add(placement.Place(point));
                 continue;
             }
+            int fittedObjects = objects.Count;
             // Only the client's own doodads are in the capture: a room's server objects (an NPC, a quest blocker) are not.
             var plain = room.Doodads.Where(d => d.Type is null).ToList();
             var seen = plain.Where(d => byModel.ContainsKey(d.Model)).ToList();
@@ -375,6 +377,26 @@ static class AreaPopulation
                     notes.Add($"room {path.Split('/')[^1]} at its captured placement ({placement.X}, {placement.Y}) code {placement.Code}: " +
                         string.Join(", ", room.Points.Select(p => $"{p.Name} at ({placement.Place(p).X}, {placement.Place(p).Y})")));
                 }
+            // A room with a quest server object (Fairgraves on his ship, Piety, a quest chest, MerveilExitBlocker) takes its
+            // actual placement for its objects (its points keep the fit), when the recorder captured it or the Gateway
+            // generated the area: the fit misses sparse rooms and matches a repeated one more than once, which would put a
+            // quest's NPC or blocker where the client has none, or twice.
+            if (room.Doodads.Any(d => d.Type is { } t && RoomFile.IsQuestObject(t))
+                && TutorialObjects.RoomPlacements(areaId, seed, path, walkability, level is not null) is { Count: > 0 } questPlacements)
+            {
+                objects.RemoveRange(fittedObjects, objects.Count - fittedObjects);
+                foreach (var placement in questPlacements)
+                {
+                    foreach (var d in room.Doodads.Where(d => d.Type is not null))
+                    {
+                        var g = placement.Place(new RoomPoint(d.Type!, (int)MathF.Round(d.X), (int)MathF.Round(d.Y), d.Angle));
+                        objects.Add(new RoomObject(d.Type!, d.Model, g.X, g.Y, g.Angle, d.Scale));
+                    }
+                    if (!capturedRooms.Contains(path)) capturedRooms.Add(path);
+                    notes.Add($"room {path.Split('/')[^1]} at its captured placement ({placement.X}, {placement.Y}) code {placement.Code}: quest objects " +
+                        string.Join(", ", objects.Skip(fittedObjects).Where(o => RoomFile.IsQuestObject(o.Type)).Select(o => $"{o.Type} at ({o.X}, {o.Y})")));
+                }
+            }
         }
         return (points, objects, capturedRooms);
     }
