@@ -37,7 +37,9 @@ static class RoomPoints
                 var lists = new[] { "RoomSet", "FillTiles" }.Select(k => tsi?.GetValueOrDefault(k)).OfType<string>();
                 foreach (var arm in lists.SelectMany(l => files.List(TerrainText.Resolve(graph.MasterFile, l.Trim()), ".arm")))
                 {
-                    if (files.Room(arm) is not { } room || !room.Points.Any(p => IsKeptPoint(p.Name))) continue;
+                    // Rooms with a quest server object are kept too, without any point (RoomFile.IsQuestObject).
+                    if (files.Room(arm) is not { } room
+                        || !room.Points.Any(p => IsKeptPoint(p.Name)) && !room.Doodads.Any(d => RoomFile.IsQuestObject(d.Type))) continue;
                     found.Add(arm);
                     rooms.TryAdd(arm, new
                     {
@@ -53,7 +55,7 @@ static class RoomPoints
         }
         File.WriteAllText(output, JsonSerializer.Serialize(new
         {
-            note = "Rooms with monster points (mapboss, %area%-<pack>), default start or tutorial chest spawn points: points and doodads in room cells. scripts/re/atlas room-points.",
+            note = "Rooms with monster points (mapboss, %area%-<pack>), default start or tutorial chest spawn points, or quest server objects (NPCs, quest objects and chests): points and doodads in room cells. scripts/re/atlas room-points.",
             areas = areaRooms,
             rooms,
         }, new JsonSerializerOptions { WriteIndented = false }));
