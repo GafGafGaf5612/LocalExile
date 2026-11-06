@@ -58,6 +58,11 @@ Part of [Status](../Status.md); what to build next in this area is in
   A remembered-form regression reaches character selection through normal Auth; saved-login preservation is mocked.
   Code: `scripts/dev/client-control.js`, `scripts/dev/test-client-login-writer.cjs`.
   Docs: [client control](../docs/dev/client-control.md).
+- Client control on 3.29.3c (2026-11-07, live): the agent detects 3.29.3b/3.29.3c from the native function bytes.
+  `game:status`, saved login, character list, Play, `/pos`, `tp`, chat, resources, frames, waypoint travel with area
+  wait, return to selection, logout, explicit login and create/play/delete all work; the 3.29.3c logout uses the
+  client's Logout button handler. Code: `scripts/dev/client-control.js`.
+  Docs: [client control](../docs/dev/client-control.md).
 - 3.29.3c client support: login, character list, instance connect, area generation and area entry, including leaving
   an area. The instance-group ids shift by +1 at 0x2a9 (gold 0x2aa) and by +2 from 0x2b1 (change area 0x2b4); the
   world-group ids from 0x2b5 are +2: frame end/length 0x2b7/0x2b8, create object 0x2bb, component update 0x2bc,
